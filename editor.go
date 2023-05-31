@@ -72,6 +72,8 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 		buttons := ev.Buttons()
 		mx -= LS
 
+		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1)
+
 		if ev.Buttons()&tcell.WheelDown != 0 {
 			e.onDown()
 			return
@@ -80,9 +82,16 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 			return
 		}
 
-		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1 != 0)
-
 		if buttons&tcell.Button1 == 1 {
+			if c == mx+x && r == my+y {
+				// double click
+				prw := findPrevWord(content[r], c)
+				nxw := findNextWord(content[r], c)
+				ssx, ssy = prw, r
+				c = nxw
+				return
+			}
+
 			r = my + y
 			c = mx + x
 			if r > len(content)-1 {
