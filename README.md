@@ -1,4 +1,4 @@
-# Edgo
+# edgo
 Yet another console text editor
 ![editor](screen.png)
 I recommend to map `caps lock` to `control` button for faster writing   
@@ -27,9 +27,15 @@ go build
 go install .
 ```
 
-Or add alias to  shell environment `nano ~/.zshrc`
-```shell
-alias edgo="./$pwd./edgo"
+`edgo` will be available as :
 ```
+edgo [filename]
+edgo ~/.zshrc 
+```
+
+
+Alternatives:  
+Add alias to  shell environment `nano ~/.zshrc` - `alias edgo="./$pwd./edgo"`
+
 
 If you are using `tmux` add `set-option -g default-terminal "xterm-256color" ` to conf for shift and option keys. Do not forget apply it as `tmux source-file ~/.tmux.conf`
