@@ -107,6 +107,7 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 				ssx, ssy = c, r
 			}
 		}
+		
 		if buttons&tcell.Button1 == 0 {
 			ssx, ssy = -1, -1
 		}
