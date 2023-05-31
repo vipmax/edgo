@@ -38,4 +38,6 @@ Alternatives:
 Add alias to  shell environment `nano ~/.zshrc` - `alias edgo="./$pwd./edgo"`
 
 
-If you are using `tmux` add `set-option -g default-terminal "xterm-256color" ` to conf for shift and option keys. Do not forget apply it as `tmux source-file ~/.tmux.conf`
+If you are using `tmux` i recommend to add `set-option -g default-terminal "xterm-256color" ` to `~/.tmux.conf`  for shift and option keys. Do not forget apply it as `tmux source-file ~/.tmux.conf`
+
+If you are using `iterm2` I recommend to use `Natural text editing` preset in `Profiles > Keys > Key Mappings > Presets > Natural text editing > Reset ` 
