@@ -14,15 +14,22 @@ Key bindings:
 - option/alt + arrow - smart movement
 
 
-  Installation:
+Install Go lang for mac os:
+```
+brew install go # mac
+echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.zshrc
+```
+
+Installation:
 ```shell
 git clone https://github.com/vipmax/edgo && cd edgo
-```
-build:
-```shell
 go build 
+go install .
 ```
-Add alias to  shell environment
+
+Or add alias to  shell environment `nano ~/.zshrc`
 ```shell
-pwd
-alias edgo="./$pwd"
+alias edgo="./$pwd./edgo"
+```
+
+If you are using `tmux` add `set-option -g default-terminal "xterm-256color" ` to conf for shift and option keys. Do not forget apply it as `tmux source-file ~/.tmux.conf`

@@ -11,15 +11,15 @@ import (
 type Highlighter struct {
 }
 
-func (h Highlighter) colorize(code string) [][]int {
+func (h Highlighter) colorize(code string, filename string) [][]int {
 	//start := time.Now()
 	//defer log.Printf("Time taken: %s", time.Since(start))
 
 	// Get the lexer for Go language.
-	lexer := lexers.Get("go")
+	lexer := lexers.Match(filename)
 	if lexer == nil {
-		fmt.Fprintln(os.Stderr, "Lexer not found")
-		os.Exit(1)
+		lexer = lexers.Fallback
+		//os.Exit(1)
 	}
 
 	// Get the iterator for tokenizing the code.
@@ -55,10 +55,18 @@ func (h Highlighter) colorize(code string) [][]int {
 				if token.Type == chroma.Name {
 					c = int(tcell.ColorAquaMarine)
 				}
+				if token.Type == chroma.NameTag {
+					c = int(tcell.ColorAquaMarine)
+				}
 				if token.Type == chroma.String {
 					c = int(tcell.ColorLightGreen)
 				}
 				if token.Type == chroma.StringChar {
+					c = int(tcell.ColorLightGreen)
+				}
+				if token.Type == chroma.Literal ||
+					token.Type == chroma.LiteralString ||
+					token.Type == chroma.LiteralStringDouble {
 					c = int(tcell.ColorLightGreen)
 				}
 				if token.Type == chroma.CommentSingle {
