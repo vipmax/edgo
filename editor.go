@@ -68,28 +68,46 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 	ev := s.PollEvent()      // Poll event
 	switch ev := ev.(type) { // Process event
 	case *tcell.EventMouse:
-		//mouseX, mouseY := ev.Position()
-		//buttons := ev.Buttons()
+		mx, my := ev.Position()
+		buttons := ev.Buttons()
+		mx -= LS
+
 		if ev.Buttons()&tcell.WheelDown != 0 {
-			//r++
 			e.onDown()
-			//fmt.Println("Scroll Down")
-			// Handle scroll down action
-			// ...
+			return
 		} else if ev.Buttons()&tcell.WheelUp != 0 {
-			//r--
 			e.onUp()
-			//fmt.Println("Scroll Up")
-			// Handle scroll up action
-			// ...
+			return
 		}
-		return
+
+		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1 != 0)
+
+		if buttons&tcell.Button1 == 1 {
+			r = my + y
+			c = mx + x
+			if r > len(content)-1 {
+				r = len(content) - 1
+			}
+			if c > len(content[r]) {
+				c = len(content[r])
+			}
+			if c < 0 {
+				c = 0
+			}
+			if ssx < 0 {
+				ssx, ssy = c, r
+			}
+		}
+		if buttons&tcell.Button1 == 0 {
+			ssx, ssy = -1, -1
+		}
 
 	case *tcell.EventResize:
 		COLUMNS, ROWS = s.Size()
 		ROWS -= 2
 		s.Sync()
 		s.Clear()
+
 	case *tcell.EventKey:
 		key := ev.Key()
 		if key == tcell.KeyCtrlC {
@@ -124,12 +142,16 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 			}
 			return
 		}
+
 		if key == tcell.KeyRune && ev.Modifiers()&tcell.ModAlt != 0 {
 			if len(content) == 0 {
 				return
 			}
 			e.handleSmartMove(ev.Rune())
 			return
+		}
+		if key == tcell.KeyRune {
+			e.addChar(ev.Rune())
 		}
 
 		ssx, ssy = -1, -1
@@ -168,9 +190,7 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 		} // TODO: tree
 		if key == tcell.KeyCtrlF {
 		} // TODO: find
-		if key == tcell.KeyRune {
-			e.addChar(ev.Rune())
-		}
+
 	}
 }
 
@@ -239,6 +259,10 @@ func (e *Editor) drawLineNumber(s tcell.Screen, brw int, row int) {
 }
 
 func (e *Editor) addChar(ch rune) {
+	if ssx != -1 {
+		e.cut()
+	}
+
 	content[r] = insert(content[r], c, ch)
 	c++
 	e.updateColors()
