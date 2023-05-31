@@ -18,7 +18,7 @@ Key bindings:
 ```shell
 git clone https://github.com/vipmax/edgo && cd edgo
 go build 
-go install 
+go install .
 ```
 
 Or add alias to shell environment
