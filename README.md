@@ -17,12 +17,11 @@ Key bindings:
   Installation:
 ```shell
 git clone https://github.com/vipmax/edgo && cd edgo
-```
-build:
-```shell
 go build 
+go install 
 ```
-Add alias to  shell environment
+
+Or add alias to shell environment
 ```shell
 pwd
-alias edgo="./$pwd"
+alias edgo="./$pwd/edgo"
