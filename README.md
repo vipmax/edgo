@@ -13,7 +13,6 @@ Key bindings:
 - shift + arrow - select text
 - option/alt + arrow - smart movenment
 
-
 Install Go for mac os:
 ```
 brew install go 
