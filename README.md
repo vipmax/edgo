@@ -20,6 +20,7 @@ brew install go
 echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.zshrc
 ```
 
+
 Installation:
 ```shell
 git clone https://github.com/vipmax/edgo && cd edgo
