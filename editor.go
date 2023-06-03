@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/atotto/clipboard"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ var ssx, ssy = -1, -1    // left shift for line number
 var filename = "main.go" // file name to show
 var colors [][]int       // characters colors
 var highlighter = Highlighter{}
+var lsp = LspClient{}
 
 type Editor struct {
 }
@@ -35,6 +37,8 @@ func (e *Editor) start() {
 
 	s := e.initScreen()
 	s.EnableMouse()
+
+	go e.init_lsp(s)
 
 	for {
 		e.drawEverything(s)
@@ -62,6 +66,28 @@ func (e *Editor) initScreen() tcell.Screen {
 	ROWS -= 2
 
 	return s
+}
+
+func (e *Editor) init_lsp(s tcell.Screen) {
+	dir := filepath.Dir(filename)
+	absolutePath, err := filepath.Abs(dir)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	lsp.start()
+	lsp.init(absolutePath)
+	lsp.didOpen(absolutePath + "/" + filename)
+
+	lspStatus := ""
+	if !lsp.isReady {
+		lspStatus = "lsp is not ready yet"
+	}
+	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
+	e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
+	e.cleanLineAfter(s, len(status), ROWS+1)
+	s.Show()
 }
 
 func (e *Editor) handleEvents(s tcell.Screen) {
@@ -107,7 +133,7 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 				ssx, ssy = c, r
 			}
 		}
-		
+
 		if buttons&tcell.Button1 == 0 {
 			ssx, ssy = -1, -1
 		}
@@ -162,6 +188,7 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 		}
 		if key == tcell.KeyRune {
 			e.addChar(ev.Rune())
+			e.writeFile()
 		}
 
 		ssx, ssy = -1, -1
@@ -171,14 +198,16 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 			os.Exit(1)
 		}
 		if key == tcell.KeyCtrlS {
-			e.writeFile(filename)
+			e.writeFile()
 		}
 		if key == tcell.KeyEnter {
 			e.onEnter(true)
+			e.writeFile()
 			s.Clear()
 		}
 		if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
 			e.onDelete()
+			e.writeFile()
 			s.Clear()
 		}
 		if key == tcell.KeyDown {
@@ -195,13 +224,124 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 		}
 		if key == tcell.KeyTab {
 			e.handleTabPress()
+			e.writeFile()
 		}
 		if key == tcell.KeyCtrlT {
 		} // TODO: tree
 		if key == tcell.KeyCtrlF {
 		} // TODO: find
+		if key == tcell.KeyCtrlSpace {
+			e.onCompletion(s)
+			e.writeFile()
+		}
 
 	}
+}
+
+func (e *Editor) onCompletion(s tcell.Screen) {
+	if !lsp.isReady {
+		return
+	}
+
+	dir := filepath.Dir(filename)
+	absolutePath, _ := filepath.Abs(dir)
+	text := convertToString(true)
+	textline := string(content[r])
+	textline = strings.ReplaceAll(textline, "  ", "\t")
+	tabsCount := countTabsFromString(textline, c)
+	completion := lsp.completion(absolutePath+"/"+filename, text, r, c-tabsCount)
+
+	var options []string
+	if _, ok := completion["result"]; ok {
+		items, ok := completion["result"].(map[string]interface{})["items"]
+		if ok {
+			for _, item := range items.([]interface{}) {
+				if item, ok := item.(map[string]interface{}); ok {
+					if label, ok := item["label"].(string); ok {
+						options = append(options, label)
+					}
+				}
+			}
+		}
+	}
+
+	if options == nil || len(options) == 0 {
+		options = []string{"no options found"}
+	}
+
+	// Define the window  position and dimensions
+	atx := c + LS
+	aty := r + 1 - y
+	width := max(30, maxString(options))
+	height := minMany(5, len(options), ROWS-(r-y))
+	style := tcell.StyleDefault.Background(tcell.ColorGray)
+
+	var end = false
+	var selected = 0
+	var selectedOffset = 0
+
+	// loop until escape or enter pressed
+	for !end {
+		// show options
+		if selected < selectedOffset {
+			selectedOffset = selected
+		}
+		if selected >= selectedOffset+height {
+			selectedOffset = selected - height + 1
+		}
+
+		//Iterate over the completion options
+		for row := 0; row < aty+height; row++ {
+			if row >= len(options) || row >= height {
+				break
+			}
+			var option = options[row+selectedOffset]
+			style = e.getSelectedStyle(selected == row+selectedOffset, style)
+
+			for col, char := range option {
+				s.SetContent(col+atx, row+aty, char, nil, style)
+			}
+			for col := len(option); col < width; col++ { // Fill the remaining space
+				s.SetContent(col+atx, row+aty, ' ', nil, style)
+			}
+
+		}
+		s.Show()
+
+		// handle events
+		ev := s.PollEvent()
+		switch ev := ev.(type) {
+		case *tcell.EventKey:
+			key := ev.Key()
+			if key == tcell.KeyEscape {
+				end = true
+			}
+			if key == tcell.KeyDown {
+				selected = min(len(options)-1, selected+1)
+			}
+			if key == tcell.KeyUp {
+				selected = max(0, selected-1)
+			}
+			if key == tcell.KeyEnter {
+				end = true
+				option := options[selected]
+				for _, char := range option {
+					e.addChar(char)
+				}
+			}
+		}
+	}
+
+	s.Clear() // do not forget to clean
+}
+
+func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Style {
+	if isSelected {
+		style = style.Background(tcell.ColorHotPink)
+	} else {
+		style = tcell.StyleDefault.Background(tcell.ColorDimGray)
+	}
+	return style
 }
 
 func (e *Editor) drawEverything(s tcell.Screen) {
@@ -237,7 +377,11 @@ func (e *Editor) drawEverything(s tcell.Screen) {
 		}
 	}
 
-	status := fmt.Sprintf("%d %d %s", c+1, r+1, filename)
+	lspStatus := ""
+	if !lsp.isReady {
+		lspStatus = "lsp is not ready yet"
+	}
+	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
 	e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
 	e.cleanLineAfter(s, len(status), ROWS+1)
 	s.ShowCursor(c-x+LS, r-y)
@@ -396,7 +540,7 @@ func (e *Editor) cleanLineAfter(s tcell.Screen, x, y int) {
 	}
 }
 
-func (e *Editor) writeFile(filename string) {
+func (e *Editor) writeFile() {
 	// Convert content to a string
 	contentStr := ""
 	for _, row := range content {
@@ -408,6 +552,12 @@ func (e *Editor) writeFile(filename string) {
 	err := os.WriteFile(filename, []byte(contentStr), 0644)
 	if err != nil {
 		fmt.Println("Error writing to file:", err)
+	}
+
+	if lsp.isReady {
+		dir := filepath.Dir(filename)
+		absolutePath, _ := filepath.Abs(dir)
+		go lsp.didOpen(absolutePath + "/" + filename) // todo ???
 	}
 }
 
@@ -452,7 +602,7 @@ func (e *Editor) readFile(filename string) string {
 func (e *Editor) drawText(s tcell.Screen, x1, y1, x2, y2 int, text string) {
 	row := y1
 	col := x1
-	var style = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
+	var style = tcell.StyleDefault.Foreground(tcell.ColorGray)
 	for _, r := range []rune(text) {
 		s.SetContent(col, row, r, nil, style)
 		col++
@@ -467,7 +617,7 @@ func (e *Editor) drawText(s tcell.Screen, x1, y1, x2, y2 int, text string) {
 }
 
 func (e *Editor) updateColors() {
-	code := convertToString()
+	code := convertToString(false)
 	colors = highlighter.colorize(code, filename)
 }
 
@@ -596,12 +746,16 @@ func getSelection() string {
 	return ret
 }
 
-func convertToString() string {
+func convertToString(replaceSpaces bool) string {
 	var result strings.Builder
 	for _, row := range content {
 		result.WriteString(string(row) + "\n")
 	}
-	return result.String()
+	resultString := result.String()
+	if replaceSpaces {
+		resultString = strings.ReplaceAll(resultString, "  ", "\t")
+	}
+	return resultString
 }
 
 func countTabsInRow(i int) int {
@@ -612,6 +766,21 @@ func countTabsInRow(i int) int {
 	row := content[i]
 	count := 0
 	for _, char := range row {
+		if char == ' ' {
+			count++
+		} else {
+			return count
+		}
+	}
+	return count
+}
+func countTabsInRowBefore(i int, before int) int {
+	row := content[i]
+	count := 0
+	for index, char := range row {
+		if index > before {
+			return count
+		}
 		if char == ' ' {
 			count++
 		} else {

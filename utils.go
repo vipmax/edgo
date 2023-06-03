@@ -1,13 +1,46 @@
 package main
 
+import (
+	"os"
+)
+
 func max(x, y int) int {
-	if x < y { return y }
+	if x < y {
+		return y
+	}
 	return x
 }
 
 func min(x, y int) int {
-	if x <= y { return x }
+	if x <= y {
+		return x
+	}
 	return y
+}
+
+func maxMany(nums ...int) int {
+	if len(nums) == 0 {
+		panic("max: no arguments provided")
+	}
+	maxValue := nums[0]
+	for _, num := range nums[1:] {
+		if num > maxValue {
+			maxValue = num
+		}
+	}
+	return maxValue
+}
+func minMany(nums ...int) int {
+	if len(nums) == 0 {
+		panic("min: no arguments provided")
+	}
+	minValue := nums[0]
+	for _, num := range nums[1:] {
+		if num < minValue {
+			minValue = num
+		}
+	}
+	return minValue
 }
 
 func insert[T any](a []T, index int, value T) []T {
@@ -80,21 +113,80 @@ func remove[T any](slice []T, s int) []T {
 	return append(slice[:s], slice[s+1:]...)
 }
 
-
 func GreaterThan(x, y, x1, y1 int) bool {
-	if y > y1 { return true }
+	if y > y1 {
+		return true
+	}
 	return y == y1 && x > x1
 }
 
 func LessThan(x, y, x1, y1 int) bool {
-	if y < y1 { return true }
+	if y < y1 {
+		return true
+	}
 	return y == y1 && x < x1
 }
 
 func GreaterEqual(x, y, x1, y1 int) bool {
-	if y > y1 { return true }
+	if y > y1 {
+		return true
+	}
 	if y == y1 && x >= x1 {
 		return true
 	}
 	return false
+}
+
+func countConsecutiveSpaces(runes []rune, before int) int {
+	count := 0
+	consecutiveCount := 0
+
+	for index, rrune := range runes {
+		if index > before {
+			return count
+		}
+		if rrune == ' ' {
+			consecutiveCount++
+		} else {
+			if consecutiveCount >= 2 {
+				count++
+			}
+		}
+	}
+
+	if consecutiveCount >= 2 {
+		count++
+	}
+	return count
+}
+
+func maxString(arr []string) int {
+	maxLength := 0
+	for _, str := range arr {
+		if len(str) > maxLength {
+			maxLength = len(str)
+		}
+	}
+	return maxLength
+}
+
+func readFileToString(filePath string) (string, error) {
+	filecontent, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+	return string(filecontent), nil
+}
+
+func countTabsFromString(str string, stopIndex int) int {
+	count := 0
+	for i, char := range str {
+		if i > stopIndex {
+			break
+		}
+		if char == '\t' {
+			count++
+		}
+	}
+	return count
 }
