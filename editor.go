@@ -243,10 +243,10 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 
 func (e *Editor) onCompletion(s tcell.Screen) {
 	if !lsp.isReady { return }
-	var end = false
+	var completionEnd = false
 
 	// loop until escape or enter pressed
-	for !end {
+	for !completionEnd {
 		start := time.Now()
 		dir := filepath.Dir(filename)
 		absolutePath, _ := filepath.Abs(dir)
@@ -310,12 +310,27 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 			switch ev := ev.(type) {
 			case *tcell.EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape { selectionEnd = true; end = true }
+				if key == tcell.KeyEscape { selectionEnd = true; completionEnd = true }
 				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
 				if key == tcell.KeyUp { selected = max(0, selected-1) }
 				if key == tcell.KeyRight { e.onRight(); e.drawEverything(s); selectionEnd = true }
 				if key == tcell.KeyLeft { e.onLeft(); e.drawEverything(s); selectionEnd = true }
-				if key == tcell.KeyEnter { selectionEnd = true; end = true; for _, char := range options[selected] { e.addChar(char) } }
+				if key == tcell.KeyEnter { selectionEnd = true; completionEnd = true;
+					//for _, char := range options[selected] { e.addChar(char); } ; s.Show()
+					// todo: use `result.items.textEdit.range.start` and `result.items.textEdit.range.end` to fit option to the line
+					result := completion["result"].(map[string]interface{})
+					cmplt := result["items"].([]interface{})[selected].(map[string]interface{})
+					//from := cmplt.TextEdit.Range.Start.Character
+					from := cmplt["textEdit"].(map[string]interface{})["range"].(map[string]interface{})["start"].(map[string]interface{})["character"].(float64)
+					end   := cmplt["textEdit"].(map[string]interface{})["range"].(map[string]interface{})["end"].(map[string]interface{})["character"].(float64)
+					newText   := cmplt["textEdit"].(map[string]interface{})["newText"].(string)
+					//fmt.Println(cmplt, from, end, newText)
+
+					content[r] = append(content[r][:int(from+1)], content[r][int(end)+1:]...)
+					c = int(from) + tabsCount
+					for _, char := range newText { e.addChar(char); } ; s.Show()
+					e.writeFile()
+				}
 			}
 		}
 	}

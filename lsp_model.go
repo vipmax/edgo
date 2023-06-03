@@ -85,3 +85,32 @@ type VersionedTextDocumentIdentifier struct {
 type TextDocumentContentChangeEvent struct {
 	Text string `json:"text"`
 }
+
+
+type Item struct {
+	Label             string         `json:"label"`
+	Kind              int            `json:"kind"`
+	Detail            string         `json:"detail"`
+	Preselect         bool           `json:"preselect"`
+	SortText          string         `json:"sortText"`
+	FilterText        string         `json:"filterText"`
+	InsertTextFormat  int            `json:"insertTextFormat"`
+	TextEdit          TextEdit       `json:"textEdit"`
+}
+
+type TextEdit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
+}
+
+type Range struct {
+	Start Position `json:"start"`
+	End   Position `json:"end"`
+}
+
+
+type Completion struct {
+	IsIncomplete bool   `json:"isIncomplete"`
+	Items        []Item `json:"items"`
+}
+
