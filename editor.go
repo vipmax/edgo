@@ -242,9 +242,7 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 }
 
 func (e *Editor) onCompletion(s tcell.Screen) {
-	if !lsp.isReady {
-		return
-	}
+	if !lsp.isReady { return }
 	var end = false
 
 	// loop until escape or enter pressed
@@ -253,8 +251,7 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 		dir := filepath.Dir(filename)
 		absolutePath, _ := filepath.Abs(dir)
 		text := convertToString(true)
-		textline := string(content[r])
-		textline = strings.ReplaceAll(textline, "  ", "\t")
+		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
 		tabsCount := countTabsFromString(textline, c)
 		completion := lsp.completion(absolutePath+"/"+filename, text, r, c-tabsCount)
 		elapsed := time.Since(start)
@@ -273,9 +270,7 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 			}
 		}
 
-		if options == nil || len(options) == 0 {
-			options = []string{"no options found"}
-		}
+		if options == nil || len(options) == 0 { options = []string{"no options found"} }
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
 		status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
@@ -289,31 +284,21 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 		height := minMany(5, len(options), ROWS-(r-y))
 		style := tcell.StyleDefault
 
-		var selectionEnd = false
-		var selected = 0
-		var selectedOffset = 0
+		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
 		for !selectionEnd {
 			// show options
-			if selected < selectedOffset {
-				selectedOffset = selected
-			}
-			if selected >= selectedOffset+height {
-				selectedOffset = selected - height + 1
-			}
+			if selected < selectedOffset { selectedOffset = selected }
+			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
 			//Iterate over the completion options
 			for row := 0; row < aty+height; row++ {
-				if row >= len(options) || row >= height {
-					break
-				}
+				if row >= len(options) || row >= height { break }
 				var option = options[row+selectedOffset]
 				style = e.getSelectedStyle(selected == row+selectedOffset, style)
 
 				s.SetContent(atx-1, row+aty, ' ', nil, style)
-				for col, char := range option {
-					s.SetContent(col+atx, row+aty, char, nil, style)
-				}
+				for col, char := range option { s.SetContent(col+atx, row+aty, char, nil, style) }
 				for col := len(option); col < width; col++ { // Fill the remaining space
 					s.SetContent(col+atx, row+aty, ' ', nil, style)
 				}
@@ -325,34 +310,12 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 			switch ev := ev.(type) {
 			case *tcell.EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape {
-					selectionEnd = true
-					end = true
-				}
-				if key == tcell.KeyDown {
-					selected = min(len(options)-1, selected+1)
-				}
-				if key == tcell.KeyUp {
-					selected = max(0, selected-1)
-				}
-				if key == tcell.KeyRight {
-					e.onRight()
-					e.drawEverything(s)
-					selectionEnd = true
-				}
-				if key == tcell.KeyLeft {
-					e.onLeft()
-					e.drawEverything(s)
-					selectionEnd = true
-				}
-				if key == tcell.KeyEnter {
-					selectionEnd = true
-					end = true
-					option := options[selected]
-					for _, char := range option {
-						e.addChar(char)
-					}
-				}
+				if key == tcell.KeyEscape { selectionEnd = true; end = true }
+				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == tcell.KeyUp { selected = max(0, selected-1) }
+				if key == tcell.KeyRight { e.onRight(); e.drawEverything(s); selectionEnd = true }
+				if key == tcell.KeyLeft { e.onLeft(); e.drawEverything(s); selectionEnd = true }
+				if key == tcell.KeyEnter { selectionEnd = true; end = true; for _, char := range options[selected] { e.addChar(char) } }
 			}
 		}
 	}
