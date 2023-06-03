@@ -50,8 +50,6 @@ func (this *LspClient) start() {
 	}
 
 	this.responses = make(map[int]map[string]interface{})
-
-	time.Sleep(time.Second * 2)
 }
 
 func (this LspClient) wait() {
@@ -125,7 +123,6 @@ func (this *LspClient) didOpen(file string) {
 		},
 	}
 	this.send(didOpenRequest)
-	time.Sleep(time.Millisecond * 1000)
 }
 func (this *LspClient) didChange(file string) {
 	filecontent, _ := os.ReadFile(file)

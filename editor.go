@@ -76,11 +76,13 @@ func (e *Editor) init_lsp(s tcell.Screen) {
 		return
 	}
 
+	start := time.Now()
+
 	lsp.start()
 	lsp.init(absolutePath)
 	lsp.didOpen(absolutePath + "/" + filename)
 
-	lspStatus := ""
+	lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	if !lsp.isReady {
 		lspStatus = "lsp is not ready yet"
 	}
@@ -243,6 +245,7 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 		return
 	}
 
+	start := time.Now()
 	dir := filepath.Dir(filename)
 	absolutePath, _ := filepath.Abs(dir)
 	text := convertToString(true)
@@ -250,6 +253,7 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 	textline = strings.ReplaceAll(textline, "  ", "\t")
 	tabsCount := countTabsFromString(textline, c)
 	completion := lsp.completion(absolutePath+"/"+filename, text, r, c-tabsCount)
+	elapsed := time.Since(start)
 
 	var options []string
 	if _, ok := completion["result"]; ok {
@@ -269,12 +273,17 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 		options = []string{"no options found"}
 	}
 
+	lspStatus := "lsp completion, elapsed " + elapsed.String()
+	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
+	e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
+	e.cleanLineAfter(s, len(status), ROWS+1)
+
 	// Define the window  position and dimensions
 	atx := c + LS
 	aty := r + 1 - y
 	width := max(30, maxString(options))
 	height := minMany(5, len(options), ROWS-(r-y))
-	style := tcell.StyleDefault.Background(tcell.ColorGray)
+	style := tcell.StyleDefault
 
 	var end = false
 	var selected = 0
@@ -298,13 +307,13 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 			var option = options[row+selectedOffset]
 			style = e.getSelectedStyle(selected == row+selectedOffset, style)
 
+			s.SetContent(atx-1, row+aty, ' ', nil, style)
 			for col, char := range option {
 				s.SetContent(col+atx, row+aty, char, nil, style)
 			}
 			for col := len(option); col < width; col++ { // Fill the remaining space
 				s.SetContent(col+atx, row+aty, ' ', nil, style)
 			}
-
 		}
 		s.Show()
 
@@ -339,7 +348,7 @@ func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Styl
 	if isSelected {
 		style = style.Background(tcell.ColorHotPink)
 	} else {
-		style = tcell.StyleDefault.Background(tcell.ColorDimGray)
+		style = tcell.StyleDefault // .Background(tcell.ColorDimGray)
 	}
 	return style
 }
