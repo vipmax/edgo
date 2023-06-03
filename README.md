@@ -1,17 +1,18 @@
 # edgo
-Yet another console text editor
+Yet another console text editor, but with lsp support
 ![editor](screen.png)
 I recommend to map `caps lock` to `control` button for faster writing   
 
 Key bindings:
-- Control + s - save file
-- Control + q - quit
-- Control + d - duplicate line
-- Control + x - cut 
-- Control + c - copy 
-- Control + v - paste
-- shift + arrow - select text
-- option/alt + arrow - smart movenment
+- `Control + s` - save file
+- `Control + q` - quit
+- `Control + d` - duplicate line
+- `Control + x` - cut 
+- `Control + c` - copy 
+- `Control + v` - paste
+- `shift + arrow` - select text
+- `option + arrow` - smart movenment
+- `control + space` - lsp completion
 
 Install Go for mac os:
 ```
@@ -32,9 +33,14 @@ go install .
 edgo [filename]
 edgo ~/.zshrc 
 ```
+### Lsp
 
+Install lsp for go
+```shell  
+go install golang.org/x/tools/gopls@latest
+```
 
-Alternatives:  
+### Notes:  
 Add alias to  shell environment `nano ~/.zshrc` - `alias edgo="./$pwd./edgo"`
 
 
