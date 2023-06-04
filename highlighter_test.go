@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-
 func TestColorize(t *testing.T) {
 	file := "highlighter_test.go"
 	filecontent, _ := readFileToString(file)

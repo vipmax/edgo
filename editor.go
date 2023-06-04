@@ -213,10 +213,14 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 					if key == tcell.KeyUp { selected = max(0, selected-1) }
 					if key == tcell.KeyRight { e.onRight(); e.drawEverything(s); selectionEnd = true }
 					if key == tcell.KeyLeft { e.onLeft(); e.drawEverything(s); selectionEnd = true }
+					if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); e.drawEverything(s); selectionEnd = true  }
+					if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
+						e.onDelete(); e.writeFile(); s.Clear(); e.drawEverything(s); selectionEnd = true
+					}
 					if key == tcell.KeyEnter {
 						selectionEnd = true; completionEnd = true
-						e.onCompletionEnd(s, completion, selected, tabsCount)
-						e.writeFile()
+						e.completionApply(completion, selected)
+						e.updateColors(); s.Show(); e.writeFile()
 					}
 			}
 		}
@@ -240,37 +244,41 @@ func (e *Editor) buildCompletionOptions(completion CompletionResponse) []string 
 func (e *Editor) drawCompletion(s tcell.Screen,
 	atx int, aty int, height int, width int, options []string, selected int, selectedOffset int, style tcell.Style) {
 	for row := 0; row < aty+height; row++ {
-		if row >= len(options) || row >= height {
-			break
-		}
+		if row >= len(options) || row >= height { break }
 		var option = options[row+selectedOffset]
 		style = e.getSelectedStyle(selected == row+selectedOffset, style)
 
 		s.SetContent(atx-1, row+aty, ' ', nil, style)
-		for col, char := range option {
-			s.SetContent(col+atx, row+aty, char, nil, style)
-		}
+		for col, char := range option { s.SetContent(col+atx, row+aty, char, nil, style) }
 		for col := len(option); col < width; col++ { // Fill the remaining space
 			s.SetContent(col+atx, row+aty, ' ', nil, style)
 		}
 	}
 }
 
-func (e *Editor) onCompletionEnd(s tcell.Screen, completion CompletionResponse, selected int, tabsCount int) {
+func (e *Editor) completionApply(completion CompletionResponse, selected int) {
+	// parse completion
 	item := completion.Result.Items[selected]
 	from := item.TextEdit.Range.Start.Character
 	end := item.TextEdit.Range.End.Character
 	newText := item.TextEdit.NewText
 
+	// update tabs count because it may be changed
+	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+	tabsCount := countTabsFromString(textline, c)
+
+	// move cursor to beginning
+	c = int(from) + tabsCount
+
 	// remove chars between from and end
-	content[r] = append(content[r][:int(from+1)], content[r][int(end)+1:]...)
-	c = int(from) + tabsCount // move cursor to beginning
+	content[r] = append(content[r][:c], content[r][int(end) + tabsCount:]...)
+
 	// add newText to chars
 	for _, char := range newText {
 		content[r] = insert(content[r], c, char)
 		c++
 	}
-	e.updateColors(); s.Show(); e.writeFile()
+
 }
 
 func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Style {
@@ -335,6 +343,36 @@ func (e *Editor) addChar(ch rune) {
 
 	content[r] = insert(content[r], c, ch)
 	c++
+
+	if ch == '(' { content[r] = insert(content[r], c, ')'); }
+	if ch == '{' { content[r] = insert(content[r], c, '}'); }
+	if ch == '[' { content[r] = insert(content[r], c, ']'); }
+	if ch == '"' { content[r] = insert(content[r], c, '"'); }
+	if ch == '\''{ content[r] = insert(content[r], c, '\''); }
+	if ch == '`' { content[r] = insert(content[r], c, '`'); }
+
+	e.updateColors()
+}
+func (e *Editor) onDelete() {
+	if c > 0 {
+		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
+			c--
+			content[r] = remove(content[r], c)
+			c--
+			content[r] = remove(content[r], c)
+		} else {
+			c--
+			content[r] = remove(content[r], c)
+		}
+
+	} else if r > 0 {
+		l := content[r][c:]
+		content = remove(content, r)
+		r--
+		c = len(content[r])
+		content[r] = append(content[r], l...)
+	}
+
 	e.updateColors()
 }
 
@@ -383,28 +421,7 @@ func (e *Editor) onRight() {
 	}
 }
 
-func (e *Editor) onDelete() {
-	if c > 0 {
-		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
-			c--
-			content[r] = remove(content[r], c)
-			c--
-			content[r] = remove(content[r], c)
-		} else {
-			c--
-			content[r] = remove(content[r], c)
-		}
 
-	} else if r > 0 {
-		l := content[r][c:]
-		content = remove(content, r)
-		r--
-		c = len(content[r])
-		content[r] = append(content[r], l...)
-	}
-
-	e.updateColors()
-}
 
 func (e *Editor) onEnter(isSaveTabs bool) {
 	after := content[r][c:]

@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-
 func TestFormat(t *testing.T) {
 	leftText := "Left"; rightText := "Right"; maxWidth := 30
 	formattedText := formatText(leftText, rightText, maxWidth)
