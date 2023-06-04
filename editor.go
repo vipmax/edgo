@@ -242,7 +242,10 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 }
 
 func (e *Editor) onCompletion(s tcell.Screen) {
-	if !lsp.isReady { return }
+	if !lsp.isReady {
+		return
+	}
+
 	var completionEnd = false
 
 	// loop until escape or enter pressed
@@ -253,24 +256,17 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 		text := convertToString(true)
 		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
 		tabsCount := countTabsFromString(textline, c)
-		completion := lsp.completion(absolutePath+"/"+filename, text, r, c-tabsCount)
+		completion, _ := lsp.completion(absolutePath+"/"+filename, text, r, c-tabsCount)
 		elapsed := time.Since(start)
 
 		var options []string
-		if _, ok := completion["result"]; ok {
-			items, ok := completion["result"].(map[string]interface{})["items"]
-			if ok {
-				for _, item := range items.([]interface{}) {
-					if item, ok := item.(map[string]interface{}); ok {
-						if label, ok := item["label"].(string); ok {
-							options = append(options, label)
-						}
-					}
-				}
-			}
+		for _, item := range completion.Result.Items {
+			options = append(options, item.Label)
 		}
 
-		if options == nil || len(options) == 0 { options = []string{"no options found"} }
+		if options == nil || len(options) == 0 {
+			options = []string{"no options found"}
+		}
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
 		status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
@@ -284,21 +280,31 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 		height := minMany(5, len(options), ROWS-(r-y))
 		style := tcell.StyleDefault
 
-		var selectionEnd = false; var selected = 0; var selectedOffset = 0
+		var selectionEnd = false
+		var selected = 0
+		var selectedOffset = 0
 
 		for !selectionEnd {
 			// show options
-			if selected < selectedOffset { selectedOffset = selected }
-			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
+			if selected < selectedOffset {
+				selectedOffset = selected
+			}
+			if selected >= selectedOffset+height {
+				selectedOffset = selected - height + 1
+			}
 
 			//Iterate over the completion options
 			for row := 0; row < aty+height; row++ {
-				if row >= len(options) || row >= height { break }
+				if row >= len(options) || row >= height {
+					break
+				}
 				var option = options[row+selectedOffset]
 				style = e.getSelectedStyle(selected == row+selectedOffset, style)
 
 				s.SetContent(atx-1, row+aty, ' ', nil, style)
-				for col, char := range option { s.SetContent(col+atx, row+aty, char, nil, style) }
+				for col, char := range option {
+					s.SetContent(col+atx, row+aty, char, nil, style)
+				}
 				for col := len(option); col < width; col++ { // Fill the remaining space
 					s.SetContent(col+atx, row+aty, ' ', nil, style)
 				}
@@ -310,25 +316,42 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 			switch ev := ev.(type) {
 			case *tcell.EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape { selectionEnd = true; completionEnd = true }
-				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == tcell.KeyUp { selected = max(0, selected-1) }
-				if key == tcell.KeyRight { e.onRight(); e.drawEverything(s); selectionEnd = true }
-				if key == tcell.KeyLeft { e.onLeft(); e.drawEverything(s); selectionEnd = true }
-				if key == tcell.KeyEnter { selectionEnd = true; completionEnd = true;
-					//for _, char := range options[selected] { e.addChar(char); } ; s.Show()
-					// todo: use `result.items.textEdit.range.start` and `result.items.textEdit.range.end` to fit option to the line
-					result := completion["result"].(map[string]interface{})
-					cmplt := result["items"].([]interface{})[selected].(map[string]interface{})
-					//from := cmplt.TextEdit.Range.Start.Character
-					from := cmplt["textEdit"].(map[string]interface{})["range"].(map[string]interface{})["start"].(map[string]interface{})["character"].(float64)
-					end   := cmplt["textEdit"].(map[string]interface{})["range"].(map[string]interface{})["end"].(map[string]interface{})["character"].(float64)
-					newText   := cmplt["textEdit"].(map[string]interface{})["newText"].(string)
-					//fmt.Println(cmplt, from, end, newText)
-
+				if key == tcell.KeyEscape {
+					selectionEnd = true
+					completionEnd = true
+				}
+				if key == tcell.KeyDown {
+					selected = min(len(options)-1, selected+1)
+				}
+				if key == tcell.KeyUp {
+					selected = max(0, selected-1)
+				}
+				if key == tcell.KeyRight {
+					e.onRight()
+					e.drawEverything(s)
+					selectionEnd = true
+				}
+				if key == tcell.KeyLeft {
+					e.onLeft()
+					e.drawEverything(s)
+					selectionEnd = true
+				}
+				if key == tcell.KeyEnter {
+					selectionEnd = true
+					completionEnd = true
+					from := completion.Result.Items[selected].TextEdit.Range.Start.Character
+					end := completion.Result.Items[selected].TextEdit.Range.End.Character
+					newText := completion.Result.Items[selected].TextEdit.NewText
+					// remove cars between from and and
 					content[r] = append(content[r][:int(from+1)], content[r][int(end)+1:]...)
 					c = int(from) + tabsCount
-					for _, char := range newText { e.addChar(char); } ; s.Show()
+					for _, char := range newText {
+						//e.addChar(char)
+						content[r] = insert(content[r], c, char)
+						c++
+					}
+					e.updateColors()
+					s.Show()
 					e.writeFile()
 				}
 			}

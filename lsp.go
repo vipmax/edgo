@@ -223,7 +223,7 @@ func (this *LspClient) definition(file string, line int, character int) {
 	time.Sleep(time.Millisecond * 1000)
 }
 
-func (this *LspClient) completion(file string, code string, line int, character int) map[string]interface{} {
+func (this *LspClient) completion(file string, code string, line int, character int) (CompletionResponse, map[string]interface{}) {
 	this.id++
 	id := this.id
 
@@ -247,9 +247,13 @@ func (this *LspClient) completion(file string, code string, line int, character 
 	}
 
 	this.send(request)
-	response := this.read_stdout()
-	//response := this.waitForResponseInMap(id)
-	return response
+	js, jsonData := this.read_stdout()
+	var completionResponse CompletionResponse
+	err := json.Unmarshal([]byte(jsonData), &completionResponse)
+	if err != nil {
+		panic("Error parsing JSON:" + err.Error())
+	}
+	return completionResponse, js
 }
 
 func (this *LspClient) waitForResponseInMap(id int) map[string]interface{} {
@@ -264,7 +268,7 @@ func (this *LspClient) waitForResponseInMap(id int) map[string]interface{} {
 	}
 }
 
-func (this *LspClient) read_stdout() map[string]interface{} {
+func (this *LspClient) read_stdout() (map[string]interface{}, string) {
 	const LEN_HEADER = "Content-Length: "
 
 	reader := bufio.NewReader(this.stdout)
@@ -298,7 +302,7 @@ func (this *LspClient) read_stdout() map[string]interface{} {
 			if value, found := responseJSON["id"]; found {
 				if id, ok := value.(float64); ok {
 					this.responses[int(id)] = responseJSON
-					return responseJSON
+					return responseJSON, line
 				}
 			}
 

@@ -87,15 +87,27 @@ type TextDocumentContentChangeEvent struct {
 }
 
 
-type Item struct {
-	Label             string         `json:"label"`
-	Kind              int            `json:"kind"`
-	Detail            string         `json:"detail"`
-	Preselect         bool           `json:"preselect"`
-	SortText          string         `json:"sortText"`
-	FilterText        string         `json:"filterText"`
-	InsertTextFormat  int            `json:"insertTextFormat"`
-	TextEdit          TextEdit       `json:"textEdit"`
+
+type CompletionResponse struct {
+	JSONRPC string            `json:"jsonrpc"`
+	Result  CompletionResult  `json:"result"`
+	ID      float64               `json:"id"`
+}
+
+type CompletionResult struct {
+	IsIncomplete bool             `json:"isIncomplete"`
+	Items        []CompletionItem `json:"items"`
+}
+
+type CompletionItem struct {
+	Label            string        `json:"label"`
+	Kind             float64           `json:"kind"`
+	Detail           string        `json:"detail"`
+	Preselect        bool          `json:"preselect"`
+	SortText         string        `json:"sortText"`
+	FilterText       string        `json:"filterText"`
+	InsertTextFormat float64           `json:"insertTextFormat"`
+	TextEdit         TextEdit      `json:"textEdit"`
 }
 
 type TextEdit struct {
@@ -104,13 +116,11 @@ type TextEdit struct {
 }
 
 type Range struct {
-	Start Position `json:"start"`
-	End   Position `json:"end"`
+	Start PositionResponse `json:"start"`
+	End   PositionResponse `json:"end"`
 }
 
-
-type Completion struct {
-	IsIncomplete bool   `json:"isIncomplete"`
-	Items        []Item `json:"items"`
+type PositionResponse struct {
+	Line      float64 `json:"line"`
+	Character float64 `json:"character"`
 }
-
