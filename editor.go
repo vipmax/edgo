@@ -346,7 +346,6 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 					content[r] = append(content[r][:int(from+1)], content[r][int(end)+1:]...)
 					c = int(from) + tabsCount
 					for _, char := range newText {
-						//e.addChar(char)
 						content[r] = insert(content[r], c, char)
 						c++
 					}
