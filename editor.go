@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/atotto/clipboard"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,14 +31,11 @@ type Editor struct {
 }
 
 func (e *Editor) start() {
-	if len(os.Args) > 1 {
-		filename = os.Args[1]
-	}
+	if len(os.Args) > 1 { filename = os.Args[1] }
 	code := e.readFile(filename)
 	colors = highlighter.colorize(code, filename)
 
 	s := e.initScreen()
-	s.EnableMouse()
 
 	go e.init_lsp(s)
 
@@ -46,8 +44,6 @@ func (e *Editor) start() {
 		s.Show()
 		e.handleEvents(s)
 	}
-
-	time.Sleep(time.Second * 200000)
 }
 
 func (e *Editor) initScreen() tcell.Screen {
@@ -56,10 +52,7 @@ func (e *Editor) initScreen() tcell.Screen {
 	s.Init()
 	if s.HasMouse() { s.EnableMouse() }
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
+	if err != nil { fmt.Fprintf(os.Stderr, "%v\n", err); os.Exit(1) }
 	s.Clear()
 
 	COLUMNS, ROWS = s.Size()
@@ -69,7 +62,7 @@ func (e *Editor) initScreen() tcell.Screen {
 }
 
 func (e *Editor) init_lsp(s tcell.Screen) {
-	dir := filepath.Dir(filename)
+	dir := path.Dir(filename)
 	absolutePath, err := filepath.Abs(dir)
 	if err != nil { fmt.Println("Error:", err); return }
 
@@ -77,12 +70,10 @@ func (e *Editor) init_lsp(s tcell.Screen) {
 
 	lsp.start()
 	lsp.init(absolutePath)
-	lsp.didOpen(absolutePath + "/" + filename)
+	lsp.didOpen(path.Join(absolutePath, filename))
 
 	lspStatus := "lsp started, elapsed " + time.Since(start).String()
-	if !lsp.isReady {
-		lspStatus = "lsp is not ready yet"
-	}
+	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
 	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
 	e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
 	e.cleanLineAfter(s, len(status), ROWS+1)
@@ -169,7 +160,7 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 		if key == tcell.KeyTab { e.handleTabPress(); e.writeFile() }
 		if key == tcell.KeyCtrlT { } // TODO: tree
 		if key == tcell.KeyCtrlF { } // TODO: find
-		if key == tcell.KeyCtrlSpace { e.onCompletion(s); e.writeFile() }
+		if key == tcell.KeyCtrlSpace { e.onCompletion(s); s.Clear(); }
 
 	}
 }
@@ -181,123 +172,144 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 
 	// loop until escape or enter pressed
 	for !completionEnd {
-		start := time.Now()
-		dir := filepath.Dir(filename)
+		dir := path.Dir(filename)
 		absolutePath, _ := filepath.Abs(dir)
 		text := convertToString(true)
 		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
 		tabsCount := countTabsFromString(textline, c)
-		completion, _ := lsp.completion(absolutePath+"/"+filename, text, r, c-tabsCount)
+
+		start := time.Now()
+		completion, _ := lsp.completion(path.Join(absolutePath, filename), text, r, c-tabsCount)
 		elapsed := time.Since(start)
-
-		var options []string
-		for _, item := range completion.Result.Items { options = append(options, item.Label) }
-
-		if options == nil || len(options) == 0 { options = []string{"no options found"} }
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
 		status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
 		e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
 		e.cleanLineAfter(s, len(status), ROWS+1)
 
-		// Define the window  position and dimensions
-		atx := c + LS
-		aty := r + 1 - y
-		width := max(30, maxString(options))
-		height := minMany(5, len(options), ROWS-(r-y))
+		options := e.buildCompletionOptions(completion)
+
+		atx := c + LS; aty := r + 1 - y // Define the window  position and dimensions
+		width := max(30, maxString(options)) // width depends on max option len or 30 at min
+		height := minMany(5, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
 		style := tcell.StyleDefault
+		// if completion on last two rows of the screen - move window up
+		if r - y  >= ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
 		for !selectionEnd {
-			// show options
-			if selected < selectedOffset { selectedOffset = selected }
+			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
-			//Iterate over the completion options
-			for row := 0; row < aty+height; row++ {
-				if row >= len(options) || row >= height { break }
-				var option = options[row+selectedOffset]
-				style = e.getSelectedStyle(selected == row+selectedOffset, style)
-
-				s.SetContent(atx-1, row+aty, ' ', nil, style)
-				for col, char := range option { s.SetContent(col+atx, row+aty, char, nil, style) }
-				for col := len(option); col < width; col++ { // Fill the remaining space
-					s.SetContent(col+atx, row+aty, ' ', nil, style)
-				}
-			}
+			e.drawCompletion(s, atx,aty, height, width, options, selected, selectedOffset, style)
 			s.Show()
 
-			// handle events
-			ev := s.PollEvent()
-			switch ev := ev.(type) {
-			case *tcell.EventKey:
-				key := ev.Key()
-				if key == tcell.KeyEscape { selectionEnd = true; completionEnd = true }
-				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == tcell.KeyUp { selected = max(0, selected-1) }
-				if key == tcell.KeyRight { e.onRight(); e.drawEverything(s); selectionEnd = true }
-				if key == tcell.KeyLeft { e.onLeft(); e.drawEverything(s); selectionEnd = true }
-				if key == tcell.KeyEnter {
-					selectionEnd = true; completionEnd = true
-					from := completion.Result.Items[selected].TextEdit.Range.Start.Character
-					end := completion.Result.Items[selected].TextEdit.Range.End.Character
-					newText := completion.Result.Items[selected].TextEdit.NewText
-					// remove cars between from and and
-					content[r] = append(content[r][:int(from+1)], content[r][int(end)+1:]...)
-					c = int(from) + tabsCount
-					for _, char := range newText {
-						content[r] = insert(content[r], c, char)
-						c++
+			switch ev := s.PollEvent().(type) { // poll and handle event
+				case *tcell.EventKey:
+					key := ev.Key()
+					if key == tcell.KeyEscape { selectionEnd = true; completionEnd = true }
+					if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
+					if key == tcell.KeyUp { selected = max(0, selected-1) }
+					if key == tcell.KeyRight { e.onRight(); e.drawEverything(s); selectionEnd = true }
+					if key == tcell.KeyLeft { e.onLeft(); e.drawEverything(s); selectionEnd = true }
+					if key == tcell.KeyEnter {
+						selectionEnd = true; completionEnd = true
+						e.onCompletionEnd(s, completion, selected, tabsCount)
+						e.writeFile()
 					}
-					e.updateColors()
-					s.Show()
-					e.writeFile()
-				}
 			}
 		}
 	}
+}
 
-	s.Clear() // do not forget to clean
+func (e *Editor) buildCompletionOptions(completion CompletionResponse) []string {
+	var options []string
+	var maxOptlen = 5
+	for _, item := range completion.Result.Items {
+		if len(item.Label) > maxOptlen { maxOptlen = len(item.Label) }
+	}
+	for _, item := range completion.Result.Items {
+		options = append(options, formatText(item.Label, item.Detail, maxOptlen))
+	}
+
+	if options == nil || len(options) == 0 { options = []string{"no options found"} }
+	return options
+}
+
+func (e *Editor) drawCompletion(s tcell.Screen,
+	atx int, aty int, height int, width int, options []string, selected int, selectedOffset int, style tcell.Style) {
+	for row := 0; row < aty+height; row++ {
+		if row >= len(options) || row >= height {
+			break
+		}
+		var option = options[row+selectedOffset]
+		style = e.getSelectedStyle(selected == row+selectedOffset, style)
+
+		s.SetContent(atx-1, row+aty, ' ', nil, style)
+		for col, char := range option {
+			s.SetContent(col+atx, row+aty, char, nil, style)
+		}
+		for col := len(option); col < width; col++ { // Fill the remaining space
+			s.SetContent(col+atx, row+aty, ' ', nil, style)
+		}
+	}
+}
+
+func (e *Editor) onCompletionEnd(s tcell.Screen, completion CompletionResponse, selected int, tabsCount int) {
+	item := completion.Result.Items[selected]
+	from := item.TextEdit.Range.Start.Character
+	end := item.TextEdit.Range.End.Character
+	newText := item.TextEdit.NewText
+
+	// remove chars between from and end
+	content[r] = append(content[r][:int(from+1)], content[r][int(end)+1:]...)
+	c = int(from) + tabsCount // move cursor to beginning
+	// add newText to chars
+	for _, char := range newText {
+		content[r] = insert(content[r], c, char)
+		c++
+	}
+	e.updateColors(); s.Show(); e.writeFile()
 }
 
 func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Style {
-	if isSelected {
-		style = style.Background(tcell.ColorHotPink)
-	} else {
+	if isSelected { style = style.Background(tcell.ColorHotPink) } else {
 		style = tcell.StyleDefault // .Background(tcell.ColorDimGray)
 	}
 	return style
 }
 
 func (e *Editor) drawEverything(s tcell.Screen) {
+	// calculate scrolling offsets for scrolling vertically and horizontally
 	if r < y { y = r }
-	if r >= y+ROWS { y = r - ROWS }
+	if r >= y + ROWS { y = r - ROWS }
 	if c < x { x = c }
-	if c >= x+COLUMNS { x = c - COLUMNS + 1 }
+	if c >= x + COLUMNS { x = c - COLUMNS + 1 }
 
+	// draw line number and chars according to scrolling offsets
 	for row := 0; row <= ROWS; row++ {
-		ry := row + y
+		ry := row + y  // index to get right row in characters buffer by scrolling offset y
 		e.cleanLineAfter(s, 0, row)
 		if row >= len(content) || ry >= len(content) { break }
 		e.drawLineNumber(s, ry, row)
 
 		for col := 0; col <= COLUMNS; col++ {
-			cx := col + x
+			cx := col + x // index to get right column in characters buffer by scrolling offset x
 			if cx >= len(content[ry]) { break }
 			ch := content[ry][cx]
 			style := e.getStyle(ry, cx)
-			s.SetContent(col+LS, row, ch, nil, style)
+			s.SetContent(col + LS, row, ch, nil, style)
 		}
 	}
 
+	// draw status line
 	lspStatus := ""
 	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
-	e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
-	e.cleanLineAfter(s, len(status), ROWS+1)
-	s.ShowCursor(c-x+LS, r-y)
-
+	status := fmt.Sprintf("%d %d %s %s", r + 1, c + 1, filename, lspStatus)
+	e.drawText(s, 0, ROWS + 1, COLUMNS, ROWS + 1, status)
+	e.cleanLineAfter(s, len(status), ROWS + 1)
+	s.ShowCursor(c - x + LS, r - y)  // show cursor
 }
 
 func (e *Editor) getStyle(ry int, cx int) tcell.Style {
@@ -439,9 +451,9 @@ func (e *Editor) writeFile() {
 	if err != nil { fmt.Println("Error writing to file:", err) }
 
 	if lsp.isReady {
-		dir := filepath.Dir(filename)
+		dir := path.Dir(filename)
 		absolutePath, _ := filepath.Abs(dir)
-		go lsp.didOpen(absolutePath + "/" + filename) // todo ???
+		go lsp.didOpen(path.Join(absolutePath, filename) )// todo ???
 	}
 }
 
@@ -652,18 +664,4 @@ func countTabsInRow(i int) int {
 	}
 	return count
 }
-func countTabsInRowBefore(i int, before int) int {
-	row := content[i]
-	count := 0
-	for index, char := range row {
-		if index > before {
-			return count
-		}
-		if char == ' ' {
-			count++
-		} else {
-			return count
-		}
-	}
-	return count
-}
+

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"unicode/utf8"
 )
 
 func max(x, y int) int {
@@ -137,28 +139,6 @@ func GreaterEqual(x, y, x1, y1 int) bool {
 	return false
 }
 
-func countConsecutiveSpaces(runes []rune, before int) int {
-	count := 0
-	consecutiveCount := 0
-
-	for index, rrune := range runes {
-		if index > before {
-			return count
-		}
-		if rrune == ' ' {
-			consecutiveCount++
-		} else {
-			if consecutiveCount >= 2 {
-				count++
-			}
-		}
-	}
-
-	if consecutiveCount >= 2 {
-		count++
-	}
-	return count
-}
 
 func maxString(arr []string) int {
 	maxLength := 0
@@ -172,21 +152,26 @@ func maxString(arr []string) int {
 
 func readFileToString(filePath string) (string, error) {
 	filecontent, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", err
-	}
+	if err != nil { return "", err }
 	return string(filecontent), nil
 }
 
 func countTabsFromString(str string, stopIndex int) int {
 	count := 0
 	for i, char := range str {
-		if i > stopIndex {
-			break
-		}
-		if char == '\t' {
-			count++
-		}
+		if i > stopIndex { break }
+		if char == '\t' { count++ }
 	}
 	return count
+}
+
+func formatText(left, right string, maxWidth int) string {
+	left = fmt.Sprintf("%-*s", maxWidth, left)
+	right = fmt.Sprintf("%s",  right)
+	return fmt.Sprintf("%s %s", left, right)
+}
+func limitString(s string, maxLength int) string {
+	if utf8.RuneCountInString(s) <= maxLength { return s }
+	runes := []rune(s)
+	return string(runes[:maxLength])
 }

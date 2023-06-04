@@ -8,11 +8,11 @@ import (
 	"time"
 )
 
-func TestColorize(t *testing.T) {
+func TestCompletion(t *testing.T) {
 	dir, _ := os.Getwd()
 	file := dir + "/lsp_test.go"
 	text, _ := readFileToString(file)
-
+	
 	fmt.Println("starting lsp server")
 
 	lsp := LspClient{}
