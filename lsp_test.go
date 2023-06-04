@@ -7,14 +7,13 @@ import (
 	"time"
 )
 
-
 func TestCompletion(t *testing.T) {
 	dir, _ := os.Getwd()
 	file := dir + "/lsp_test.go"
 	text, _ := readFileToString(file)
 	
 	fmt.Println("starting lsp server")
-	fmt.Println("")
+	
 	lsp := LspClient{}
 	lsp.start()
 	lsp.init(dir)
@@ -25,8 +24,7 @@ func TestCompletion(t *testing.T) {
 	fmt.Println("completion", completion)
 
 	var options []string
-	items := completion.Result.Items
-	for _, item := range items {
+	for _, item := range completion.Result.Items {
 		options = append(options, item.Label)
 	}
 
