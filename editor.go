@@ -271,32 +271,20 @@ func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Styl
 }
 
 func (e *Editor) drawEverything(s tcell.Screen) {
-	if r < y {
-		y = r
-	}
-	if r >= y+ROWS {
-		y = r - ROWS
-	}
-	if c < x {
-		x = c
-	}
-	if c >= x+COLUMNS {
-		x = c - COLUMNS + 1
-	}
+	if r < y { y = r }
+	if r >= y+ROWS { y = r - ROWS }
+	if c < x { x = c }
+	if c >= x+COLUMNS { x = c - COLUMNS + 1 }
 
 	for row := 0; row <= ROWS; row++ {
 		ry := row + y
 		e.cleanLineAfter(s, 0, row)
-		if row >= len(content) || ry >= len(content) {
-			break
-		}
+		if row >= len(content) || ry >= len(content) { break }
 		e.drawLineNumber(s, ry, row)
 
 		for col := 0; col <= COLUMNS; col++ {
 			cx := col + x
-			if cx >= len(content[ry]) {
-				break
-			}
+			if cx >= len(content[ry]) { break }
 			ch := content[ry][cx]
 			style := e.getStyle(ry, cx)
 			s.SetContent(col+LS, row, ch, nil, style)
@@ -304,9 +292,7 @@ func (e *Editor) drawEverything(s tcell.Screen) {
 	}
 
 	lspStatus := ""
-	if !lsp.isReady {
-		lspStatus = "lsp is not ready yet"
-	}
+	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
 	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
 	e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
 	e.cleanLineAfter(s, len(status), ROWS+1)
@@ -317,12 +303,8 @@ func (e *Editor) drawEverything(s tcell.Screen) {
 func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 	var style = tcell.StyleDefault
 	color := colors[ry][cx]
-	if color > 0 {
-		style = tcell.StyleDefault.Foreground(tcell.Color(color))
-	}
-	if isUnderSelection(cx, ry) {
-		style = style.Background(56)
-	}
+	if color > 0 { style = tcell.StyleDefault.Foreground(tcell.Color(color)) }
+	if isUnderSelection(cx, ry) { style = style.Background(56) }
 	return style
 }
 
@@ -330,18 +312,14 @@ func (e *Editor) drawLineNumber(s tcell.Screen, brw int, row int) {
 	lineNumber := strconv.Itoa(brw + 1)
 	var style = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
 
-	if brw == r {
-		style = tcell.StyleDefault
-	}
+	if brw == r { style = tcell.StyleDefault }
 	for index, char := range lineNumber {
 		s.SetContent(index, row, char, nil, style)
 	}
 }
 
 func (e *Editor) addChar(ch rune) {
-	if ssx != -1 {
-		e.cut()
-	}
+	if ssx != -1 { e.cut() }
 
 	content[r] = insert(content[r], c, ch)
 	c++
@@ -349,35 +327,21 @@ func (e *Editor) addChar(ch rune) {
 }
 
 func (e *Editor) onDown() {
-	if len(content) == 0 {
-		return
-	}
-	if r+1 >= len(content) {
-		return
-	}
+	if len(content) == 0 { return }
+	if r+1 >= len(content) { return }
 	r++
-	if c > len(content[r]) {
-		c = len(content[r])
-	} // fit to content
+	if c > len(content[r]) { c = len(content[r]) } // fit to content
 }
 
 func (e *Editor) onUp() {
-	if len(content) == 0 {
-		return
-	}
-	if r == 0 {
-		return
-	}
+	if len(content) == 0 { return }
+	if r == 0 { return }
 	r--
-	if c > len(content[r]) {
-		c = len(content[r])
-	} // fit to content
+	if c > len(content[r]) { c = len(content[r]) } // fit to content
 }
 
 func (e *Editor) onLeft() {
-	if len(content) == 0 {
-		return
-	}
+	if len(content) == 0 { return }
 
 	if c != 0 {
 		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
@@ -392,9 +356,7 @@ func (e *Editor) onLeft() {
 	}
 }
 func (e *Editor) onRight() {
-	if len(content) == 0 {
-		return
-	}
+	if len(content) == 0 { return }
 
 	if c < len(content[r]) {
 		if len(content[r]) > c+1 && content[r][c] == ' ' && content[r][c+1] == ' ' {
@@ -469,16 +431,12 @@ func (e *Editor) cleanLineAfter(s tcell.Screen, x, y int) {
 func (e *Editor) writeFile() {
 	// Convert content to a string
 	contentStr := ""
-	for _, row := range content {
-		contentStr += string(row) + "\n"
-	}
+	for _, row := range content { contentStr += string(row) + "\n" }
 	contentStr = strings.ReplaceAll(contentStr, "  ", "\t")
 
 	// Write content to a file
 	err := os.WriteFile(filename, []byte(contentStr), 0644)
-	if err != nil {
-		fmt.Println("Error writing to file:", err)
-	}
+	if err != nil { fmt.Println("Error writing to file:", err) }
 
 	if lsp.isReady {
 		dir := filepath.Dir(filename)
@@ -491,14 +449,8 @@ func (e *Editor) readFile(filename string) string {
 	file, err := os.Open(filename)
 	if err != nil {
 		file, err := os.Create(filename)
-		if err != nil {
-			fmt.Printf("Failed to create file: %v\n", err)
-		}
-
+		if err != nil {fmt.Printf("Failed to create file: %v\n", err)}
 		defer file.Close()
-		//
-		//fmt.Fprintf(os.Stderr, "Failed to open file: %v", err)
-		//os.Exit(1)
 	}
 	defer file.Close()
 
