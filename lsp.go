@@ -9,25 +9,35 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // LspClient represents a client for communicating with a Language Server Protocol (LSP) server.
 type LspClient struct {
-	process   *exec.Cmd      // The underlying process running the LSP server.
-	stdin     io.WriteCloser // The standard input pipe for sending data to the LSP server.
-	stdout    io.ReadCloser
-	responses map[int]map[string]interface{}
-	isReady   bool
-	id        int
+	process        *exec.Cmd      // The underlying process running the LSP server.
+	stdin          io.WriteCloser // The standard input pipe for sending data to the LSP server.
+	stdout         io.ReadCloser
+	responses      map[int]map[string]interface{}
+	responsesMutex sync.Mutex
+	isReady   	   bool
+	id        	   int
+	lspCmd 	      []string
 }
 
-func (this *LspClient) start() {
+func (this *LspClient) start(language string) bool {
 	this.isReady = false
-	this.process = exec.Command(
-		"gopls",
-		"-logfile", "gopls.log", "-rpc.trace",
-	)
+
+	l := strings.ToLower(language)
+	if l == "go" { this.lspCmd = []string {"gopls"} }
+	if l == "python" { this.lspCmd = []string { "pylsp"} }
+	if l == "typescript" { this.lspCmd = []string { "typescript-language-server", "--stdio"} }
+	//if l == "typescript" { this.lspCmd = []string { "deno", "lsp"} }
+
+	if len(this.lspCmd) == 0  { return false }
+
+	this.process = exec.Command( this.lspCmd[0], this.lspCmd[1:]...)
+
 	var stdin, err = this.process.StdinPipe()
 	if err != nil {
 		fmt.Println(err)
@@ -37,7 +47,7 @@ func (this *LspClient) start() {
 	stdout, err := this.process.StdoutPipe()
 	if err != nil {
 		fmt.Println(err)
-		return
+		return false
 	}
 	this.stdout = stdout
 
@@ -50,6 +60,8 @@ func (this *LspClient) start() {
 	}
 
 	this.responses = make(map[int]map[string]interface{})
+
+	return true
 }
 
 func (this LspClient) wait() {
@@ -73,18 +85,20 @@ func (this *LspClient) send(o interface{}) error {
 func (this *LspClient) init(dir string) {
 	this.id = 0
 	initializeRequest := InitializeRequest{
-		ID:     0,
+		ID:     0, JSONRPC: "2.0",
 		Method: "initialize",
 		Params: InitializeParams{
 			RootURI: "file://" + dir,
+			RootPath: dir,
 			WorkspaceFolders: []WorkspaceFolder{
 				{
-					Name: "root",
+					Name: "edgo",
 					URI:  "file://" + dir,
 				},
 			},
-			Capabilities:          nil,
-			InitializationOptions: nil,
+			Capabilities: capabilities,
+			ClientInfo: ClientInfo{ Name: "edgo",Version: "1.0.0"},
+			//InitializationOptions: nil,
 		},
 	}
 
@@ -260,9 +274,13 @@ func (this *LspClient) waitForResponseInMap(id int) map[string]interface{} {
 	/// wait for response for some id
 
 	for {
+		//this.responsesMutex.Lock()
 		value, ok := this.responses[id]
+		//this.responsesMutex.Lock()
 		if ok {
+			//this.responsesMutex.Lock()
 			delete(this.responses, id)
+			//this.responsesMutex.Lock()
 			return value
 		}
 	}
@@ -301,7 +319,11 @@ func (this *LspClient) read_stdout(addtoMap bool) (map[string]interface{}, strin
 
 			if value, found := responseJSON["id"]; found {
 				if id, ok := value.(float64); ok {
-					if addtoMap { this.responses[int(id)] = responseJSON}
+					if addtoMap {
+						this.responsesMutex.Lock()
+						this.responses[int(id)] = responseJSON
+						this.responsesMutex.Unlock()
+					}
 					return responseJSON, line
 				}
 			}

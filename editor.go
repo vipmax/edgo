@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,18 +23,39 @@ var y, x = 0, 0          // offset for scrolling for row and column
 var LS = 5               // left shift for line number
 var ssx, ssy = -1, -1    // left shift for line number
 var filename = "main.go" // file name to show
+var directory = "" 		 // directory
 var colors [][]int       // characters colors
 var highlighter = Highlighter{}
 var lsp = LspClient{}
+var lang = ""
 
 type Editor struct {
 
 }
 
 func (e *Editor) start() {
-	if len(os.Args) > 1 { filename = os.Args[1] }
-	code := e.readFile(filename)
+	if len(os.Args) > 1 {
+		filename = os.Args[1]
+	} else {
+		os.Exit(130)
+	}
+
+	if path.IsAbs(filename) {
+		absoluteDir, err := filepath.Abs(path.Dir(filename))
+		if err != nil { fmt.Println("Error:", err); return }
+		directory = absoluteDir
+		filename = filepath.Base(filename)
+	} else {
+		absoluteDir, err := filepath.Abs(path.Dir(filename))
+		if err != nil { fmt.Println("Error:", err); return }
+		directory = absoluteDir
+		filename = filepath.Base(filename)
+	}
+
+	code := e.readFile(path.Join(directory, filename))
 	colors = highlighter.colorize(code, filename)
+
+	lang = detectLang(filename)
 
 	s := e.initScreen()
 
@@ -62,19 +84,17 @@ func (e *Editor) initScreen() tcell.Screen {
 }
 
 func (e *Editor) init_lsp(s tcell.Screen) {
-	dir := path.Dir(filename)
-	absolutePath, err := filepath.Abs(dir)
-	if err != nil { fmt.Println("Error:", err); return }
-
 	start := time.Now()
 
-	lsp.start()
-	lsp.init(absolutePath)
-	lsp.didOpen(path.Join(absolutePath, filename))
+	started := lsp.start(lang)
+	if !started { return }
+
+	lsp.init(directory)
+	lsp.didOpen(path.Join(directory, filename))
 
 	lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
+	status := fmt.Sprintf("%d %d %s %s %s", r+1, c+1, path.Join(directory, filename), lang, lspStatus)
 	e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
 	e.cleanLineAfter(s, len(status), ROWS+1)
 	s.Show()
@@ -172,18 +192,17 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 
 	// loop until escape or enter pressed
 	for !completionEnd {
-		dir := path.Dir(filename)
-		absolutePath, _ := filepath.Abs(dir)
 		text := convertToString(true)
 		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
 		tabsCount := countTabsFromString(textline, c)
 
 		start := time.Now()
-		completion, _ := lsp.completion(path.Join(absolutePath, filename), text, r, c-tabsCount)
+
+		completion, _ := lsp.completion(path.Join(directory, filename), text, r, c-tabsCount)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
-		status := fmt.Sprintf("%d %d %s %s", r+1, c+1, filename, lspStatus)
+		status := fmt.Sprintf("%d %d %s %s %s", r+1, c+1, path.Join(directory, filename), lang, lspStatus)
 		e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
 		e.cleanLineAfter(s, len(status), ROWS+1)
 
@@ -230,6 +249,12 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 func (e *Editor) buildCompletionOptions(completion CompletionResponse) []string {
 	var options []string
 	var maxOptlen = 5
+
+	prev := findPrevWord(content[r], c)
+	filterword := string(content[r][prev:c])
+
+	sortItemsByMatchCount(&completion.Result, filterword)
+
 	for _, item := range completion.Result.Items {
 		if len(item.Label) > maxOptlen { maxOptlen = len(item.Label) }
 	}
@@ -240,6 +265,25 @@ func (e *Editor) buildCompletionOptions(completion CompletionResponse) []string 
 	if options == nil || len(options) == 0 { options = []string{"no options found"} }
 	return options
 }
+
+func sortItemsByMatchCount(cr *CompletionResult, matchStr string) {
+	sort.Slice(cr.Items, func(i, j int) bool {
+		return scoreMatches(cr.Items[i].Label, matchStr) > scoreMatches(cr.Items[j].Label, matchStr)
+	})
+}
+
+// scoreMatches gives more weight to matches at the beginning of the string.
+func scoreMatches(src, matchStr string) int {
+	score := 0
+	indices := strings.Index(src, matchStr)
+	if indices == 0 {
+		// If the match is at the beginning, we give it a higher score.
+		score += len(src)
+	}
+	score += strings.Count(src, matchStr)
+	return score
+}
+
 
 func (e *Editor) drawCompletion(s tcell.Screen,
 	atx int, aty int, height int, width int, options []string, selected int, selectedOffset int, style tcell.Style) {
@@ -267,11 +311,26 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
 	tabsCount := countTabsFromString(textline, c)
 
-	// move cursor to beginning
-	c = int(from) + tabsCount
+	if item.TextEdit.Range.Start.Character != 0 && item.TextEdit.Range.End.Character != 0 {
+		// text edit supported by lsp server
+		// move cursor to beginning
+		c = int(from) + tabsCount
+		// remove chars between from and end
+		content[r] = append(content[r][:c], content[r][int(end) + tabsCount:]...)
+		newText = item.TextEdit.NewText
+	}
 
-	// remove chars between from and end
-	content[r] = append(content[r][:c], content[r][int(end) + tabsCount:]...)
+	if from == 0 && end == 0 {
+		// text edit not supported by lsp
+		prev := findPrevWord(content[r], c)
+		next := findNextWord(content[r], c)
+		from = float64(prev)
+		newText = item.InsertText
+		if len(newText) == 0 { newText = item.Label }
+		end = float64(next)
+		c = prev
+		content[r] = append(content[r][:c], content[r][int(end) :]...)
+	}
 
 	// add newText to chars
 	for _, char := range newText {
@@ -312,9 +371,9 @@ func (e *Editor) drawEverything(s tcell.Screen) {
 	}
 
 	// draw status line
-	lspStatus := ""
-	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	status := fmt.Sprintf("%d %d %s %s", r + 1, c + 1, filename, lspStatus)
+	//lspStatus := ""
+	//if !lsp.isReady { lspStatus = "lsp is not ready yet" }
+	status := fmt.Sprintf("%d %d %s %s ", r+1, c+1, path.Join(directory, filename), lang)
 	e.drawText(s, 0, ROWS + 1, COLUMNS, ROWS + 1, status)
 	e.cleanLineAfter(s, len(status), ROWS + 1)
 	s.ShowCursor(c - x + LS, r - y)  // show cursor
@@ -344,14 +403,24 @@ func (e *Editor) addChar(ch rune) {
 	content[r] = insert(content[r], c, ch)
 	c++
 
-	if ch == '(' { content[r] = insert(content[r], c, ')'); }
-	if ch == '{' { content[r] = insert(content[r], c, '}'); }
-	if ch == '[' { content[r] = insert(content[r], c, ']'); }
-	if ch == '"' { content[r] = insert(content[r], c, '"'); }
-	if ch == '\''{ content[r] = insert(content[r], c, '\''); }
-	if ch == '`' { content[r] = insert(content[r], c, '`'); }
-
+	e.maybeAddPair(ch)
 	e.updateColors()
+}
+
+func (e *Editor) maybeAddPair(ch rune) {
+	pairMap := map[rune]rune{
+		'(': ')', '{': '}', '[': ']',
+		'"': '"', '\'': '\'', '`': '`',
+	}
+
+	if closeChar, found := pairMap[ch]; found {
+		noMoreChars := c >= len(content[r])
+		isSpaceNext := c < len(content[r]) && content[r][c] == ' '
+
+		if noMoreChars || isSpaceNext {
+			content[r] = insert(content[r], c, closeChar)
+		}
+	}
 }
 func (e *Editor) onDelete() {
 	if c > 0 {
@@ -464,13 +533,11 @@ func (e *Editor) writeFile() {
 	contentStr = strings.ReplaceAll(contentStr, "  ", "\t")
 
 	// Write content to a file
-	err := os.WriteFile(filename, []byte(contentStr), 0644)
+	err := os.WriteFile(path.Join(directory, filename), []byte(contentStr), 0644)
 	if err != nil { fmt.Println("Error writing to file:", err) }
 
 	if lsp.isReady {
-		dir := path.Dir(filename)
-		absolutePath, _ := filepath.Abs(dir)
-		go lsp.didOpen(path.Join(absolutePath, filename) )// todo ???
+		go lsp.didOpen(path.Join(directory, filename))// todo ???
 	}
 }
 

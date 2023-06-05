@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/alecthomas/chroma/lexers"
 	"os"
 	"unicode/utf8"
 )
@@ -174,4 +175,12 @@ func limitString(s string, maxLength int) string {
 	if utf8.RuneCountInString(s) <= maxLength { return s }
 	runes := []rune(s)
 	return string(runes[:maxLength])
+}
+
+func detectLang(filename string) string {
+	lexer := lexers.Match(filename)
+	if lexer == nil { return "" }
+	config := lexer.Config()
+	if config == nil { return "" }
+	return config.Name
 }

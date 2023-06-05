@@ -17,14 +17,15 @@ type InitializeParams struct {
 	ClientInfo            ClientInfo        `json:"clientInfo,omitempty"`
 	Trace                 string            `json:"trace,omitempty"`
 	InitializationOptions interface{}       `json:"initializationOptions,omitempty"`
-	Capabilities          interface{}       `json:"capabilities"`
+	Capabilities          Capabilities      `json:"capabilities,omitempty"`
 	WorkDoneToken         string            `json:"workDoneToken,omitempty"`
 }
 
 type InitializeRequest struct {
-	ID     int              `json:"id"`
-	Method string           `json:"method"`
-	Params InitializeParams `json:"params"`
+	ID      int              `json:"id"`
+	JSONRPC string           `json:"jsonrpc"`
+	Method  string           `json:"method"`
+	Params  InitializeParams `json:"params"`
 }
 
 type Position struct {
@@ -101,17 +102,20 @@ type CompletionResult struct {
 
 type CompletionItem struct {
 	Label            string        `json:"label"`
-	Kind             float64           `json:"kind"`
+	Kind             float64       `json:"kind"`
 	Detail           string        `json:"detail"`
 	Preselect        bool          `json:"preselect"`
 	SortText         string        `json:"sortText"`
+	InsertText       string        `json:"insertText"`
 	FilterText       string        `json:"filterText"`
-	InsertTextFormat float64           `json:"insertTextFormat"`
+	InsertTextFormat float64       `json:"insertTextFormat"`
 	TextEdit         TextEdit      `json:"textEdit"`
 }
 
 type TextEdit struct {
 	Range   Range  `json:"range"`
+	Replace Range  `json:"replace"`
+	Insert  Range  `json:"insert"`
 	NewText string `json:"newText"`
 }
 
@@ -123,4 +127,82 @@ type Range struct {
 type PositionResponse struct {
 	Line      float64 `json:"line"`
 	Character float64 `json:"character"`
+}
+
+
+
+type Capabilities struct {
+	CapabilitiesTextDocument CapabilitiesTextDocument `json:"textDocument"`
+}
+
+type CapabilitiesTextDocument struct {
+	Hover              Hover              `json:"hover"`
+	PublishDiagnostics PublishDiagnostics `json:"publishDiagnostics"`
+	SignatureHelp      SignatureHelp      `json:"signatureHelp"`
+	Completion         Completion         `json:"completion"`
+}
+
+type Hover struct {
+	ContentFormat []string `json:"contentFormat"`
+}
+
+type PublishDiagnostics struct {
+	RelatedInformation     bool `json:"relatedInformation"`
+	VersionSupport         bool `json:"versionSupport"`
+	CodeDescriptionSupport bool `json:"codeDescriptionSupport"`
+	DataSupport            bool `json:"dataSupport"`
+}
+
+type SignatureHelp struct {
+	SignatureInformation SignatureInformation `json:"signatureInformation"`
+}
+
+type SignatureInformation struct {
+	DocumentationFormat []string `json:"documentationFormat"`
+}
+
+type Completion struct {
+	CapabilitiesCompletionItem CapabilitiesCompletionItem `json:"completionItem"`
+}
+
+type CapabilitiesCompletionItem struct {
+	ResolveProvider     bool               `json:"resolveProvider"`
+	SnippetSupport      bool               `json:"snippetSupport"`
+	InsertReplaceSupport bool              `json:"insertReplaceSupport"`
+	LabelDetailsSupport bool               `json:"labelDetailsSupport"`
+	ResolveSupport      ResolveSupport     `json:"resolveSupport"`
+}
+
+type ResolveSupport struct {
+	Properties []string `json:"properties"`
+}
+
+var capabilities = Capabilities{
+	CapabilitiesTextDocument: CapabilitiesTextDocument{
+		Hover: Hover{
+			ContentFormat: []string{"plaintext", "markdown"},
+		},
+		PublishDiagnostics: PublishDiagnostics{
+			RelatedInformation:     false,
+			VersionSupport:         false,
+			CodeDescriptionSupport: true,
+			DataSupport:            true,
+		},
+		SignatureHelp: SignatureHelp{
+			SignatureInformation: SignatureInformation{
+				DocumentationFormat: []string{"plaintext", "markdown"},
+			},
+		},
+		Completion: Completion{
+			CapabilitiesCompletionItem: CapabilitiesCompletionItem{
+				ResolveProvider:      true,
+				//SnippetSupport:       true,
+				InsertReplaceSupport: true,
+				LabelDetailsSupport:  true,
+				ResolveSupport: ResolveSupport{
+					Properties: []string{"documentation", "detail", "additionalTextEdits"},
+				},
+			},
+		},
+	},
 }
