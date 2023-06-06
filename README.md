@@ -38,21 +38,68 @@ edgo [filename]
 edgo ~/.zshrc 
 ```
 ### Lsp
+Following languages are supported:
 
-Install lsp for `go`
+`go`
 ```shell  
 go install golang.org/x/tools/gopls@latest
 ```
 
-Install lsp for `python`
+`python`
 ```shell  
 pip install "python-lsp-server[all]"
 ```
 
-Install lsp for `typescipt`
+`javascript/typescript`
 ```shell  
-npm install -g typescript typescript-language-server
+npm i -g typescript typescript-language-server
 ```
+
+`html`
+```shell  
+npm i -g vscode-langservers-extracted
+```
+
+`vue`
+```shell  
+npm i -g vls
+```
+
+`rust`
+```shell  
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup component add rust-analyzer
+# note: it starts slowly (3sec), but works good 
+```
+
+`c/c++`
+```shell  
+glang, go to https://clangd.llvm.org/installation.html
+```
+
+`java`
+```shell  
+# jdtls requires at least Java 17
+# check also JAVA_HOME must be set 
+brew install jdtls
+```
+
+`scala`
+```shell  
+# https://scalameta.org/metals/
+# Install Coursier
+# Run then 
+coursier install metals
+# note: so slow :(
+```
+
+`kotlin`
+```shell  
+# https://github.com/fwcd/kotlin-language-server
+brew install kotlin-language-server
+# note: slow :(
+```
+
 
 ### Notes:  
 Add alias to  shell environment `nano ~/.zshrc` - `alias edgo="./$pwd./edgo"`

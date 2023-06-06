@@ -206,3 +206,8 @@ var capabilities = Capabilities{
 		},
 	},
 }
+
+
+type LspSettings struct {
+	Langs []map[string]string `yaml:"langs"`
+}

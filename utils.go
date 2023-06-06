@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/alecthomas/chroma/lexers"
 	"os"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -182,5 +183,5 @@ func detectLang(filename string) string {
 	if lexer == nil { return "" }
 	config := lexer.Config()
 	if config == nil { return "" }
-	return config.Name
+	return strings.ToLower(config.Name)
 }

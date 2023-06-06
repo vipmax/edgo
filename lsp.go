@@ -25,39 +25,45 @@ type LspClient struct {
 	lspCmd 	      []string
 }
 
+var langCommands = map[string][]string{
+	"go":         {"gopls"},
+	"python":     {"pylsp"},
+	"typescript": {"typescript-language-server", "--stdio"},
+	"javascript": {"typescript-language-server", "--stdio"},
+	"html": 	  {"vscode-html-language-server", "--stdio"},
+	"vue": 	  	  {"vls"},
+	"rust": 	  {"rust-analyzer"},
+	"c": 	  	  {"clangd"},
+	"c++": 	  	  {"clangd"},
+	"scala": 	  {"metals", "-Xms1G -Xmx4G -Dmetals.ammoniteJvmProperties=metals.ammoniteJvmProperties=-Xmx4G"},
+	"kotlin": 	  {"kotlin-language-server"},
+	"java": 	  {"jdtls"},
+}
+
 func (this *LspClient) start(language string) bool {
 	this.isReady = false
 
-	l := strings.ToLower(language)
-	if l == "go" { this.lspCmd = []string {"gopls"} }
-	if l == "python" { this.lspCmd = []string { "pylsp"} }
-	if l == "typescript" { this.lspCmd = []string { "typescript-language-server", "--stdio"} }
-	//if l == "typescript" { this.lspCmd = []string { "deno", "lsp"} }
+	// Getting the lsp command with args for a language:
+	lspCmd, ok := langCommands[strings.ToLower(language)]
+	if !ok || len(lspCmd) == 0 { return false }  // lang is not supported.
 
-	if len(this.lspCmd) == 0  { return false }
-
+	this.lspCmd = lspCmd
 	this.process = exec.Command( this.lspCmd[0], this.lspCmd[1:]...)
 
 	var stdin, err = this.process.StdinPipe()
-	if err != nil {
-		fmt.Println(err)
-	}
+	if err != nil { fmt.Println(err) }
 	this.stdin = stdin
 
 	stdout, err := this.process.StdoutPipe()
-	if err != nil {
-		fmt.Println(err)
-		return false
-	}
+	if err != nil { fmt.Println(err); return false }
 	this.stdout = stdout
 
+	// for debug, todo write logs to file
 	//this.process.Stdout = os.Stdout
 	//this.process.Stderr = os.Stderr
 
 	err = this.process.Start()
-	if err != nil {
-		fmt.Println("An error occured: ", err)
-	}
+	if err != nil { fmt.Println("An error occured: ", err) }
 
 	this.responses = make(map[int]map[string]interface{})
 

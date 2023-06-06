@@ -30,38 +30,35 @@ func (h Highlighter) colorize(code string, filename string) [][]int {
 	}
 
 	tokensIntoLines := chroma.SplitTokensIntoLines(iterator.Tokens())
-	colors := [][]int{}
+	textColors := [][]int{}
 
 	for _, tokens := range tokensIntoLines {
-		color := []int{}
+		lineColors := []int{}
 		for _, token := range tokens {
 			//fmt.Printf("Line %d\nToken: %s\nType: %s\n\n", i+1, token.Value, token.Type)
-			for j := range token.Value {
-				j = j + 1
-				var c = 0
-
-				if token.Type == chroma.Keyword { c = int(tcell.ColorHotPink) }
-				if token.Type == chroma.KeywordType { c = int(tcell.ColorAquaMarine) }
-				if token.Type == chroma.KeywordDeclaration { c = int(tcell.ColorAquaMarine) }
-				if token.Type == chroma.KeywordNamespace { c = int(tcell.ColorHotPink) }
-				if token.Type == chroma.Name { c = int(tcell.ColorAquaMarine) }
-				if token.Type == chroma.NameTag { c = int(tcell.ColorAquaMarine) }
-				if token.Type == chroma.String { c = int(tcell.ColorLightGreen) }
-				if token.Type == chroma.StringChar { c = int(tcell.ColorLightGreen) }
-				if token.Type == chroma.Literal ||
-					token.Type == chroma.LiteralString ||
-					token.Type == chroma.LiteralStringDouble {
-					c = int(tcell.ColorLightGreen)
-				}
-				if token.Type == chroma.CommentSingle { c = int(tcell.ColorDimGray) }
-				if token.Type == chroma.NumberInteger { c = int(tcell.ColorDeepSkyBlue) }
-				if token.Type == chroma.NameFunction { c = int(tcell.ColorAquaMarine) }
-
-				color = append(color, c)
+			for range token.Value {
+				lineColors = append(lineColors, int(getColor(token.Type)))
 			}
 		}
-		colors = append(colors, color)
+		textColors = append(textColors, lineColors)
 	}
 
-	return colors
+	return textColors
+}
+
+func getColor(tokenType chroma.TokenType) tcell.Color {
+	switch tokenType {
+	case chroma.Keyword, chroma.KeywordNamespace:
+		return tcell.ColorHotPink
+	case chroma.KeywordType, chroma.KeywordDeclaration, chroma.KeywordReserved, chroma.Name, chroma.NameTag, chroma.NameFunction:
+		return tcell.ColorAquaMarine
+	case chroma.String, chroma.StringChar, chroma.Literal, chroma.LiteralStringDouble:
+		return tcell.ColorLightGreen
+	case chroma.CommentSingle, chroma.CommentMultiline:
+		return tcell.ColorDimGray
+	case chroma.NumberInteger:
+		return tcell.ColorDeepSkyBlue
+	default:
+		return tcell.ColorWhite // Default color
+	}
 }

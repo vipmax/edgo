@@ -83,3 +83,28 @@ func TestTypescriptCompletion(t *testing.T) {
 	fmt.Println("ending lsp server")
 }
 
+func TestRustCompletion(t *testing.T) {
+	dir := "/Users/max/apps/rust/lsp-examples/"
+	file := path.Join(dir, "lsp-test-ts.ts")
+	text, _ := readFileToString(file)
+
+	fmt.Println("starting lsp server for ", file)
+
+	lsp := LspClient{}
+	lsp.start("typescript")
+	lsp.init(dir)
+	lsp.didOpen(file)
+
+	completion, _ := lsp.completion(file, text, 31-1, 5)
+	fmt.Println("completion", completion)
+
+	var options []string
+	items := completion.Result.Items
+	for _, item := range items {
+		options = append(options, item.Label)
+	}
+
+	fmt.Println("options", options)
+	fmt.Println("ending lsp server")
+}
+

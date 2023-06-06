@@ -28,6 +28,7 @@ var colors [][]int       // characters colors
 var highlighter = Highlighter{}
 var lsp = LspClient{}
 var lang = ""
+var update = true
 
 type Editor struct {
 
@@ -53,17 +54,15 @@ func (e *Editor) start() {
 	}
 
 	code := e.readFile(path.Join(directory, filename))
-	colors = highlighter.colorize(code, filename)
-
 	lang = detectLang(filename)
+	colors = highlighter.colorize(code, filename)
 
 	s := e.initScreen()
 
 	go e.init_lsp(s)
 
 	for {
-		e.drawEverything(s)
-		s.Show()
+		if update { e.drawEverything(s); s.Show() }
 		e.handleEvents(s)
 	}
 }
@@ -101,6 +100,7 @@ func (e *Editor) init_lsp(s tcell.Screen) {
 }
 
 func (e *Editor) handleEvents(s tcell.Screen) {
+	update = true
 	ev := s.PollEvent()      // Poll event
 	switch ev := ev.(type) { // Process event
 	case *tcell.EventMouse:
@@ -113,8 +113,13 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 		if ev.Buttons()&tcell.WheelDown != 0 {
 			e.onDown()
 			return
-		} else if ev.Buttons()&tcell.WheelUp != 0 {
+		}
+		if ev.Buttons()&tcell.WheelUp != 0 {
 			e.onUp()
+			return
+		}
+		if buttons&tcell.Button1 == 0 && ssx == -1 {
+			update = false
 			return
 		}
 
@@ -133,10 +138,13 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 			if r > len(content)-1 { r = len(content) - 1 }
 			if c > len(content[r]) { c = len(content[r]) }
 			if c < 0 { c = 0 }
-			if ssx < 0 { ssx, ssy = c, r }
+
+			if ssx < 0  { ssx, ssy = c, r }
 		}
 
-		if buttons&tcell.Button1 == 0 { ssx, ssy = -1, -1 }
+		if buttons&tcell.Button1 == 0 {
+			ssx, ssy = -1, -1;
+		}
 
 	case *tcell.EventResize:
 		COLUMNS, ROWS = s.Size()
@@ -197,7 +205,6 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 		tabsCount := countTabsFromString(textline, c)
 
 		start := time.Now()
-
 		completion, _ := lsp.completion(path.Join(directory, filename), text, r, c-tabsCount)
 		elapsed := time.Since(start)
 
@@ -230,9 +237,9 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 					if key == tcell.KeyEscape { selectionEnd = true; completionEnd = true }
 					if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
 					if key == tcell.KeyUp { selected = max(0, selected-1) }
-					if key == tcell.KeyRight { e.onRight(); e.drawEverything(s); selectionEnd = true }
-					if key == tcell.KeyLeft { e.onLeft(); e.drawEverything(s); selectionEnd = true }
-					if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); e.drawEverything(s); selectionEnd = true  }
+					if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(s); selectionEnd = true }
+					if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(s); selectionEnd = true }
+					if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(s); selectionEnd = true  }
 					if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
 						e.onDelete(); e.writeFile(); s.Clear(); e.drawEverything(s); selectionEnd = true
 					}
@@ -271,19 +278,26 @@ func sortItemsByMatchCount(cr *CompletionResult, matchStr string) {
 		return scoreMatches(cr.Items[i].Label, matchStr) > scoreMatches(cr.Items[j].Label, matchStr)
 	})
 }
-
-// scoreMatches gives more weight to matches at the beginning of the string.
+// scoreMatches applies a scoring system based on different matching scenarios.
 func scoreMatches(src, matchStr string) int {
 	score := 0
-	indices := strings.Index(src, matchStr)
-	if indices == 0 {
-		// If the match is at the beginning, we give it a higher score.
-		score += len(src)
-	}
-	score += strings.Count(src, matchStr)
+
+	// If the match is at the beginning, we give it a high score.
+	if strings.HasPrefix(src, matchStr) { score += 1000 }
+
+	// Each occurrence of matchStr in src adds a smaller score.
+	score += strings.Count(src, matchStr) * 10
+
+	// Subtracting the square of the length of the string to give shorter strings a bigger boost.
+	//score -= len(src) * len(src) * len(src)
+
+
+	// If match is close to the start of the string but not at the beginning, add some score.
+	initialIndex := strings.Index(src, matchStr)
+	if initialIndex > 0 && initialIndex < 5 { score += 500 }
+
 	return score
 }
-
 
 func (e *Editor) drawCompletion(s tcell.Screen,
 	atx int, aty int, height int, width int, options []string, selected int, selectedOffset int, style tcell.Style) {
@@ -370,10 +384,7 @@ func (e *Editor) drawEverything(s tcell.Screen) {
 		}
 	}
 
-	// draw status line
-	//lspStatus := ""
-	//if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	status := fmt.Sprintf("%d %d %s %s ", r+1, c+1, path.Join(directory, filename), lang)
+	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, path.Join(directory, filename), lang)
 	e.drawText(s, 0, ROWS + 1, COLUMNS, ROWS + 1, status)
 	e.cleanLineAfter(s, len(status), ROWS + 1)
 	s.ShowCursor(c - x + LS, r - y)  // show cursor
@@ -389,6 +400,13 @@ func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 
 func (e *Editor) drawLineNumber(s tcell.Screen, brw int, row int) {
 	lineNumber := strconv.Itoa(brw + 1)
+	// center number
+	width := 4
+	padding := width - len(lineNumber)
+	leftPad := fmt.Sprintf("%*s", padding/2, "")
+	rightPad := fmt.Sprintf("%*s", padding-(padding/2), "")
+	lineNumber = leftPad + lineNumber + rightPad
+
 	var style = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
 
 	if brw == r { style = tcell.StyleDefault }

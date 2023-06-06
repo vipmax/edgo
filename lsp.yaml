@@ -1,0 +1,4 @@
+langs:
+#     add here your language - lspserver args
+#    - lang: lspserver args
+#    - typescript: typescript-language-server --stdio
