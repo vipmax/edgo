@@ -69,7 +69,6 @@ npm i -g vls
 ```shell  
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup component add rust-analyzer
-# note: it starts slowly (3sec), but works good 
 ```
 
 `c/c++`

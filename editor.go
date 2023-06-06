@@ -20,15 +20,17 @@ var content [][]rune     // characters
 var COLUMNS, ROWS = 0, 0 // term size
 var r, c = 0, 0          // cursor position, row and column
 var y, x = 0, 0          // offset for scrolling for row and column
-var LS = 5               // left shift for line number
+var LS = 6               // left shift for line number
 var ssx, ssy = -1, -1    // left shift for line number
 var filename = "main.go" // file name to show
 var directory = "" 		 // directory
+var colorize = true
 var colors [][]int       // characters colors
 var highlighter = Highlighter{}
 var lsp = LspClient{}
 var lang = ""
 var update = true
+var s tcell.Screen
 
 type Editor struct {
 
@@ -53,19 +55,44 @@ func (e *Editor) start() {
 		filename = filepath.Base(filename)
 	}
 
-	code := e.readFile(path.Join(directory, filename))
+	code := e.ReadFile()
+
 	lang = detectLang(filename)
-	colors = highlighter.colorize(code, filename)
+	if colorize { colors = highlighter.colorize(code, filename) }
 
-	s := e.initScreen()
+	s = e.initScreen()
 
-	go e.init_lsp(s)
+	go e.init_lsp()
 
 	for {
-		if update { e.drawEverything(s); s.Show() }
-		e.handleEvents(s)
+		if update {
+			e.drawEverything()
+			s.Show()
+		}
+		e.handleEvents()
 	}
 }
+
+func (e *Editor) ReadFile() string {
+	/// if file is big, read only first 1000 lines and read rest async
+	fileSize := getFileSize(path.Join(directory, filename))
+	fileSizeMB := fileSize / (1024 * 1024) // Convert size to megabytes
+
+	var code string
+	if fileSizeMB >= 1 {
+		colorize = false
+		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000)
+
+		go func() { // sync?? no need
+			e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
+		}()
+
+	} else {
+		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
+	}
+	return code
+}
+
 
 func (e *Editor) initScreen() tcell.Screen {
 	encoding.Register()
@@ -82,7 +109,7 @@ func (e *Editor) initScreen() tcell.Screen {
 	return s
 }
 
-func (e *Editor) init_lsp(s tcell.Screen) {
+func (e *Editor) init_lsp() {
 	start := time.Now()
 
 	started := lsp.start(lang)
@@ -94,12 +121,12 @@ func (e *Editor) init_lsp(s tcell.Screen) {
 	lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
 	status := fmt.Sprintf("%d %d %s %s %s", r+1, c+1, path.Join(directory, filename), lang, lspStatus)
-	e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
-	e.cleanLineAfter(s, len(status), ROWS+1)
+	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+	e.cleanLineAfter(len(status), ROWS+1)
 	s.Show()
 }
 
-func (e *Editor) handleEvents(s tcell.Screen) {
+func (e *Editor) handleEvents() {
 	update = true
 	ev := s.PollEvent()      // Poll event
 	switch ev := ev.(type) { // Process event
@@ -188,12 +215,12 @@ func (e *Editor) handleEvents(s tcell.Screen) {
 		if key == tcell.KeyTab { e.handleTabPress(); e.writeFile() }
 		if key == tcell.KeyCtrlT { } // TODO: tree
 		if key == tcell.KeyCtrlF { } // TODO: find
-		if key == tcell.KeyCtrlSpace { e.onCompletion(s); s.Clear(); }
+		if key == tcell.KeyCtrlSpace { e.onCompletion(); s.Clear(); }
 
 	}
 }
 
-func (e *Editor) onCompletion(s tcell.Screen) {
+func (e *Editor) onCompletion() {
 	if !lsp.isReady { return }
 
 	var completionEnd = false
@@ -210,8 +237,8 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
 		status := fmt.Sprintf("%d %d %s %s %s", r+1, c+1, path.Join(directory, filename), lang, lspStatus)
-		e.drawText(s, 0, ROWS+1, COLUMNS, ROWS+1, status)
-		e.cleanLineAfter(s, len(status), ROWS+1)
+		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+		e.cleanLineAfter(len(status), ROWS+1)
 
 		options := e.buildCompletionOptions(completion)
 
@@ -228,7 +255,7 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
-			e.drawCompletion(s, atx,aty, height, width, options, selected, selectedOffset, style)
+			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
@@ -237,11 +264,11 @@ func (e *Editor) onCompletion(s tcell.Screen) {
 					if key == tcell.KeyEscape { selectionEnd = true; completionEnd = true }
 					if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
 					if key == tcell.KeyUp { selected = max(0, selected-1) }
-					if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(s); selectionEnd = true }
-					if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(s); selectionEnd = true }
-					if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(s); selectionEnd = true  }
+					if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+					if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+					if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
 					if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
-						e.onDelete(); e.writeFile(); s.Clear(); e.drawEverything(s); selectionEnd = true
+						e.onDelete(); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true
 					}
 					if key == tcell.KeyEnter {
 						selectionEnd = true; completionEnd = true
@@ -299,7 +326,7 @@ func scoreMatches(src, matchStr string) int {
 	return score
 }
 
-func (e *Editor) drawCompletion(s tcell.Screen,
+func (e *Editor) drawCompletion(
 	atx int, aty int, height int, width int, options []string, selected int, selectedOffset int, style tcell.Style) {
 	for row := 0; row < aty+height; row++ {
 		if row >= len(options) || row >= height { break }
@@ -361,7 +388,7 @@ func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Styl
 	return style
 }
 
-func (e *Editor) drawEverything(s tcell.Screen) {
+func (e *Editor) drawEverything() {
 	// calculate scrolling offsets for scrolling vertically and horizontally
 	if r < y { y = r }
 	if r >= y + ROWS { y = r - ROWS }
@@ -371,9 +398,9 @@ func (e *Editor) drawEverything(s tcell.Screen) {
 	// draw line number and chars according to scrolling offsets
 	for row := 0; row <= ROWS; row++ {
 		ry := row + y  // index to get right row in characters buffer by scrolling offset y
-		e.cleanLineAfter(s, 0, row)
+		e.cleanLineAfter(0, row)
 		if row >= len(content) || ry >= len(content) { break }
-		e.drawLineNumber(s, ry, row)
+		e.drawLineNumber(ry, row)
 
 		for col := 0; col <= COLUMNS; col++ {
 			cx := col + x // index to get right column in characters buffer by scrolling offset x
@@ -385,23 +412,24 @@ func (e *Editor) drawEverything(s tcell.Screen) {
 	}
 
 	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, path.Join(directory, filename), lang)
-	e.drawText(s, 0, ROWS + 1, COLUMNS, ROWS + 1, status)
-	e.cleanLineAfter(s, len(status), ROWS + 1)
+	e.drawText(0, ROWS + 1, COLUMNS, ROWS + 1, status)
+	e.cleanLineAfter(len(status), ROWS + 1)
 	s.ShowCursor(c - x + LS, r - y)  // show cursor
 }
 
 func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 	var style = tcell.StyleDefault
+	if !colorize { return style }
 	color := colors[ry][cx]
 	if color > 0 { style = tcell.StyleDefault.Foreground(tcell.Color(color)) }
 	if isUnderSelection(cx, ry) { style = style.Background(56) }
 	return style
 }
 
-func (e *Editor) drawLineNumber(s tcell.Screen, brw int, row int) {
+func (e *Editor) drawLineNumber(brw int, row int) {
 	lineNumber := strconv.Itoa(brw + 1)
 	// center number
-	width := 4
+	width := 6
 	padding := width - len(lineNumber)
 	leftPad := fmt.Sprintf("%*s", padding/2, "")
 	rightPad := fmt.Sprintf("%*s", padding-(padding/2), "")
@@ -538,7 +566,7 @@ func (e *Editor) cleanLine(c int, C int, s tcell.Screen, row int) {
 	}
 }
 
-func (e *Editor) cleanLineAfter(s tcell.Screen, x, y int) {
+func (e *Editor) cleanLineAfter( x, y int) {
 	for i := x; i < COLUMNS; i++ {
 		s.SetContent(i, y, ' ', nil, tcell.StyleDefault)
 	}
@@ -559,7 +587,7 @@ func (e *Editor) writeFile() {
 	}
 }
 
-func (e *Editor) readFile(filename string) string {
+func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
 	file, err := os.Open(filename)
 	if err != nil {
 		file, err := os.Create(filename)
@@ -580,6 +608,7 @@ func (e *Editor) readFile(filename string) string {
 			lineChars = append(lineChars, char)
 		}
 		content = append(content, lineChars)
+		if len(content) >= limit { break }
 	}
 
 	// if no content, consider it like one line for next editing
@@ -591,7 +620,7 @@ func (e *Editor) readFile(filename string) string {
 	return lines
 }
 
-func (e *Editor) drawText(s tcell.Screen, x1, y1, x2, y2 int, text string) {
+func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
 	row := y1
 	col := x1
 	var style = tcell.StyleDefault.Foreground(tcell.ColorGray)
@@ -609,6 +638,7 @@ func (e *Editor) drawText(s tcell.Screen, x1, y1, x2, y2 int, text string) {
 }
 
 func (e *Editor) updateColors() {
+	if !colorize { return }
 	code := convertToString(false)
 	colors = highlighter.colorize(code, filename)
 }
