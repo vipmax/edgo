@@ -5,6 +5,7 @@ import (
 	"github.com/alecthomas/chroma/lexers"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -197,4 +198,13 @@ func getFileSize(filename string) int64 {
 
 	fileSize := fileInfo.Size() // get the size in bytes
 	return fileSize
+}
+
+func centerNumber(brw int, width int) string {
+	lineNumber := strconv.Itoa(brw )
+	padding := width - len(lineNumber)
+	leftPad := fmt.Sprintf("%*s", padding/2, "")
+	rightPad := fmt.Sprintf("%*s", padding-(padding/2), "")
+	lineNumber = leftPad + lineNumber + rightPad
+	return lineNumber
 }

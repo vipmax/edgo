@@ -8,7 +8,6 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +21,8 @@ var r, c = 0, 0          // cursor position, row and column
 var y, x = 0, 0          // offset for scrolling for row and column
 var LS = 6               // left shift for line number
 var ssx, ssy = -1, -1    // left shift for line number
+
+var inputFile = ""
 var filename = "main.go" // file name to show
 var directory = "" 		 // directory
 var colorize = true
@@ -39,6 +40,7 @@ type Editor struct {
 func (e *Editor) start() {
 	if len(os.Args) > 1 {
 		filename = os.Args[1]
+		inputFile = filename
 	} else {
 		os.Exit(130)
 	}
@@ -80,11 +82,12 @@ func (e *Editor) ReadFile() string {
 
 	var code string
 	if fileSizeMB >= 1 {
-		colorize = false
+		//colorize = false
 		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000)
 
 		go func() { // sync?? no need
-			e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
+			code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
+			if colorize { colors = highlighter.colorize(code, filename) }
 		}()
 
 	} else {
@@ -120,7 +123,7 @@ func (e *Editor) init_lsp() {
 
 	lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	status := fmt.Sprintf("%d %d %s %s %s", r+1, c+1, path.Join(directory, filename), lang, lspStatus)
+	status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
 	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
 	e.cleanLineAfter(len(status), ROWS+1)
 	s.Show()
@@ -236,7 +239,7 @@ func (e *Editor) onCompletion() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
-		status := fmt.Sprintf("%d %d %s %s %s", r+1, c+1, path.Join(directory, filename), lang, lspStatus)
+		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
 		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
 		e.cleanLineAfter(len(status), ROWS+1)
 
@@ -411,7 +414,7 @@ func (e *Editor) drawEverything() {
 		}
 	}
 
-	status := fmt.Sprintf("%d %d %s %s", r+1, c+1, path.Join(directory, filename), lang)
+	status := fmt.Sprintf(" %s %d %d %s ", lang, r+1, c+1, inputFile)
 	e.drawText(0, ROWS + 1, COLUMNS, ROWS + 1, status)
 	e.cleanLineAfter(len(status), ROWS + 1)
 	s.ShowCursor(c - x + LS, r - y)  // show cursor
@@ -420,6 +423,7 @@ func (e *Editor) drawEverything() {
 func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 	var style = tcell.StyleDefault
 	if !colorize { return style }
+	if ry >= len(colors) || cx >= len(colors[ry])  { return style }
 	color := colors[ry][cx]
 	if color > 0 { style = tcell.StyleDefault.Foreground(tcell.Color(color)) }
 	if isUnderSelection(cx, ry) { style = style.Background(56) }
@@ -427,21 +431,14 @@ func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 }
 
 func (e *Editor) drawLineNumber(brw int, row int) {
-	lineNumber := strconv.Itoa(brw + 1)
-	// center number
-	width := 6
-	padding := width - len(lineNumber)
-	leftPad := fmt.Sprintf("%*s", padding/2, "")
-	rightPad := fmt.Sprintf("%*s", padding-(padding/2), "")
-	lineNumber = leftPad + lineNumber + rightPad
-
 	var style = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
-
 	if brw == r { style = tcell.StyleDefault }
+	lineNumber := centerNumber(brw + 1, LS)
 	for index, char := range lineNumber {
 		s.SetContent(index, row, char, nil, style)
 	}
 }
+
 
 func (e *Editor) addChar(ch rune) {
 	if ssx != -1 { e.cut() }
