@@ -20,8 +20,8 @@ var COLUMNS, ROWS = 0, 0 // term size
 var r, c = 0, 0          // cursor position, row and column
 var y, x = 0, 0          // offset for scrolling for row and column
 var LS = 6               // left shift for line number
-var ssx, ssy = -1, -1    // left shift for line number
-
+var ssx, ssy, sex, sey = -1, -1, -1, -1    // left shift for line number
+var isSelected = false
 var inputFile = ""
 var filename = "main.go" // file name to show
 var directory = "" 		 // directory
@@ -87,7 +87,7 @@ func (e *Editor) ReadFile() string {
 
 		go func() { // sync?? no need
 			code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
-			if colorize { colors = highlighter.colorize(code, filename) }
+			if colorize { colors = highlighter.colorize(code, filename); e.drawEverything();s.Show() }
 		}()
 
 	} else {
@@ -138,20 +138,27 @@ func (e *Editor) handleEvents() {
 		buttons := ev.Buttons()
 		mx -= LS
 
+		if isSelected && buttons&tcell.Button1 == 1 {
+			if isUnderSelection(mx+x, my+y) && buttons&tcell.Button1 == 1  {
+				r = my + y
+				c = mx + x
+				if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+				if c > len(content[r]) { c = len(content[r]) }
+				if c < 0 { c = 0 }
+
+				ssx = 0; sex = len(content[r])
+				ssy = r; sey = r
+				return
+			}
+			isSelected = false
+			ssx, ssy, sex, sey = -1, -1, -1, -1
+		}
+
 		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1)
 
-		if ev.Buttons()&tcell.WheelDown != 0 {
-			e.onDown()
-			return
-		}
-		if ev.Buttons()&tcell.WheelUp != 0 {
-			e.onUp()
-			return
-		}
-		if buttons&tcell.Button1 == 0 && ssx == -1 {
-			update = false
-			return
-		}
+		if ev.Buttons()&tcell.WheelDown != 0 { e.onDown(); return }
+		if ev.Buttons()&tcell.WheelUp != 0 { e.onUp(); return }
+		if buttons&tcell.Button1 == 0 && ssx == -1 { update = false; return }
 
 		if buttons&tcell.Button1 == 1 {
 			if c == mx+x && r == my+y {
@@ -159,21 +166,25 @@ func (e *Editor) handleEvents() {
 				prw := findPrevWord(content[r], c)
 				nxw := findNextWord(content[r], c)
 				ssx, ssy = prw, r
+				sex, sey = nxw, r
 				c = nxw
 				return
 			}
 
 			r = my + y
 			c = mx + x
-			if r > len(content)-1 { r = len(content) - 1 }
+			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 			if c > len(content[r]) { c = len(content[r]) }
 			if c < 0 { c = 0 }
 
 			if ssx < 0  { ssx, ssy = c, r }
+			if ssx >= 0  { sex, sey = c, r }
 		}
 
 		if buttons&tcell.Button1 == 0 {
-			ssx, ssy = -1, -1;
+			if ssx != -1 && sex != -1 {
+				isSelected = true
+			}
 		}
 
 	case *tcell.EventResize:
@@ -184,6 +195,7 @@ func (e *Editor) handleEvents() {
 
 	case *tcell.EventKey:
 		key := ev.Key()
+
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelection()) }
 		if key == tcell.KeyCtrlV { e.paste() }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
@@ -195,6 +207,7 @@ func (e *Editor) handleEvents() {
 			if key == tcell.KeyLeft { e.onLeft() }
 			if key == tcell.KeyUp { e.onUp() }
 			if key == tcell.KeyDown { e.onDown() }
+			if ssx >= 0 { sex, sey = c, r }
 			return
 		}
 
@@ -204,23 +217,25 @@ func (e *Editor) handleEvents() {
 			return
 		}
 		if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile() }
-
-		ssx, ssy = -1, -1
-
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
 		if key == tcell.KeyCtrlS { e.writeFile() }
 		if key == tcell.KeyEnter { e.onEnter(true); e.writeFile(); s.Clear() }
 		if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { e.onDelete(); e.writeFile(); s.Clear() }
-		if key == tcell.KeyDown { e.onDown() }
-		if key == tcell.KeyUp { e.onUp() }
-		if key == tcell.KeyLeft { e.onLeft() }
-		if key == tcell.KeyRight { e.onRight() }
-		if key == tcell.KeyTab { e.handleTabPress(); e.writeFile() }
+		if key == tcell.KeyDown { e.onDown(); e.cleanSelection() }
+		if key == tcell.KeyUp { e.onUp(); e.cleanSelection() }
+		if key == tcell.KeyLeft { e.onLeft(); e.cleanSelection() }
+		if key == tcell.KeyRight { e.onRight(); e.cleanSelection() }
+		if key == tcell.KeyTab { e.handleTabPress(); e.cleanSelection(); e.writeFile() }
 		if key == tcell.KeyCtrlT { } // TODO: tree
 		if key == tcell.KeyCtrlF { } // TODO: find
 		if key == tcell.KeyCtrlSpace { e.onCompletion(); s.Clear(); }
 
 	}
+}
+
+func (e *Editor) cleanSelection() {
+	isSelected = false
+	ssx, ssy, sex, sey = -1, -1, -1, -1
 }
 
 func (e *Editor) onCompletion() {
@@ -466,6 +481,8 @@ func (e *Editor) maybeAddPair(ch rune) {
 	}
 }
 func (e *Editor) onDelete() {
+	if ssx != -1 { e.cut(); e.updateColors(); return }
+
 	if c > 0 {
 		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
 			c--
@@ -536,6 +553,8 @@ func (e *Editor) onRight() {
 
 
 func (e *Editor) onEnter(isSaveTabs bool) {
+	if ssx != -1 { e.cut() }
+
 	after := content[r][c:]
 	before := content[r][:c]
 	content[r] = before
@@ -558,8 +577,8 @@ func (e *Editor) onEnter(isSaveTabs bool) {
 }
 
 func (e *Editor) cleanLine(c int, C int, s tcell.Screen, row int) {
-	for x := c; x < C; x++ {
-		s.SetContent(x, row, ' ', nil, tcell.StyleDefault)
+	for i := c; i < C; i++ {
+		s.SetContent(i, row, ' ', nil, tcell.StyleDefault)
 	}
 }
 
@@ -587,9 +606,9 @@ func (e *Editor) writeFile() {
 func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
 	file, err := os.Open(filename)
 	if err != nil {
-		file, err := os.Create(filename)
-		if err != nil {fmt.Printf("Failed to create file: %v\n", err)}
-		defer file.Close()
+		filec, err2 := os.Create(filename)
+		if err2 != nil {fmt.Printf("Failed to create file: %v\n", err2)}
+		defer filec.Close()
 	}
 	defer file.Close()
 
@@ -621,8 +640,8 @@ func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
 	row := y1
 	col := x1
 	var style = tcell.StyleDefault.Foreground(tcell.ColorGray)
-	for _, r := range []rune(text) {
-		s.SetContent(col, row, r, nil, style)
+	for _, ch := range []rune(text) {
+		s.SetContent(col, row, ch, nil, style)
 		col++
 		if col >= x2 {
 			row++
@@ -684,16 +703,18 @@ func (e *Editor) cut() {
 		// Sort selectedIndices in reverse order to delete characters from the end
 		for i := len(selectedIndices) - 1; i >= 0; i-- {
 			indices := selectedIndices[i]
-			x := indices[0]
-			y := indices[1]
-			c, r = x, y
+			xd := indices[0]
+			yd := indices[1]
+			c, r = xd, yd
 
 			// Delete the character at indices (x, j)
-			content[y] = append(content[y][:x], content[y][x+1:]...)
-			if len(content[y]) == 0 {
-				content = append(content[:y], content[y+1:]...)
+			content[yd] = append(content[yd][:xd], content[yd][xd+1:]...)
+			if len(content[yd]) == 0 {
+				content = append(content[:yd], content[yd+1:]...)
 			}
 		}
+
+		e.cleanSelection()
 	}
 
 	e.updateColors()
@@ -730,12 +751,12 @@ func (e *Editor) handleSmartMove(char rune) {
 
 func isUnderSelection(x, y int) bool {
 	// Check if there is an active selection
-	if ssx == -1 || ssy == -1 {
+	if ssx == -1 || ssy == -1  || sex == -1 || sey == -1{
 		return false
 	}
 
 	var startx, starty = ssx, ssy
-	var endx, endy = c, r
+	var endx, endy = sex, sey
 
 	if GreaterThan(startx, starty, endx, endy) {
 		startx, endx = endx, startx
