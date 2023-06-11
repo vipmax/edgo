@@ -35,7 +35,8 @@ var update = true
 var s tcell.Screen
 
 type Editor struct {
-
+	undoStack []Operation
+	redoStack []Operation
 }
 
 func (e *Editor) start() {
@@ -61,9 +62,13 @@ func (e *Editor) start() {
 	code := e.ReadFile()
 
 	lang = detectLang(filename)
+
 	if colorize { colors = highlighter.colorize(code, filename) }
 
 	s = e.initScreen()
+
+	e.undoStack = []Operation{}
+	e.redoStack = []Operation{}
 
 	go e.init_lsp()
 
@@ -201,7 +206,12 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
 		if key == tcell.KeyCtrlD { e.duplicate() }
 
-		if ev.Modifiers()&tcell.ModShift != 0 {
+		if ev.Modifiers()&tcell.ModShift != 0 && (
+				key == tcell.KeyRight ||
+				key == tcell.KeyLeft ||
+				key == tcell.KeyUp ||
+				key == tcell.KeyDown ) {
+
 			if ssx < 0 { ssx, ssy = c, r }
 			if key == tcell.KeyRight { e.onRight() }
 			if key == tcell.KeyLeft { e.onLeft() }
@@ -211,11 +221,11 @@ func (e *Editor) handleEvents() {
 			return
 		}
 
-		if key == tcell.KeyRune && ev.Modifiers()&tcell.ModAlt != 0 {
-			if len(content) == 0 { return }
-			e.handleSmartMove(ev.Rune())
-			return
-		}
+		//if key == tcell.KeyRune && ev.Modifiers()&tcell.ModAlt != 0 {
+		//	if len(content) == 0 { return }
+		//	e.handleSmartMove(ev.Rune())
+		//	return
+		//}
 		if key == tcell.KeyRune { e.addChar(ev.Rune()) }
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
 		if key == tcell.KeyCtrlS { e.writeFile() }
@@ -228,6 +238,8 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyTab { e.handleTabPress(); e.cleanSelection(); e.writeFile() }
 		if key == tcell.KeyCtrlT { } // TODO: tree
 		if key == tcell.KeyCtrlF { } // TODO: find
+		if key == tcell.KeyCtrlU { e.undo() }
+		if key == tcell.KeyCtrlR { e.redo() }
 		if key == tcell.KeyCtrlSpace { e.onCompletion(); s.Clear(); }
 	}
 }
@@ -459,6 +471,7 @@ func (e *Editor) addChar(ch rune) {
 	if ssx != -1 { e.cut() }
 
 	content[r] = insert(content[r], c, ch)
+	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
 	c++
 
 	e.maybeAddPair(ch)
@@ -494,20 +507,25 @@ func (e *Editor) onDelete() {
 	if c > 0 {
 		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
 			c--
+			e.undoStack = append(e.undoStack, Operation{Delete, content[r][c], r, c})
 			content[r] = remove(content[r], c)
 			c--
+			e.undoStack = append(e.undoStack, Operation{Delete, content[r][c], r, c})
 			content[r] = remove(content[r], c)
 		} else {
 			c--
+			e.undoStack = append(e.undoStack, Operation{Delete, content[r][c], r, c})
 			content[r] = remove(content[r], c)
 		}
 
-	} else if r > 0 {
+	} else if r > 0 { // delete line
+		e.undoStack = append(e.undoStack, Operation{DeleteLine, ' ', r-1, len(content[r-1])})
 		l := content[r][c:]
 		content = remove(content, r)
 		r--
 		c = len(content[r])
 		content[r] = append(content[r], l...)
+
 	}
 
 	isFileChanged = true
@@ -566,6 +584,8 @@ func (e *Editor) onRight() {
 func (e *Editor) onEnter(isSaveTabs bool) {
 	if ssx != -1 { e.cut() }
 
+	e.undoStack = append(e.undoStack, Operation{Enter, '\n', r, c})
+
 	after := content[r][c:]
 	before := content[r][:c]
 	content[r] = before
@@ -577,6 +597,7 @@ func (e *Editor) onEnter(isSaveTabs bool) {
 		tabs := countTabsInRow(r - 1)
 		for i := 0; i < tabs; i++ {
 			begining = append(begining, ' ')
+			e.undoStack = append(e.undoStack, Operation{Insert, ' ', r, c + i})
 		}
 		c = tabs
 	}
@@ -788,6 +809,79 @@ func (e *Editor) handleSmartMove(char rune) {
 		nw := findPrevWord(content[r], c-1)
 		c = nw
 	}
+}
+
+func (e *Editor) undo() {
+	if len(e.undoStack) == 0 { return }
+
+	o := e.undoStack[len(e.undoStack)-1]
+	e.undoStack = e.undoStack[:len(e.undoStack)-1]
+
+	if o.action == Insert {
+		r = o.line; c = o.column
+		content[r] = append(content[r][:c], content[r][c+1:]...)
+
+	} else if o.action == Delete {
+		r = o.line; c = o.column
+		content[r] = insert(content[r], c, o.char)
+
+	} else if o.action == Enter {
+		// Merge lines
+		content[o.line] = append(content[o.line], content[o.line+1]...)
+		content = append(content[:o.line+1], content[o.line+2:]...)
+		r = o.line; c = o.column
+
+	} else if o.action == DeleteLine {
+		// Insert enter
+		r = o.line; c = o.column
+		after := content[r][c:]
+		before := content[r][:c]
+		content[r] = before
+		r++; c = 0
+		newline := append([]rune{}, after...)
+		content = insert(content, r, newline)
+	}
+
+	e.redoStack = append(e.redoStack, o)
+
+	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
+	e.updateColors()
+}
+
+func (e *Editor) redo() {
+	if len(e.redoStack) == 0 { return }
+
+	o := e.redoStack[len(e.redoStack)-1]
+	e.redoStack = e.redoStack[:len(e.redoStack)-1]
+
+	if o.action == Insert {
+		r = o.line; c = o.column
+		content[r] = insert(content[r], c, o.char)
+		c++
+	} else if o.action == Delete {
+		r = o.line; c = o.column
+		content[r] = append(content[r][:c], content[r][c+1:]...)
+	} else if o.action == Enter {
+		r = o.line; c = o.column
+		after := content[r][c:]
+		before := content[r][:c]
+		content[r] = before
+		r++; c = 0
+		newline := append([]rune{}, after...)
+		content = insert(content, r, newline)
+	} else if o.action == DeleteLine {
+		// Merge lines
+		content[o.line] = append(content[o.line], content[o.line+1]...)
+		content = append(content[:o.line+1], content[o.line+2:]...)
+		r = o.line; c = o.column
+	}
+
+	e.undoStack = append(e.undoStack, o)
+
+	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
+	e.updateColors()
 }
 
 func isUnderSelection(x, y int) bool {
