@@ -1,7 +1,6 @@
 # edgo
 Yet another console text editor, but with lsp support
 ![editor](screen.png)
-I recommend to map `caps lock` to `control` button for faster writing   
 
 Key bindings:
 - `esc` - exit
@@ -16,16 +15,19 @@ Key bindings:
 - `control + space` - lsp completion
 - `mouse selection`  - select text 
 - `mouse double click`  - select word 
+- `mouse triple click`  - select line
 
+Note: map `caps lock` to `control` button, everything will be easier.   
+
+
+### Installation:
 
 Install Go for mac os:
 ```
 brew install go 
 echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.zshrc
 ```
-
-
-Installation:
+And then:   
 ```shell
 git clone https://github.com/vipmax/edgo && cd edgo
 go build 

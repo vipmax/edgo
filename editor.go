@@ -25,6 +25,7 @@ var isSelected = false
 var inputFile = ""
 var filename = "main.go" // file name to show
 var directory = "" 		 // directory
+var isFileChanged = false
 var colorize = true
 var colors [][]int       // characters colors
 var highlighter = Highlighter{}
@@ -150,8 +151,7 @@ func (e *Editor) handleEvents() {
 				ssy = r; sey = r
 				return
 			}
-			isSelected = false
-			ssx, ssy, sex, sey = -1, -1, -1, -1
+			e.cleanSelection()
 		}
 
 		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1)
@@ -216,11 +216,11 @@ func (e *Editor) handleEvents() {
 			e.handleSmartMove(ev.Rune())
 			return
 		}
-		if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile() }
+		if key == tcell.KeyRune { e.addChar(ev.Rune()) }
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
 		if key == tcell.KeyCtrlS { e.writeFile() }
-		if key == tcell.KeyEnter { e.onEnter(true); e.writeFile(); s.Clear() }
-		if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { e.onDelete(); e.writeFile(); s.Clear() }
+		if key == tcell.KeyEnter { e.onEnter(true); s.Clear() }
+		if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { e.onDelete(); s.Clear() }
 		if key == tcell.KeyDown { e.onDown(); e.cleanSelection() }
 		if key == tcell.KeyUp { e.onUp(); e.cleanSelection() }
 		if key == tcell.KeyLeft { e.onLeft(); e.cleanSelection() }
@@ -229,7 +229,6 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyCtrlT { } // TODO: tree
 		if key == tcell.KeyCtrlF { } // TODO: find
 		if key == tcell.KeyCtrlSpace { e.onCompletion(); s.Clear(); }
-
 	}
 }
 
@@ -429,7 +428,8 @@ func (e *Editor) drawEverything() {
 		}
 	}
 
-	status := fmt.Sprintf(" %s %d %d %s ", lang, r+1, c+1, inputFile)
+	var changes = ""; if isFileChanged { changes = "*"}
+	status := fmt.Sprintf(" %s %d %d %s%s", lang, r+1, c+1, inputFile, changes)
 	e.drawText(0, ROWS + 1, COLUMNS, ROWS + 1, status)
 	e.cleanLineAfter(len(status), ROWS + 1)
 	s.ShowCursor(c - x + LS, r - y)  // show cursor
@@ -462,6 +462,11 @@ func (e *Editor) addChar(ch rune) {
 	c++
 
 	e.maybeAddPair(ch)
+
+	isFileChanged = true
+
+	if len(content) <= 10000 { e.writeFile() }
+
 	e.updateColors()
 }
 
@@ -481,7 +486,7 @@ func (e *Editor) maybeAddPair(ch rune) {
 	}
 }
 func (e *Editor) onDelete() {
-	if ssx != -1 { e.cut(); e.updateColors(); return }
+	if ssx != -1 && sex != -1 && isSelected  && ssx != sex { e.cut(); return }
 
 	if c > 0 {
 		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
@@ -501,6 +506,9 @@ func (e *Editor) onDelete() {
 		c = len(content[r])
 		content[r] = append(content[r], l...)
 	}
+
+	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
 
 	e.updateColors()
 }
@@ -573,6 +581,8 @@ func (e *Editor) onEnter(isSaveTabs bool) {
 	newline := append(begining, after...)
 	content = insert(content, r, newline)
 
+	if len(content) <= 10000 { e.writeFile() }
+
 	e.updateColors()
 }
 
@@ -589,14 +599,34 @@ func (e *Editor) cleanLineAfter( x, y int) {
 }
 
 func (e *Editor) writeFile() {
-	// Convert content to a string
-	contentStr := ""
-	for _, row := range content { contentStr += string(row) + "\n" }
-	contentStr = strings.ReplaceAll(contentStr, "  ", "\t")
 
-	// Write content to a file
-	err := os.WriteFile(path.Join(directory, filename), []byte(contentStr), 0644)
-	if err != nil { fmt.Println("Error writing to file:", err) }
+	// Create a new file, or open it if it exists
+	f, err := os.Create(path.Join(directory, filename))
+	if err != nil { panic(err) }
+	defer f.Close()
+
+	// Create a buffered writer from the file
+	w := bufio.NewWriter(f)
+
+	for i, row := range content {
+		for j := 0; j < len(row); {
+			if row[j] == ' ' && len(content[i]) > j+1 && content[i][j+1] == ' ' {
+				if _, err := w.WriteRune('\t'); err != nil { panic(err) }
+				j += 2
+			} else {
+				if _, err := w.WriteRune(row[j]); err != nil { panic(err) }
+				j++
+			}
+		}
+		if _, err := w.WriteRune('\n'); err != nil { panic(err) }
+	}
+
+	// Don't forget to flush the buffered writer to ensure all data is written
+	if err := w.Flush(); err != nil {
+		panic(err)
+	}
+
+	isFileChanged = false
 
 	if lsp.isReady {
 		go lsp.didOpen(path.Join(directory, filename))// todo ???
@@ -655,8 +685,14 @@ func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
 
 func (e *Editor) updateColors() {
 	if !colorize { return }
-	code := convertToString(false)
-	colors = highlighter.colorize(code, filename)
+	if len(content) >= 10000 {
+		line := string(content[r])
+		linecolors := highlighter.colorize(line, filename)
+		colors[r] = linecolors[0]
+	} else {
+		code := convertToString(false)
+		colors = highlighter.colorize(code, filename)
+	}
 }
 
 func (e *Editor) handleTabPress() {
@@ -717,13 +753,12 @@ func (e *Editor) cut() {
 		e.cleanSelection()
 	}
 
+	isFileChanged = true
 	e.updateColors()
 }
 
 func (e *Editor) duplicate() {
-	if len(content) == 0 {
-		return
-	}
+	if len(content) == 0 { return }
 
 	if ssx == -1 && ssy == -1 {
 		duplicatedSlice := make([]rune, len(content[r]))
@@ -734,6 +769,7 @@ func (e *Editor) duplicate() {
 		clipboard.WriteAll(getSelection())
 		e.paste()
 	}
+	isFileChanged = true
 	e.updateColors()
 }
 
