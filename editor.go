@@ -486,7 +486,10 @@ func (e *Editor) maybeAddPair(ch rune) {
 	}
 }
 func (e *Editor) onDelete() {
-	if ssx != -1 && sex != -1 && isSelected  && ssx != sex { e.cut(); return }
+	if ssx != -1 && sex != -1 && isSelected  && ssx != sex {
+		e.cut();
+		return
+	}
 
 	if c > 0 {
 		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
@@ -745,8 +748,9 @@ func (e *Editor) cut() {
 
 			// Delete the character at indices (x, j)
 			content[yd] = append(content[yd][:xd], content[yd][xd+1:]...)
-			if len(content[yd]) == 0 {
+			if len(content[yd]) == 0 { // delete line
 				content = append(content[:yd], content[yd+1:]...)
+				colors = append(colors[:yd], colors[yd+1:]...)
 			}
 		}
 
@@ -754,6 +758,7 @@ func (e *Editor) cut() {
 	}
 
 	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
 
