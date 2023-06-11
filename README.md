@@ -10,6 +10,8 @@ Key bindings:
 - `Control + x` - cut 
 - `Control + c` - copy 
 - `Control + v` - paste
+- `Control + u` - undo
+- `Control + r` - redo
 - `shift + arrow` - select text
 - `option + arrow` - smart movement
 - `control + space` - lsp completion
