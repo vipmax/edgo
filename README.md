@@ -13,7 +13,8 @@ Features:
 - `Control + u` - undo
 - `Control + r` - redo
 - `Shift + arrow` - select text
-- `Option + arrow` - smart movement
+- `Option + right/left` - smart horizontal movement by words
+- `Option + down/up` - smart vertical movement (adds new line)
 - `mouse selection`  - select text 
 - `mouse double click`  - select word 
 - `mouse triple click`  - select line
