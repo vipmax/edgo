@@ -35,7 +35,7 @@ var langCommands = map[string][]string{
 	"rust": 	  {"rust-analyzer"},
 	"c": 	  	  {"clangd"},
 	"c++": 	  	  {"clangd"},
-	"scala": 	  {"metals", "-Xms1G -Xmx4G -Dmetals.ammoniteJvmProperties=metals.ammoniteJvmProperties=-Xmx4G"},
+	"scala": 	  {"metals", "-Dmetals.ammoniteJvmProperties=metals.ammoniteJvmProperties=-Xmx4G"},
 	"kotlin": 	  {"kotlin-language-server"},
 	"java": 	  {"jdtls"},
 }
@@ -84,6 +84,7 @@ func (this *LspClient) send(o interface{}) error {
 
 func (this *LspClient) init(dir string) {
 	this.id = 0
+
 	initializeRequest := InitializeRequest{
 		ID: this.id, JSONRPC: "2.0",
 		Method: "initialize",
@@ -244,25 +245,25 @@ func (this *LspClient) definition(file string, line int, character int) {
 	time.Sleep(time.Millisecond * 1000)
 }
 
-func (this *LspClient) completion(file string, code string, line int, character int) (CompletionResponse, map[string]interface{}) {
+func (this *LspClient) completion(file string, code string, line int, character int) (CompletionResponse, error) {
 	this.id++
 	id := this.id
 
 	request := BaseRequest{
 		ID: id, JSONRPC: "2.0", Method:  "textDocument/completion",
 		Params: Params{
-			TextDocument: TextDocument { URI:  "file://" + file, Text: code },
+			TextDocument: TextDocument { URI:  "file://" + file },
 			Position: Position { Line: line, Character: character },
 			Context: Context { TriggerKind: 1 },
 		},
 	}
 
 	this.send(request)
-	js, jsonData := this.read_stdout(false)
+	_, jsonData := this.read_stdout(false)
 	var completionResponse CompletionResponse
 	err := json.Unmarshal([]byte(jsonData), &completionResponse)
-	if err != nil { panic("Error parsing JSON:" + err.Error()) }
-	return completionResponse, js
+	//if err != nil { panic("Error parsing JSON:" + err.Error()) }
+	return completionResponse, err
 }
 
 func (this *LspClient) waitForResponseInMap(id int) map[string]interface{} {

@@ -198,8 +198,8 @@ func (e *Editor) handleEvents() {
 	case *tcell.EventKey:
 		key := ev.Key()
 
-		if key == tcell.KeyCtrlH { e.onHover(); return }
-		if key == tcell.KeyCtrlP { e.onSignatureHelp(); return }
+		if key == tcell.KeyCtrlH { e.onHover();  return }
+		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelection()) }
 		if key == tcell.KeyCtrlV { e.paste() }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
@@ -224,8 +224,14 @@ func (e *Editor) handleEvents() {
 			if len(content) > 0 { e.handleSmartMove(ev.Rune()) }
 			return
 		}
+		if key == tcell.KeyDown && ev.Modifiers()&tcell.ModAlt != 0 { e.handleSmartMoveDown() }
+		if key == tcell.KeyUp && ev.Modifiers()&tcell.ModAlt != 0 { e.handleSmartMoveUp() }
 
-		if key == tcell.KeyRune { e.addChar(ev.Rune()) }
+		if key == tcell.KeyRune {
+			e.addChar(ev.Rune());
+			if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear();}
+			if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear();}
+		}
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
 		if key == tcell.KeyCtrlS { e.writeFile() }
 		if key == tcell.KeyEnter { e.onEnter(true); s.Clear() }
@@ -294,7 +300,7 @@ func (e *Editor) onCompletion() {
 		tabsCount := countTabsFromString(textline, c)
 
 		start := time.Now()
-		completion, _ := lsp.completion(path.Join(directory, filename), text, r, c-tabsCount)
+		completion, err := lsp.completion(path.Join(directory, filename), text, r, c-tabsCount)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
@@ -303,6 +309,7 @@ func (e *Editor) onCompletion() {
 		e.cleanLineAfter(len(status), ROWS+1)
 
 		options := e.buildCompletionOptions(completion)
+		if err != nil || len(options) == 0 { return }
 
 		atx := c + LS; aty := r + 1 - y // Define the window  position and dimensions
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
@@ -323,9 +330,9 @@ func (e *Editor) onCompletion() {
 			switch ev := s.PollEvent().(type) { // poll and handle event
 				case *tcell.EventKey:
 					key := ev.Key()
-					if key == tcell.KeyEscape { selectionEnd = true; completionEnd = true }
-					if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-					if key == tcell.KeyUp { selected = max(0, selected-1) }
+					if key == tcell.KeyEscape || key == tcell.KeyCtrlSpace { selectionEnd = true; completionEnd = true }
+					if key == tcell.KeyDown { selected = min(len(options)-1, selected+1); s.Clear(); e.drawEverything(); }
+					if key == tcell.KeyUp { selected = max(0, selected-1); s.Clear(); e.drawEverything(); }
 					if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
 					if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
 					if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
@@ -385,7 +392,8 @@ func (e *Editor) onHover() {
 			switch ev := s.PollEvent().(type) { // poll and handle event
 			case *tcell.EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape || key == tcell.KeyEnter { selectionEnd = true; hoverEnd = true }
+				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
+					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { s.Clear(); selectionEnd = true; hoverEnd = true }
 				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
 				if key == tcell.KeyUp { selected = max(0, selected-1) }
 				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
@@ -446,11 +454,14 @@ func (e *Editor) onSignatureHelp() {
 			switch ev := s.PollEvent().(type) { // poll and handle event
 			case *tcell.EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape || key == tcell.KeyEnter { selectionEnd = true; end = true }
+				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
+					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
 				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
 				if key == tcell.KeyUp { selected = max(0, selected-1) }
 				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
 				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+
 			}
 		}
 	}
@@ -582,7 +593,7 @@ func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 }
 
 func (e *Editor) addChar(ch rune) {
-	if ssx != -1 { e.cut() }
+	if ssx != -1 && sex != -1 && isSelected  && ssx != sex { e.cut() }
 
 	content[r] = insert(content[r], c, ch)
 	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
@@ -839,14 +850,36 @@ func (e *Editor) paste() {
 	text = strings.ReplaceAll(text, "\t", `  `)
 	lines := strings.Split(text, "\n")
 
+	if len(lines) == 0 { return }
+
+	// update tabs count because it may be changed
+	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+	tabsCount := countTabsFromString(textline, c)
+
+	// Insert the lines at the r position
 	for i, line := range lines {
-		for _, char := range line {
-			e.addChar(char)
+		runes := []rune(line)
+
+		if r >= len(content)  { content = append(content, []rune{}) }
+
+		for _, ch := range runes {
+			content[r] = insert(content[r], c, ch)
+			c++
 		}
-		if i < len(lines)-2 {
-			e.onEnter(false)
+
+		if i < len(lines) - 1 {
+			r++; c = 0
+			if r >= len(content) { content = append(content, []rune{}) }
+			for i := 0; i < tabsCount*2; i++ {
+				content[r] = insert(content[r], c, ' '); c++
+			} // saving tabs
 		}
 	}
+
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
+	e.updateColors()
 }
 
 func (e *Editor) cut() {
@@ -919,6 +952,43 @@ func (e *Editor) handleSmartMove(char rune) {
 		nw := findPrevWord(content[r], c-1)
 		c = nw
 	}
+}
+
+func (e *Editor) handleSmartMoveDown() {
+	// update tabs count because it may be changed
+	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+	tabsCount := countTabsFromString(textline, c)
+
+	r++; c = 0 // moving down and insert tabs
+	content = insert(content, r, []rune{})
+	for i := 0; i < tabsCount*2; i++ {
+		content[r] = insert(content[r], c, ' ');
+		c++
+	}
+	r--
+
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
+	e.updateColors()
+}
+func (e *Editor) handleSmartMoveUp() {
+	// update tabs count because it may be changed
+	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+	tabsCount := countTabsFromString(textline, c)
+
+	c = 0 // moving up and insert tabs
+	content = insert(content, r, []rune{})
+	for i := 0; i < tabsCount*2; i++ {
+		content[r] = insert(content[r], c, ' ');
+		c++
+	}
+	r++
+
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
+	e.updateColors()
 }
 
 func (e *Editor) undo() {

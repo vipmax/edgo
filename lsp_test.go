@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 )
 
 func TestGoLangCompletion(t *testing.T) {
@@ -95,6 +96,31 @@ func TestRustCompletion(t *testing.T) {
 	lsp.didOpen(file)
 
 	completion, _ := lsp.completion(file, text, 31-1, 5)
+	fmt.Println("completion", completion)
+
+	var options []string
+	items := completion.Result.Items
+	for _, item := range items {
+		options = append(options, item.Label)
+	}
+
+	fmt.Println("options", options)
+	fmt.Println("ending lsp server")
+}
+
+func TestScalaCompletion(t *testing.T) {
+	dir := "/Users/max/apps/scala/chrome4s"
+	file := path.Join(dir, "/src/main/scala/chrome4s/Main.scala")
+	text, _ := readFileToString(file)
+
+	fmt.Println("starting lsp server for ", file)
+
+	lsp := LspClient{}
+	lsp.start("scala")
+	lsp.init(dir)
+	lsp.didOpen(file)
+	time.Sleep(3*time.Second)
+	completion, _ := lsp.completion(file, text, 17-1, 8)
 	fmt.Println("completion", completion)
 
 	var options []string

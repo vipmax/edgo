@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/alecthomas/chroma/lexers"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -190,11 +189,11 @@ func detectLang(filename string) string {
 
 func getFileSize(filename string) int64 {
 	file, err := os.Open(filename) // replace with your file name
-	if err != nil { log.Fatal(err) }
+	if err != nil { return 0 }
 	defer file.Close()
 
 	fileInfo, err := file.Stat()
-	if err != nil { log.Fatal(err) }
+	if err != nil { return 0 }
 
 	fileSize := fileInfo.Size() // get the size in bytes
 	return fileSize
