@@ -891,7 +891,8 @@ func (e *Editor) cut() {
 
 	if ssx == -1 && ssy == -1 {
 		content = append(content[:r], content[r+1:]...)
-		e.onUp()
+		c = min(c, len(content[r]))
+		//e.onUp()
 	} else {
 		var selectedIndices [][]int
 		// calculate elements to remove

@@ -52,7 +52,7 @@ func getColor(tokenType chroma.TokenType) tcell.Color {
 		return tcell.ColorHotPink
 	case chroma.KeywordType, chroma.KeywordDeclaration, chroma.KeywordReserved, chroma.Name, chroma.NameTag, chroma.NameFunction:
 		return tcell.ColorAquaMarine
-	case chroma.String, chroma.StringChar, chroma.Literal, chroma.LiteralStringDouble:
+	case chroma.String, chroma.StringChar, chroma.LiteralStringSingle, chroma.Literal, chroma.LiteralStringDouble:
 		return tcell.ColorLightGreen
 	case chroma.CommentSingle, chroma.CommentMultiline:
 		return tcell.ColorDimGray
