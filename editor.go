@@ -216,7 +216,7 @@ func (e *Editor) handleEvents() {
 			if key == tcell.KeyLeft { e.onLeft() }
 			if key == tcell.KeyUp { e.onUp() }
 			if key == tcell.KeyDown { e.onDown() }
-			if ssx >= 0 { sex, sey = c, r }
+			if ssx >= 0 { sex, sey = c, r; isSelected = true }
 			return
 		}
 
@@ -623,10 +623,7 @@ func (e *Editor) maybeAddPair(ch rune) {
 	}
 }
 func (e *Editor) onDelete() {
-	if ssx != -1 && sex != -1 && isSelected  && ssx != sex {
-		e.cut();
-		return
-	}
+	if isSelected { e.cut(); return }
 
 	if c > 0 {
 		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
@@ -703,8 +700,6 @@ func (e *Editor) onRight() {
 }
 
 func (e *Editor) onEnter(isSaveTabs bool) {
-	if ssx != -1 { e.cut() }
-
 	e.undoStack = append(e.undoStack, Operation{Enter, '\n', r, c})
 
 	after := content[r][c:]
@@ -889,10 +884,11 @@ func (e *Editor) cut() {
 		return
 	}
 
-	if ssx == -1 && ssy == -1 {
+	if ssx == -1 && sex == -1 && !isSelected  && ssx == sex {
 		content = append(content[:r], content[r+1:]...)
-		c = min(c, len(content[r]))
-		//e.onUp()
+		if r == len(content) { r--; c = min(c, len(content[r])) } else {
+			c = min(c, len(content[r]))
+		}
 	} else {
 		var selectedIndices [][]int
 		// calculate elements to remove
@@ -918,7 +914,7 @@ func (e *Editor) cut() {
 				colors = append(colors[:yd], colors[yd+1:]...)
 			}
 		}
-
+		if r >= len(content) { r = len(content) - 1; c = len(content[r])  }
 		e.cleanSelection()
 	}
 
