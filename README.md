@@ -2,8 +2,8 @@
 Yet another console text editor, but with lsp support
 ![editor](screen.png)
 
-Key bindings:
-- `esc` - exit
+Features:
+- `Esc` - exit
 - `Control + s` - save file
 - `Control + q` - quit
 - `Control + d` - duplicate line
@@ -12,14 +12,17 @@ Key bindings:
 - `Control + v` - paste
 - `Control + u` - undo
 - `Control + r` - redo
-- `shift + arrow` - select text
-- `option + arrow` - smart movement
-- `control + space` - lsp completion
+- `Shift + arrow` - select text
+- `Option + arrow` - smart movement
 - `mouse selection`  - select text 
 - `mouse double click`  - select word 
 - `mouse triple click`  - select line
+- `Control + space` - lsp completion
+- `Control + h` - lsp hover
+- `Control + p` - lsp signature help
 
-Note: map `caps lock` to `control` button, everything will be easier.   
+
+Note: map `Caps lock` to `Control` button, everything will be easier.   
 
 
 ### Installation:

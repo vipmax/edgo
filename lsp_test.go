@@ -108,3 +108,40 @@ func TestRustCompletion(t *testing.T) {
 	fmt.Println("ending lsp server")
 }
 
+
+func TestGoLangHover(t *testing.T) {
+	dir, _ := os.Getwd()
+	file := dir + "/lsp_test.go"
+
+	fmt.Println("starting lsp server")
+
+	lsp := LspClient{}
+	lsp.start("go")
+	lsp.init(dir)
+	lsp.didOpen(file)
+
+	hover, _ := lsp.hover(file,18-1, 13)
+	fmt.Println("hover range: ", hover.Result.Range)
+	fmt.Println("hover content:\n", hover.Result.Contents.Value)
+
+	fmt.Println("ending lsp server")
+}
+
+
+func TestGoLangSignatureHelp(t *testing.T) {
+	dir, _ := os.Getwd()
+	file := dir + "/lsp_test.go"
+
+	fmt.Println("starting lsp server")
+
+	lsp := LspClient{}
+	lsp.start("go")
+	lsp.init(dir)
+	lsp.didOpen(file)
+
+	response, _ := lsp.signatureHelp(file,14-1, 36)
+	fmt.Println("signatureHelp: ", response)
+	//fmt.Println("hover content:\n", hover.Result.Contents.Value)
+
+	fmt.Println("ending lsp server")
+}

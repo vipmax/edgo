@@ -14,7 +14,7 @@ func TestFormat(t *testing.T) {
 func TestDetectGoLang(t *testing.T) {
 	language := detectLang("highlighter_test.go")
 	fmt.Println(language)
-	if language != "Go"{
+	if language != "go"{
 		t.Error("language must be Go", language)
 	}
 }
@@ -22,7 +22,7 @@ func TestDetectGoLang(t *testing.T) {
 func TestDetectPythonLang(t *testing.T) {
 	language := detectLang("test.py")
 	fmt.Println(language)
-	if language != "Python"{
+	if language != "python"{
 		t.Error("language must be Python", language)
 	}
 }

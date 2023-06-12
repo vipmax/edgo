@@ -34,7 +34,7 @@ type Position struct {
 }
 
 type Context struct {
-	TriggerKind int `json:"triggerKind"`
+	TriggerKind int `json:"triggerKind,omitempty"`
 }
 
 type Params struct {
@@ -92,7 +92,7 @@ type TextDocumentContentChangeEvent struct {
 type CompletionResponse struct {
 	JSONRPC string            `json:"jsonrpc"`
 	Result  CompletionResult  `json:"result"`
-	ID      float64               `json:"id"`
+	ID      float64           `json:"id"`
 }
 
 type CompletionResult struct {
@@ -129,6 +129,43 @@ type PositionResponse struct {
 	Character float64 `json:"character"`
 }
 
+
+type Contents struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
+type HoverResult struct {
+	Contents Contents `json:"contents"`
+	Range    Range    `json:"range"`
+}
+
+type HoverResponse struct {
+	JSONRPC string      `json:"jsonrpc"`
+	Result  HoverResult `json:"result"`
+	ID      int         `json:"id"`
+}
+
+
+type Parameter struct {
+	Label string `json:"label"`
+}
+
+type Signature struct {
+	Label      string      `json:"label"`
+	Parameters []Parameter `json:"parameters"`
+}
+
+type SignatureHelpResult struct {
+	Signatures      []Signature `json:"signatures"`
+	ActiveParameter int         `json:"activeParameter"`
+}
+
+type SignatureHelpResponse struct {
+	JSONRPC string `json:"jsonrpc"`
+	Result  SignatureHelpResult `json:"result"`
+	ID      int    `json:"id"`
+}
 
 
 type Capabilities struct {

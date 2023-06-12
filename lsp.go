@@ -22,7 +22,7 @@ type LspClient struct {
 	responsesMutex sync.Mutex
 	isReady   	   bool
 	id        	   int
-	lspCmd 	      []string
+	lspCmd 	       []string
 }
 
 var langCommands = map[string][]string{
@@ -30,7 +30,7 @@ var langCommands = map[string][]string{
 	"python":     {"pylsp"},
 	"typescript": {"typescript-language-server", "--stdio"},
 	"javascript": {"typescript-language-server", "--stdio"},
-	"html": 	  {"vscode-html-language-server", "--stdio"},
+	"html": 	  {"vscode-html-language-server","--stdio"},
 	"vue": 	  	  {"vls"},
 	"rust": 	  {"rust-analyzer"},
 	"c": 	  	  {"clangd"},
@@ -70,20 +70,14 @@ func (this *LspClient) start(language string) bool {
 	return true
 }
 
-func (this LspClient) wait() {
-	this.process.Wait()
-}
 func (this *LspClient) send(o interface{}) error {
 	m, err := json.Marshal(o)
-	if err != nil {
-		return fmt.Errorf("error encoding JSON: %v", err)
-	}
+	if err != nil { return fmt.Errorf("error encoding JSON: %v", err) }
 
 	message := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(m), m)
+	//fmt.Println("[send]", message)
 	_, err = this.stdin.Write([]byte(message))
-	if err != nil {
-		return fmt.Errorf("error sending message: %v", err)
-	}
+	if err != nil { return fmt.Errorf("error sending message: %v", err) }
 
 	return nil
 }
@@ -91,20 +85,13 @@ func (this *LspClient) send(o interface{}) error {
 func (this *LspClient) init(dir string) {
 	this.id = 0
 	initializeRequest := InitializeRequest{
-		ID:     0, JSONRPC: "2.0",
+		ID: this.id, JSONRPC: "2.0",
 		Method: "initialize",
 		Params: InitializeParams{
-			RootURI: "file://" + dir,
-			RootPath: dir,
-			WorkspaceFolders: []WorkspaceFolder{
-				{
-					Name: "edgo",
-					URI:  "file://" + dir,
-				},
-			},
+			RootURI: "file://" + dir, RootPath: dir,
+			WorkspaceFolders: []WorkspaceFolder{{ Name: "edgo", URI:  "file://" + dir }},
 			Capabilities: capabilities,
 			ClientInfo: ClientInfo{ Name: "edgo",Version: "1.0.0"},
-			//InitializationOptions: nil,
 		},
 	}
 
@@ -198,29 +185,43 @@ func (this *LspClient) references(file string, line int, character int) {
 	this.send(referencesRequest)
 	time.Sleep(time.Millisecond * 10)
 }
-func (this *LspClient) hover(file string, line int, character int) map[string]interface{} {
+func (this *LspClient) hover(file string, line int, character int) (HoverResponse, error) {
 	this.id++
 
 	request := BaseRequest{
-		ID:      this.id,
-		JSONRPC: "2.0",
-		Method:  "textDocument/hover",
-		Params: Params{
-			TextDocument: TextDocument{
-				URI: "file://" + file,
-			},
-			Position: Position{
-				Line:      line,
-				Character: character,
-			},
+		ID: this.id, JSONRPC: "2.0", Method:  "textDocument/hover",
+		Params: Params {
+			TextDocument: TextDocument { URI: "file://" + file },
+			Position: Position { Line: line, Character: character },
 		},
 	}
 
 	this.send(request)
-	time.Sleep(time.Millisecond * 10)
+	_, jsonData := this.read_stdout(false)
 
-	response := this.waitForResponseInMap(this.id)
-	return response
+	var response HoverResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	//if err != nil { panic("Error parsing JSON:" + err.Error()) }
+	return response, err
+}
+func (this *LspClient) signatureHelp(file string, line int, character int) (SignatureHelpResponse, error) {
+	this.id++
+
+	request := BaseRequest{
+		ID: this.id, JSONRPC: "2.0", Method:  "textDocument/signatureHelp",
+		Params: Params {
+			TextDocument: TextDocument { URI: "file://" + file },
+			Position: Position { Line: line, Character: character },
+		},
+	}
+
+	this.send(request)
+	_, jsonData := this.read_stdout(false)
+
+	var response SignatureHelpResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	//if err != nil { panic("Error parsing JSON:" + err.Error()) }
+	return response, err
 }
 func (this *LspClient) definition(file string, line int, character int) {
 	this.id++
@@ -248,21 +249,11 @@ func (this *LspClient) completion(file string, code string, line int, character 
 	id := this.id
 
 	request := BaseRequest{
-		ID:      id,
-		JSONRPC: "2.0",
-		Method:  "textDocument/completion",
+		ID: id, JSONRPC: "2.0", Method:  "textDocument/completion",
 		Params: Params{
-			TextDocument: TextDocument{
-				URI:  "file://" + file,
-				Text: code,
-			},
-			Position: Position{
-				Line:      line,
-				Character: character,
-			},
-			Context: Context{
-				TriggerKind: 1,
-			},
+			TextDocument: TextDocument { URI:  "file://" + file, Text: code },
+			Position: Position { Line: line, Character: character },
+			Context: Context { TriggerKind: 1 },
 		},
 	}
 
@@ -270,9 +261,7 @@ func (this *LspClient) completion(file string, code string, line int, character 
 	js, jsonData := this.read_stdout(false)
 	var completionResponse CompletionResponse
 	err := json.Unmarshal([]byte(jsonData), &completionResponse)
-	if err != nil {
-		panic("Error parsing JSON:" + err.Error())
-	}
+	if err != nil { panic("Error parsing JSON:" + err.Error()) }
 	return completionResponse, js
 }
 
@@ -308,7 +297,6 @@ func (this *LspClient) read_stdout(addtoMap bool) (map[string]interface{}, strin
 			_, err = io.ReadFull(reader, buf)
 			if err != nil {
 				//fmt.Println("Error reading from stdout:", err)
-				//time.Sleep(time.Millisecond * 30)
 				continue
 			}
 			line = string(buf)
@@ -319,7 +307,6 @@ func (this *LspClient) read_stdout(addtoMap bool) (map[string]interface{}, strin
 			err = json.Unmarshal(buf, &responseJSON)
 			if err != nil {
 				//fmt.Println("Error parsing JSON response:", err)
-				//time.Sleep(time.Millisecond * 30)
 				continue
 			}
 
@@ -337,7 +324,6 @@ func (this *LspClient) read_stdout(addtoMap bool) (map[string]interface{}, strin
 		} else {
 			line, err = reader.ReadString('\n')
 			if err != nil {
-				//time.Sleep(time.Millisecond * 30)
 				continue
 			}
 			//fmt.Println("line", line)
@@ -358,5 +344,4 @@ func (this *LspClient) read_stdout(addtoMap bool) (map[string]interface{}, strin
 			continue
 		}
 	}
-
 }

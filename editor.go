@@ -60,11 +60,8 @@ func (e *Editor) start() {
 	}
 
 	code := e.ReadFile()
-
 	lang = detectLang(filename)
-
-	if colorize { colors = highlighter.colorize(code, filename) }
-
+	colors = highlighter.colorize(code, filename)
 	s = e.initScreen()
 
 	e.undoStack = []Operation{}
@@ -81,28 +78,6 @@ func (e *Editor) start() {
 	}
 }
 
-func (e *Editor) ReadFile() string {
-	/// if file is big, read only first 1000 lines and read rest async
-	fileSize := getFileSize(path.Join(directory, filename))
-	fileSizeMB := fileSize / (1024 * 1024) // Convert size to megabytes
-
-	var code string
-	if fileSizeMB >= 1 {
-		//colorize = false
-		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000)
-
-		go func() { // sync?? no need
-			code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
-			if colorize { colors = highlighter.colorize(code, filename); e.drawEverything();s.Show() }
-		}()
-
-	} else {
-		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
-	}
-	return code
-}
-
-
 func (e *Editor) initScreen() tcell.Screen {
 	encoding.Register()
 	s, err := tcell.NewScreen()
@@ -118,21 +93,43 @@ func (e *Editor) initScreen() tcell.Screen {
 	return s
 }
 
-func (e *Editor) init_lsp() {
-	start := time.Now()
+func (e *Editor) drawEverything() {
+	// calculate scrolling offsets for scrolling vertically and horizontally
+	if r < y { y = r }
+	if r >= y + ROWS { y = r - ROWS }
+	if c < x { x = c }
+	if c >= x + COLUMNS { x = c - COLUMNS + 1 }
 
-	started := lsp.start(lang)
-	if !started { return }
+	// draw line number and chars according to scrolling offsets
+	for row := 0; row <= ROWS; row++ {
+		ry := row + y  // index to get right row in characters buffer by scrolling offset y
+		e.cleanLineAfter(0, row)
+		if row >= len(content) || ry >= len(content) { break }
+		e.drawLineNumber(ry, row)
 
-	lsp.init(directory)
-	lsp.didOpen(path.Join(directory, filename))
+		for col := 0; col <= COLUMNS; col++ {
+			cx := col + x // index to get right column in characters buffer by scrolling offset x
+			if cx >= len(content[ry]) { break }
+			ch := content[ry][cx]
+			style := e.getStyle(ry, cx)
+			s.SetContent(col + LS, row, ch, nil, style)
+		}
+	}
 
-	lspStatus := "lsp started, elapsed " + time.Since(start).String()
-	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-	e.cleanLineAfter(len(status), ROWS+1)
-	s.Show()
+	var changes = ""; if isFileChanged { changes = "*"}
+	status := fmt.Sprintf(" %s %d %d %s%s", lang, r+1, c+1, inputFile, changes)
+	e.drawText(0, ROWS + 1, COLUMNS, ROWS + 1, status)
+	e.cleanLineAfter(len(status), ROWS + 1)
+	s.ShowCursor(c - x + LS, r - y)  // show cursor
+}
+
+func (e *Editor) drawLineNumber(brw int, row int) {
+	var style = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
+	if brw == r { style = tcell.StyleDefault }
+	lineNumber := centerNumber(brw + 1, LS)
+	for index, char := range lineNumber {
+		s.SetContent(index, row, char, nil, style)
+	}
 }
 
 func (e *Editor) handleEvents() {
@@ -201,6 +198,8 @@ func (e *Editor) handleEvents() {
 	case *tcell.EventKey:
 		key := ev.Key()
 
+		if key == tcell.KeyCtrlH { e.onHover(); return }
+		if key == tcell.KeyCtrlP { e.onSignatureHelp(); return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelection()) }
 		if key == tcell.KeyCtrlV { e.paste() }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
@@ -221,11 +220,11 @@ func (e *Editor) handleEvents() {
 			return
 		}
 
-		//if key == tcell.KeyRune && ev.Modifiers()&tcell.ModAlt != 0 {
-		//	if len(content) == 0 { return }
-		//	e.handleSmartMove(ev.Rune())
-		//	return
-		//}
+		if key == tcell.KeyRune && ev.Modifiers()&tcell.ModAlt != 0 {
+			if len(content) > 0 { e.handleSmartMove(ev.Rune()) }
+			return
+		}
+
 		if key == tcell.KeyRune { e.addChar(ev.Rune()) }
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
 		if key == tcell.KeyCtrlS { e.writeFile() }
@@ -241,12 +240,46 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyCtrlU { e.undo() }
 		if key == tcell.KeyCtrlR { e.redo() }
 		if key == tcell.KeyCtrlSpace { e.onCompletion(); s.Clear(); }
+
 	}
 }
 
-func (e *Editor) cleanSelection() {
-	isSelected = false
-	ssx, ssy, sex, sey = -1, -1, -1, -1
+func (e *Editor) ReadFile() string {
+	/// if file is big, read only first 1000 lines and read rest async
+	fileSize := getFileSize(path.Join(directory, filename))
+	fileSizeMB := fileSize / (1024 * 1024) // Convert size to megabytes
+
+	var code string
+	if fileSizeMB >= 1 {
+		//colorize = false
+		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000)
+
+		go func() { // sync?? no need
+			code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
+			if colorize { colors = highlighter.colorize(code, filename); e.drawEverything();s.Show() }
+		}()
+
+	} else {
+		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
+	}
+	return code
+}
+
+func (e *Editor) init_lsp() {
+	start := time.Now()
+
+	started := lsp.start(lang)
+	if !started { return }
+
+	lsp.init(directory)
+	lsp.didOpen(path.Join(directory, filename))
+
+	lspStatus := "lsp started, elapsed " + time.Since(start).String()
+	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
+	status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
+	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+	e.cleanLineAfter(len(status), ROWS+1)
+	s.Show()
 }
 
 func (e *Editor) onCompletion() {
@@ -334,6 +367,7 @@ func sortItemsByMatchCount(cr *CompletionResult, matchStr string) {
 		return scoreMatches(cr.Items[i].Label, matchStr) > scoreMatches(cr.Items[j].Label, matchStr)
 	})
 }
+
 // scoreMatches applies a scoring system based on different matching scenarios.
 func scoreMatches(src, matchStr string) int {
 	score := 0
@@ -355,8 +389,9 @@ func scoreMatches(src, matchStr string) int {
 	return score
 }
 
-func (e *Editor) drawCompletion(
-	atx int, aty int, height int, width int, options []string, selected int, selectedOffset int, style tcell.Style) {
+func (e *Editor) drawCompletion(atx int, aty int, height int, width int,
+	options []string, selected int, selectedOffset int, style tcell.Style) {
+
 	for row := 0; row < aty+height; row++ {
 		if row >= len(options) || row >= height { break }
 		var option = options[row+selectedOffset]
@@ -417,34 +452,9 @@ func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Styl
 	return style
 }
 
-func (e *Editor) drawEverything() {
-	// calculate scrolling offsets for scrolling vertically and horizontally
-	if r < y { y = r }
-	if r >= y + ROWS { y = r - ROWS }
-	if c < x { x = c }
-	if c >= x + COLUMNS { x = c - COLUMNS + 1 }
-
-	// draw line number and chars according to scrolling offsets
-	for row := 0; row <= ROWS; row++ {
-		ry := row + y  // index to get right row in characters buffer by scrolling offset y
-		e.cleanLineAfter(0, row)
-		if row >= len(content) || ry >= len(content) { break }
-		e.drawLineNumber(ry, row)
-
-		for col := 0; col <= COLUMNS; col++ {
-			cx := col + x // index to get right column in characters buffer by scrolling offset x
-			if cx >= len(content[ry]) { break }
-			ch := content[ry][cx]
-			style := e.getStyle(ry, cx)
-			s.SetContent(col + LS, row, ch, nil, style)
-		}
-	}
-
-	var changes = ""; if isFileChanged { changes = "*"}
-	status := fmt.Sprintf(" %s %d %d %s%s", lang, r+1, c+1, inputFile, changes)
-	e.drawText(0, ROWS + 1, COLUMNS, ROWS + 1, status)
-	e.cleanLineAfter(len(status), ROWS + 1)
-	s.ShowCursor(c - x + LS, r - y)  // show cursor
+func (e *Editor) cleanSelection() {
+	isSelected = false
+	ssx, ssy, sex, sey = -1, -1, -1, -1
 }
 
 func (e *Editor) getStyle(ry int, cx int) tcell.Style {
@@ -457,16 +467,6 @@ func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 	return style
 }
 
-func (e *Editor) drawLineNumber(brw int, row int) {
-	var style = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
-	if brw == r { style = tcell.StyleDefault }
-	lineNumber := centerNumber(brw + 1, LS)
-	for index, char := range lineNumber {
-		s.SetContent(index, row, char, nil, style)
-	}
-}
-
-
 func (e *Editor) addChar(ch rune) {
 	if ssx != -1 { e.cut() }
 
@@ -477,9 +477,8 @@ func (e *Editor) addChar(ch rune) {
 	e.maybeAddPair(ch)
 
 	isFileChanged = true
-
+	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
 	if len(content) <= 10000 { e.writeFile() }
-
 	e.updateColors()
 }
 
@@ -525,12 +524,11 @@ func (e *Editor) onDelete() {
 		r--
 		c = len(content[r])
 		content[r] = append(content[r], l...)
-
 	}
 
 	isFileChanged = true
+	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
 	if len(content) <= 10000 { e.writeFile() }
-
 	e.updateColors()
 }
 
@@ -579,8 +577,6 @@ func (e *Editor) onRight() {
 	}
 }
 
-
-
 func (e *Editor) onEnter(isSaveTabs bool) {
 	if ssx != -1 { e.cut() }
 
@@ -605,8 +601,8 @@ func (e *Editor) onEnter(isSaveTabs bool) {
 	newline := append(begining, after...)
 	content = insert(content, r, newline)
 
+	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
 	if len(content) <= 10000 { e.writeFile() }
-
 	e.updateColors()
 }
 
@@ -884,6 +880,116 @@ func (e *Editor) redo() {
 	e.updateColors()
 }
 
+func (e *Editor) onHover() {
+	if !lsp.isReady { return }
+
+	var hoverEnd = false
+
+	// loop until escape or enter pressed
+	for !hoverEnd {
+
+		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+		tabsCount := countTabsFromString(textline, c)
+
+		start := time.Now()
+		hover, err := lsp.hover(path.Join(directory, filename), r, c - tabsCount)
+		elapsed := time.Since(start)
+
+		lspStatus := "lsp hover, elapsed " + elapsed.String()
+		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
+		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+		e.cleanLineAfter(len(status), ROWS+1)
+
+		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
+		options := strings.Split(hover.Result.Contents.Value, "\n")
+
+		atx := c + LS; aty := r + 1 - y // Define the window  position and dimensions
+		width := max(30, maxString(options)) // width depends on max option len or 30 at min
+		height := minMany(10, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
+		style := tcell.StyleDefault
+		// if completion on last two rows of the screen - move window up
+		if r - y  >= ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
+
+		var selectionEnd = false; var selected = 0; var selectedOffset = 0
+
+		for !selectionEnd {
+			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
+			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
+
+			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
+			s.Show()
+
+			switch ev := s.PollEvent().(type) { // poll and handle event
+			case *tcell.EventKey:
+				key := ev.Key()
+				if key == tcell.KeyEscape || key == tcell.KeyEnter { selectionEnd = true; hoverEnd = true }
+				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == tcell.KeyUp { selected = max(0, selected-1) }
+				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+			}
+		}
+	}
+}
+
+func (e *Editor) onSignatureHelp() {
+	if !lsp.isReady { return }
+
+	var end = false
+
+	// loop until escape or enter pressed
+	for !end {
+		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+		tabsCount := countTabsFromString(textline, c)
+
+		start := time.Now()
+		signatureHelpResponse, err := lsp.signatureHelp(path.Join(directory, filename), r, c - tabsCount)
+		elapsed := time.Since(start)
+
+		lspStatus := "lsp signatureHelp, elapsed " + elapsed.String()
+		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
+		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+		e.cleanLineAfter(len(status), ROWS+1)
+
+		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
+			len(signatureHelpResponse.Result.Signatures) == 0 { return }
+
+		var options = []string{}
+		for _, signature := range signatureHelpResponse.Result.Signatures {
+			var text = []string {}
+			for _, parameter := range signature.Parameters {
+				text =  append(text, parameter.Label)
+			}
+			options = append(options, strings.Join(text, ", "))
+		}
+
+		width := max(30, maxString(options)) // width depends on max option len or 30 at min
+		height := minMany(10, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
+		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
+		style := tcell.StyleDefault
+
+		var selectionEnd = false; var selected = 0; var selectedOffset = 0
+
+		for !selectionEnd {
+			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
+			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
+
+			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
+			s.Show()
+
+			switch ev := s.PollEvent().(type) { // poll and handle event
+			case *tcell.EventKey:
+				key := ev.Key()
+				if key == tcell.KeyEscape || key == tcell.KeyEnter { selectionEnd = true; end = true }
+				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == tcell.KeyUp { selected = max(0, selected-1) }
+				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+			}
+		}
+	}
+}
+
 func isUnderSelection(x, y int) bool {
 	// Check if there is an active selection
 	if ssx == -1 || ssy == -1  || sex == -1 || sey == -1{
@@ -949,4 +1055,3 @@ func countTabsInRow(i int) int {
 	}
 	return count
 }
-
