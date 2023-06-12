@@ -342,6 +342,120 @@ func (e *Editor) onCompletion() {
 	}
 }
 
+func (e *Editor) onHover() {
+	if !lsp.isReady { return }
+
+	var hoverEnd = false
+
+	// loop until escape or enter pressed
+	for !hoverEnd {
+
+		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+		tabsCount := countTabsFromString(textline, c)
+
+		start := time.Now()
+		hover, err := lsp.hover(path.Join(directory, filename), r, c - tabsCount)
+		elapsed := time.Since(start)
+
+		lspStatus := "lsp hover, elapsed " + elapsed.String()
+		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
+		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+		e.cleanLineAfter(len(status), ROWS+1)
+
+		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
+		options := strings.Split(hover.Result.Contents.Value, "\n")
+		if len(options) == 0 { return }
+
+		width := max(30, maxString(options)) // width depends on max option len or 30 at min
+		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
+		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
+		style := tcell.StyleDefault
+		if len(options) > r - y { aty = r + 1 }
+
+
+		var selectionEnd = false; var selected = 0; var selectedOffset = 0
+
+		for !selectionEnd {
+			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
+			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
+
+			e.drawCompletion(atx,aty, height, width, options, -1, selectedOffset, style)
+			s.Show()
+
+			switch ev := s.PollEvent().(type) { // poll and handle event
+			case *tcell.EventKey:
+				key := ev.Key()
+				if key == tcell.KeyEscape || key == tcell.KeyEnter { selectionEnd = true; hoverEnd = true }
+				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == tcell.KeyUp { selected = max(0, selected-1) }
+				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+			}
+		}
+	}
+}
+
+func (e *Editor) onSignatureHelp() {
+	if !lsp.isReady { return }
+
+	var end = false
+
+	// loop until escape or enter pressed
+	for !end {
+		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+		tabsCount := countTabsFromString(textline, c)
+
+		start := time.Now()
+		signatureHelpResponse, err := lsp.signatureHelp(path.Join(directory, filename), r, c - tabsCount)
+		elapsed := time.Since(start)
+
+		lspStatus := "lsp signatureHelp, elapsed " + elapsed.String()
+		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
+		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+		e.cleanLineAfter(len(status), ROWS+1)
+
+		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
+			len(signatureHelpResponse.Result.Signatures) == 0 { return }
+
+		var options = []string{}
+		for _, signature := range signatureHelpResponse.Result.Signatures {
+			var text = []string {}
+			for _, parameter := range signature.Parameters {
+				text =  append(text, parameter.Label)
+			}
+			options = append(options, strings.Join(text, ", "))
+		}
+
+		if len(options) == 0 { return }
+
+		width := max(30, maxString(options)) // width depends on max option len or 30 at min
+		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
+		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
+		style := tcell.StyleDefault
+		if len(options) > r - y { aty = r + 1 }
+
+		var selectionEnd = false; var selected = 0; var selectedOffset = 0
+
+		for !selectionEnd {
+			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
+			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
+
+			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
+			s.Show()
+
+			switch ev := s.PollEvent().(type) { // poll and handle event
+			case *tcell.EventKey:
+				key := ev.Key()
+				if key == tcell.KeyEscape || key == tcell.KeyEnter { selectionEnd = true; end = true }
+				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == tcell.KeyUp { selected = max(0, selected-1) }
+				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+			}
+		}
+	}
+}
+
 func (e *Editor) buildCompletionOptions(completion CompletionResponse) []string {
 	var options []string
 	var maxOptlen = 5
@@ -878,116 +992,6 @@ func (e *Editor) redo() {
 	isFileChanged = true
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
-}
-
-func (e *Editor) onHover() {
-	if !lsp.isReady { return }
-
-	var hoverEnd = false
-
-	// loop until escape or enter pressed
-	for !hoverEnd {
-
-		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-		tabsCount := countTabsFromString(textline, c)
-
-		start := time.Now()
-		hover, err := lsp.hover(path.Join(directory, filename), r, c - tabsCount)
-		elapsed := time.Since(start)
-
-		lspStatus := "lsp hover, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-		e.cleanLineAfter(len(status), ROWS+1)
-
-		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
-		options := strings.Split(hover.Result.Contents.Value, "\n")
-
-		atx := c + LS; aty := r + 1 - y // Define the window  position and dimensions
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
-		style := tcell.StyleDefault
-		// if completion on last two rows of the screen - move window up
-		if r - y  >= ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
-
-		var selectionEnd = false; var selected = 0; var selectedOffset = 0
-
-		for !selectionEnd {
-			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
-			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
-
-			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
-
-			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *tcell.EventKey:
-				key := ev.Key()
-				if key == tcell.KeyEscape || key == tcell.KeyEnter { selectionEnd = true; hoverEnd = true }
-				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == tcell.KeyUp { selected = max(0, selected-1) }
-				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-			}
-		}
-	}
-}
-
-func (e *Editor) onSignatureHelp() {
-	if !lsp.isReady { return }
-
-	var end = false
-
-	// loop until escape or enter pressed
-	for !end {
-		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-		tabsCount := countTabsFromString(textline, c)
-
-		start := time.Now()
-		signatureHelpResponse, err := lsp.signatureHelp(path.Join(directory, filename), r, c - tabsCount)
-		elapsed := time.Since(start)
-
-		lspStatus := "lsp signatureHelp, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-		e.cleanLineAfter(len(status), ROWS+1)
-
-		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
-			len(signatureHelpResponse.Result.Signatures) == 0 { return }
-
-		var options = []string{}
-		for _, signature := range signatureHelpResponse.Result.Signatures {
-			var text = []string {}
-			for _, parameter := range signature.Parameters {
-				text =  append(text, parameter.Label)
-			}
-			options = append(options, strings.Join(text, ", "))
-		}
-
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
-		style := tcell.StyleDefault
-
-		var selectionEnd = false; var selected = 0; var selectedOffset = 0
-
-		for !selectionEnd {
-			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
-			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
-
-			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
-
-			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *tcell.EventKey:
-				key := ev.Key()
-				if key == tcell.KeyEscape || key == tcell.KeyEnter { selectionEnd = true; end = true }
-				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == tcell.KeyUp { selected = max(0, selected-1) }
-				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-			}
-		}
-	}
 }
 
 func isUnderSelection(x, y int) bool {
