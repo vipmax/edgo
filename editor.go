@@ -379,7 +379,7 @@ func (e *Editor) onHover() {
 			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
-			e.drawCompletion(atx,aty, height, width, options, -1, selectedOffset, style)
+			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
@@ -409,7 +409,7 @@ func (e *Editor) onSignatureHelp() {
 		signatureHelpResponse, err := lsp.signatureHelp(path.Join(directory, filename), r, c - tabsCount)
 		elapsed := time.Since(start)
 
-		lspStatus := "lsp signatureHelp, elapsed " + elapsed.String()
+		lspStatus := "lsp signature help, elapsed " + elapsed.String()
 		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
 		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
 		e.cleanLineAfter(len(status), ROWS+1)

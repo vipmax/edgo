@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-
 func TestGoLangCompletion(t *testing.T) {
 	dir, _ := os.Getwd()
 	file := dir + "/lsp_test.go"
@@ -141,7 +140,6 @@ func TestGoLangSignatureHelp(t *testing.T) {
 
 	response, _ := lsp.signatureHelp(file,14-1, 36)
 	fmt.Println("signatureHelp: ", response)
-	//fmt.Println("hover content:\n", hover.Result.Contents.Value)
 
 	fmt.Println("ending lsp server")
 }
