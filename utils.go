@@ -142,6 +142,50 @@ func GreaterEqual(x, y, x1, y1 int) bool {
 	return false
 }
 
+func Equal(x, y, x1, y1 int) bool {
+	return x == x1 && y == y1
+}
+
+
+func getSelectionString(content [][]rune, ssx, ssy, sex, sey int) string {
+	var ret = []rune {}
+	var in = false
+
+	// check for empty selection
+	if Equal(ssx, ssy, sex, sey) { return "" }
+
+	// getting selection start point
+	var startx, starty = ssx, ssy
+	var endx, endy = sex, sey
+
+	if GreaterThan(startx, starty, endx, endy) {
+		startx, endx = endx, startx // swap  points if selection inverse
+		starty, endy = endy, starty
+	}
+
+	for j := starty; j < len(content); j++ {
+		row := content[j]
+		for i, char := range row {
+			// if inside selection
+			if GreaterEqual(i, j, startx, starty) && LessThan(i, j, endx, endy) {
+				ret = append(ret, char)
+				in = true
+			} else {
+				in = false
+				// only one selection area can be, early return
+				if len(ret) > 0 {
+					return string(ret)
+				}
+			}
+		}
+		if in && LessThan(0, j, endx, endy) {
+			ret = append(ret, '\n')
+		}
+	}
+	return string(ret)
+}
+
+
 
 func maxString(arr []string) int {
 	maxLength := 0

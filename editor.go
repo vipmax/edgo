@@ -141,19 +141,25 @@ func (e *Editor) handleEvents() {
 		buttons := ev.Buttons()
 		mx -= LS
 
+		if mx < 0  { return }
+		if my == ROWS  { return }
+
 		if isSelected && buttons&tcell.Button1 == 1 {
-			if isUnderSelection(mx+x, my+y) && buttons&tcell.Button1 == 1  {
+
+			if isUnderSelection(mx+x, my+y)  {
 				r = my + y
 				c = mx + x
 				if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 				if c > len(content[r]) { c = len(content[r]) }
-				if c < 0 { c = 0 }
+				//if c < 0 { sex = len(content[r]) }
 
 				ssx = 0; sex = len(content[r])
 				ssy = r; sey = r
 				return
+			} else {
+				e.cleanSelection()
 			}
-			e.cleanSelection()
+
 		}
 
 		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1)
@@ -163,7 +169,7 @@ func (e *Editor) handleEvents() {
 		if buttons&tcell.Button1 == 0 && ssx == -1 { update = false; return }
 
 		if buttons&tcell.Button1 == 1 {
-			if c == mx+x && r == my+y {
+			if c == mx+x && r == my+y  {
 				// double click
 				prw := findPrevWord(content[r], c)
 				nxw := findNextWord(content[r], c)
@@ -200,10 +206,10 @@ func (e *Editor) handleEvents() {
 
 		if key == tcell.KeyCtrlH { e.onHover();  return }
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
-		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelection()) }
+		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
 		if key == tcell.KeyCtrlV { e.paste() }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
-		if key == tcell.KeyCtrlD { e.duplicate() }
+		if key == tcell.KeyCtrlE { e.duplicate() }
 
 		if ev.Modifiers()&tcell.ModShift != 0 && (
 				key == tcell.KeyRight ||
@@ -616,8 +622,9 @@ func (e *Editor) maybeAddPair(ch rune) {
 	if closeChar, found := pairMap[ch]; found {
 		noMoreChars := c >= len(content[r])
 		isSpaceNext := c < len(content[r]) && content[r][c] == ' '
+		isStringAndClosedBracketNext := closeChar == '"' && c < len(content[r]) && content[r][c] == ')'
 
-		if noMoreChars || isSpaceNext {
+		if noMoreChars || isSpaceNext || isStringAndClosedBracketNext {
 			content[r] = insert(content[r], c, closeChar)
 		}
 	}
@@ -926,14 +933,17 @@ func (e *Editor) cut() {
 func (e *Editor) duplicate() {
 	if len(content) == 0 { return }
 
-	if ssx == -1 && ssy == -1 {
+	if ssx == -1 && ssy == -1 || ssx == sex && ssy == sey  {
 		duplicatedSlice := make([]rune, len(content[r]))
 		copy(duplicatedSlice, content[r])
 		content = insert(content, r+1, duplicatedSlice)
 		r++
 	} else {
-		clipboard.WriteAll(getSelection())
+		selection := getSelectionString(content, ssx,ssy,sex,sey)
+		if len(selection) == 0 { return }
+		clipboard.WriteAll(selection)
 		e.paste()
+		e.cleanSelection()
 	}
 	isFileChanged = true
 	e.updateColors()
