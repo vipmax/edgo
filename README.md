@@ -55,7 +55,7 @@ go install golang.org/x/tools/gopls@latest
 
 `python`
 ```shell  
-pip install "python-lsp-server[all]"
+npm i -g pyright
 ```
 
 `javascript/typescript`
@@ -91,20 +91,10 @@ glang, go to https://clangd.llvm.org/installation.html
 brew install jdtls
 ```
 
-`scala`
-```shell  
-# https://scalameta.org/metals/
-# Install Coursier
-# Run then 
-coursier install metals
-# note: so slow :(
-```
-
 `kotlin`
 ```shell  
 # https://github.com/fwcd/kotlin-language-server
 brew install kotlin-language-server
-# note: slow :(
 ```
 
 

@@ -44,6 +44,7 @@ func (e *Editor) start() {
 		filename = os.Args[1]
 		inputFile = filename
 	} else {
+		fmt.Println("filename not found. usage: edgo [filename]")
 		os.Exit(130)
 	}
 
@@ -116,11 +117,47 @@ func (e *Editor) drawEverything() {
 		}
 	}
 
-	var changes = ""; if isFileChanged { changes = "*"}
+	e.drawDiagnostic()
+
+	var changes = ""; if isFileChanged { changes = "*" }
 	status := fmt.Sprintf(" %s %d %d %s%s", lang, r+1, c+1, inputFile, changes)
-	e.drawText(0, ROWS + 1, COLUMNS, ROWS + 1, status)
-	e.cleanLineAfter(len(status), ROWS + 1)
-	s.ShowCursor(c - x + LS, r - y)  // show cursor
+	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+	e.cleanLineAfter(len(status), ROWS+1)
+	s.ShowCursor(c-x+LS, r-y) // show cursor
+}
+
+func (e *Editor) drawDiagnostic() {
+	//lsp.someMapMutex2.Lock()
+	maybeDiagnostic, found := lsp.file2diagnostic["file://"+path.Join(directory, filename)]
+	//lsp.someMapMutex2.Unlock()
+
+	if found {
+		style := tcell.StyleDefault.Background(tcell.ColorIndianRed).Foreground(tcell.ColorWhite)
+		//textStyle := tcell.StyleDefault.Foreground(tcell.ColorIndianRed)
+
+		for _, diagnostic := range maybeDiagnostic.Diagnostics {
+			//for i := int(diagnostic.Range.Start.Line); i <= int(diagnostic.Range.End.Line); i++ {
+			//	textline := strings.ReplaceAll(string(content[i]), "  ", "\t")
+			//	tabsCount := countTabsFromString(textline, c)
+			//	spacesCount := tabsCount*2
+			//
+			//	for j := int(diagnostic.Range.Start.Character); j <= int(diagnostic.Range.End.Character); j++ {
+			//		if i >= len(content) || j >= len(content[i]){ continue }
+			//		ch := content[i][j]
+			//		s.SetContent(j+LS + spacesCount, i-y, ch, nil, textStyle)
+			//	}
+			//}
+
+			for i, m := range diagnostic.Message {
+				s.SetContent(
+					i+LS+len(content[int(diagnostic.Range.Start.Line)])+5,
+					int(diagnostic.Range.Start.Line) - y, m, nil,
+					style,
+				)
+			}
+		}
+
+	}
 }
 
 func (e *Editor) drawLineNumber(brw int, row int) {
@@ -204,12 +241,13 @@ func (e *Editor) handleEvents() {
 	case *tcell.EventKey:
 		key := ev.Key()
 
+
 		if key == tcell.KeyCtrlH { e.onHover();  return }
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
 		if key == tcell.KeyCtrlV { e.paste() }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
-		if key == tcell.KeyCtrlE { e.duplicate() }
+		if key == tcell.KeyCtrlD { e.duplicate() }
 
 		if ev.Modifiers()&tcell.ModShift != 0 && (
 				key == tcell.KeyRight ||
@@ -230,14 +268,15 @@ func (e *Editor) handleEvents() {
 			if len(content) > 0 { e.handleSmartMove(ev.Rune()) }
 			return
 		}
-		if key == tcell.KeyDown && ev.Modifiers()&tcell.ModAlt != 0 { e.handleSmartMoveDown() }
-		if key == tcell.KeyUp && ev.Modifiers()&tcell.ModAlt != 0 { e.handleSmartMoveUp() }
+		if key == tcell.KeyDown && ev.Modifiers()&tcell.ModAlt != 0 { e.handleSmartMoveDown(); return }
+		if key == tcell.KeyUp && ev.Modifiers()&tcell.ModAlt != 0 { e.handleSmartMoveUp(); return }
 
 		if key == tcell.KeyRune {
 			e.addChar(ev.Rune());
-			if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear();}
-			if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear();}
+			//if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear();}
+			//if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear();}
 		}
+
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
 		if key == tcell.KeyCtrlS { e.writeFile() }
 		if key == tcell.KeyEnter { e.onEnter(true); s.Clear() }
@@ -286,11 +325,25 @@ func (e *Editor) init_lsp() {
 	lsp.init(directory)
 	lsp.didOpen(path.Join(directory, filename))
 
+	e.drawEverything();
+
 	lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
 	status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
 	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
 	e.cleanLineAfter(len(status), ROWS+1)
+	s.Show()
+
+
+	f := "file://" + path.Join(directory, filename)
+	for {
+		_, found := lsp.file2diagnostic[f]
+		if found {
+			break
+		}
+		time.Sleep(10*time.Millisecond)
+	}
+	e.drawEverything();
 	s.Show()
 }
 
@@ -301,12 +354,11 @@ func (e *Editor) onCompletion() {
 
 	// loop until escape or enter pressed
 	for !completionEnd {
-		text := convertToString(true)
 		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
 		tabsCount := countTabsFromString(textline, c)
 
 		start := time.Now()
-		completion, err := lsp.completion(path.Join(directory, filename), text, r, c-tabsCount)
+		completion, err := lsp.completion(path.Join(directory, filename), r, c-tabsCount)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
@@ -341,9 +393,9 @@ func (e *Editor) onCompletion() {
 					if key == tcell.KeyUp { selected = max(0, selected-1); s.Clear(); e.drawEverything(); }
 					if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
 					if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-					if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+					if key == tcell.KeyRune { e.addChar(ev.Rune()); s.Clear(); e.drawEverything(); selectionEnd = true  }
 					if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
-						e.onDelete(); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true
+						e.onDelete(); s.Clear(); e.drawEverything(); selectionEnd = true
 					}
 					if key == tcell.KeyEnter {
 						selectionEnd = true; completionEnd = true
@@ -399,7 +451,9 @@ func (e *Editor) onHover() {
 			case *tcell.EventKey:
 				key := ev.Key()
 				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
-					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { s.Clear(); selectionEnd = true; hoverEnd = true }
+					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
+					s.Clear(); selectionEnd = true; hoverEnd = true
+				}
 				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
 				if key == tcell.KeyUp { selected = max(0, selected-1) }
 				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
@@ -489,7 +543,7 @@ func (e *Editor) buildCompletionOptions(completion CompletionResponse) []string 
 		options = append(options, formatText(item.Label, item.Detail, maxOptlen))
 	}
 
-	if options == nil || len(options) == 0 { options = []string{"no options found"} }
+	if options == nil { options = []string{} }
 	return options
 }
 
@@ -630,7 +684,7 @@ func (e *Editor) maybeAddPair(ch rune) {
 	}
 }
 func (e *Editor) onDelete() {
-	if isSelected { e.cut(); return }
+	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut(); return }
 
 	if c > 0 {
 		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
@@ -747,6 +801,7 @@ func (e *Editor) cleanLineAfter( x, y int) {
 
 func (e *Editor) writeFile() {
 
+
 	// Create a new file, or open it if it exists
 	f, err := os.Create(path.Join(directory, filename))
 	if err != nil { panic(err) }
@@ -769,15 +824,28 @@ func (e *Editor) writeFile() {
 	}
 
 	// Don't forget to flush the buffered writer to ensure all data is written
-	if err := w.Flush(); err != nil {
-		panic(err)
-	}
+	if err := w.Flush(); err != nil { panic(err) }
 
 	isFileChanged = false
 
 	if lsp.isReady {
-		go lsp.didOpen(path.Join(directory, filename))// todo ???
+		//go func() {
+			//star := time.Now()
+
+			//lsp.clearDiagnostic()
+			go lsp.didOpen(path.Join(directory, filename))
+			//go lsp.read_stdout(false, true)
+			//e.drawDiagnostic();
+			//
+			//lspStatus := "lsp diagnostic, elapsed " + time.Since(star).String()
+			//status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
+			//e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+			//e.cleanLineAfter(len(status), ROWS+1)
+			//s.Show()
+		//}()
+
 	}
+
 }
 
 func (e *Editor) readFileAndBuildContent(filename string, limit int) string {

@@ -248,3 +248,28 @@ var capabilities = Capabilities{
 type LspSettings struct {
 	Langs []map[string]string `yaml:"langs"`
 }
+
+type CodeDescription struct {
+	Href string `json:"href"`
+}
+
+type Diagnostic struct {
+	Range            Range            `json:"range"`
+	Severity         int              `json:"severity"`
+	Code             interface{}      `json:"code"`
+	CodeDescription  CodeDescription  `json:"codeDescription"`
+	Source           string           `json:"source"`
+	Message          string           `json:"message"`
+}
+
+type DiagnosticParams struct {
+	Uri         string        `json:"uri"`
+	Version     int           `json:"version"`
+	Diagnostics []Diagnostic  `json:"diagnostics"`
+}
+
+type DiagnosticResponse struct {
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  DiagnosticParams `json:"params"`
+}
