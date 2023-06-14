@@ -81,7 +81,9 @@ func insert[T any](a []T, index int, value T) []T {
 	}
 }
 
-var matched = []rune{' ', '.', ',', '=', '+', '-', '[', '(', '{', '"'}
+var matched = []rune{
+	' ', '.', ',', '=', '+', '-', '[', '(', '{', ']', ')', '}', '"', ':', '&', '?','!',';',
+}
 
 func findNextWord(chars []rune, from int) int {
 	// Find the next word index after the specified index

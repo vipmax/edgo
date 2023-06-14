@@ -245,7 +245,7 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyCtrlH { e.onHover();  return }
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
-		if key == tcell.KeyCtrlV { e.paste() }
+		if key == tcell.KeyCtrlV { e.paste(); return }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
 		if key == tcell.KeyCtrlD { e.duplicate() }
 
@@ -926,25 +926,44 @@ func (e *Editor) paste() {
 	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
 	tabsCount := countTabsFromString(textline, c)
 
-	// Insert the lines at the r position
-	for i, line := range lines {
-		runes := []rune(line)
-
-		if r >= len(content)  { content = append(content, []rune{}) }
-
-		for _, ch := range runes {
+	if len(lines) == 1 { // single line paste
+		for _, ch := range lines[0] {
 			content[r] = insert(content[r], c, ch)
 			c++
 		}
-
-		if i < len(lines) - 1 {
-			r++; c = 0
-			if r >= len(content) { content = append(content, []rune{}) }
-			for i := 0; i < tabsCount*2; i++ {
-				content[r] = insert(content[r], c, ' '); c++
-			} // saving tabs
-		}
 	}
+
+	if len(lines) > 1 { // multiple line paste
+		for _, line := range lines {
+			if r >= len(content)  { content = append(content, []rune{}) } // if last line adding
+
+			nl := strings.Repeat(" ", tabsCount) + line
+			content = insert(content, r, []rune(nl))
+			c = len(nl); r++
+		}
+
+		r--
+	}
+
+	// Insert the lines at the r position
+	//for i, line := range lines {
+	//	runes := []rune(line)
+	//
+	//	if r >= len(content)  { content = append(content, []rune{}) }
+	//
+	//	for _, ch := range runes {
+	//		content[r] = insert(content[r], c, ch)
+	//		c++
+	//	}
+	//
+	//	if i < len(lines) - 1 {
+	//		r++; c = 0
+	//		if r >= len(content) { content = append(content, []rune{}) }
+	//		for i := 0; i < tabsCount*2; i++ {
+	//			content[r] = insert(content[r], c, ' '); c++
+	//		} // saving tabs
+	//	}
+	//}
 
 	update = true
 	isFileChanged = true
