@@ -32,6 +32,7 @@ var highlighter = Highlighter{}
 var lsp = LspClient{}
 var lang = ""
 var update = true
+var isOverlay = false
 var s tcell.Screen
 
 type Editor struct {
@@ -149,6 +150,7 @@ func (e *Editor) drawDiagnostic() {
 			//}
 
 			for i, m := range diagnostic.Message {
+				if int(diagnostic.Range.Start.Line) >= len(content) { continue }
 				s.SetContent(
 					i+LS+len(content[int(diagnostic.Range.Start.Line)])+5,
 					int(diagnostic.Range.Start.Line) - y, m, nil,
@@ -273,8 +275,8 @@ func (e *Editor) handleEvents() {
 
 		if key == tcell.KeyRune {
 			e.addChar(ev.Rune());
-			//if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear();}
-			//if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear();}
+			if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear();}
+			if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear();}
 		}
 
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
@@ -323,9 +325,12 @@ func (e *Editor) init_lsp() {
 	if !started { return }
 
 	lsp.init(directory)
+	var diagnosticUpdateChan = make(chan string)
+	lsp.receiveLoop(diagnosticUpdateChan)
+
 	lsp.didOpen(path.Join(directory, filename))
 
-	e.drawEverything();
+	e.drawEverything()
 
 	lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
@@ -345,10 +350,24 @@ func (e *Editor) init_lsp() {
 	}
 	e.drawEverything();
 	s.Show()
+
+
+	go func() {
+		for range diagnosticUpdateChan {
+			if isOverlay { continue}
+			e.drawEverything()
+			s.Show()
+		}
+	}()
 }
 
+func markOverlayFalse() {
+	isOverlay = false
+}
 func (e *Editor) onCompletion() {
 	if !lsp.isReady { return }
+    isOverlay = true
+	defer markOverlayFalse()
 
 	var completionEnd = false
 
@@ -372,7 +391,7 @@ func (e *Editor) onCompletion() {
 		atx := c + LS; aty := r + 1 - y // Define the window  position and dimensions
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(5, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
-		style := tcell.StyleDefault
+		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 		// if completion on last two rows of the screen - move window up
 		if r - y  >= ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
 
@@ -410,6 +429,9 @@ func (e *Editor) onCompletion() {
 func (e *Editor) onHover() {
 	if !lsp.isReady { return }
 
+	isOverlay = true
+	defer markOverlayFalse()
+
 	var hoverEnd = false
 
 	// loop until escape or enter pressed
@@ -434,9 +456,8 @@ func (e *Editor) onHover() {
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
 		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
-		style := tcell.StyleDefault
+		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
-
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
@@ -465,6 +486,9 @@ func (e *Editor) onHover() {
 
 func (e *Editor) onSignatureHelp() {
 	if !lsp.isReady { return }
+
+	isOverlay = true
+	defer markOverlayFalse()
 
 	var end = false
 
@@ -499,7 +523,7 @@ func (e *Editor) onSignatureHelp() {
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
 		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
-		style := tcell.StyleDefault
+		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
@@ -812,7 +836,7 @@ func (e *Editor) writeFile() {
 
 	for i, row := range content {
 		for j := 0; j < len(row); {
-			if row[j] == ' ' && len(content[i]) > j+1 && content[i][j+1] == ' ' {
+			if row[j] == ' ' && len(content[i]) > j+1 && content[i][j+1] == ' ' && lang != "python" { // todo fix
 				if _, err := w.WriteRune('\t'); err != nil { panic(err) }
 				j += 2
 			} else {
@@ -1059,7 +1083,7 @@ func (e *Editor) handleSmartMoveDown() {
 		content[r] = insert(content[r], c, ' ');
 		c++
 	}
-	r--
+	//r--
 
 	update = true
 	isFileChanged = true
@@ -1077,7 +1101,7 @@ func (e *Editor) handleSmartMoveUp() {
 		content[r] = insert(content[r], c, ' ');
 		c++
 	}
-	r++
+	//r++
 
 	update = true
 	isFileChanged = true

@@ -103,7 +103,7 @@ func (this *LspClient) receive() string {
 }
 
 
-func (this *LspClient) receiveLoop() {
+func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string) {
 	go func() {
 		for {
 			//message := this.receive()
@@ -114,6 +114,7 @@ func (this *LspClient) receiveLoop() {
 				errp := json.Unmarshal([]byte(message), &dr)
 				if errp != nil { /*panic(errp)*/ continue }
 				this.file2diagnostic[dr.Params.Uri] = dr.Params
+				diagnosticUpdateChannel <- "update"
 				continue
 			}
 
@@ -156,7 +157,7 @@ func (this *LspClient) init(dir string) {
 		Params:  struct{}{},
 	}
 	this.send(initializedRequest)
-	this.receiveLoop()
+
 	this.isReady = true
 }
 
