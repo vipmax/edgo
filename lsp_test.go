@@ -33,7 +33,7 @@ func TestGopls(t *testing.T) {
 		Method: "initialize",
 		Params: InitializeParams{
 			RootURI: "file://" + dir, RootPath: dir,
-			WorkspaceFolders: []WorkspaceFolder{{ Name: "edgo", URI:  "file://" + dir }},
+			WorkspaceFolders: []WorkspaceFolder{{ Name: "edgo", URI:	"file://" + dir }},
 			Capabilities: capabilities,
 			ClientInfo: ClientInfo{ Name: "edgo",Version: "1.0.0"},
 		},
@@ -45,7 +45,7 @@ func TestGopls(t *testing.T) {
 	fmt.Println("<-", m)
 
 	initializedRequest := InitializedRequest{
-		JSONRPC: "2.0", Method:  "initialized", Params:  struct{}{},
+		JSONRPC: "2.0", Method:	"initialized", Params:	struct{}{},
 	}
 	send(stdin, initializedRequest)
 
@@ -53,11 +53,11 @@ func TestGopls(t *testing.T) {
 		filecontent, _ := os.ReadFile(file)
 
 		didOpenRequest := DidOpenRequest{
-			JSONRPC: "2.0", Method:  "textDocument/didOpen",
+			JSONRPC: "2.0", Method:	"textDocument/didOpen",
 			Params: DidOpenParams{
 				TextDocument: TextDocument{
 					LanguageID: "go", Text: string(filecontent),
-					URI: "file://" + file, Version:    1,
+					URI: "file://" + file, Version:		1,
 				},
 			},
 		}
@@ -68,9 +68,9 @@ func TestGopls(t *testing.T) {
 
 	go func() {
 		request := BaseRequest{
-			ID: 1, JSONRPC: "2.0", Method:  "textDocument/hover",
+			ID: 1, JSONRPC: "2.0", Method:	"textDocument/hover",
 			Params: Params{
-				TextDocument: TextDocument { URI:  "file://" + file },
+				TextDocument: TextDocument { URI:	"file://" + file },
 				Position: Position { Line: 77 - 1, Character: 11 },
 			},
 		}
@@ -89,6 +89,9 @@ func TestGopls(t *testing.T) {
 		}
 	}()
 
+	msg := <- messagesChan
+	fmt.Println("<-", msg)
+
 	// reading messages from channel
 	for message := range messagesChan {
 		fmt.Println("<-", message)
@@ -96,7 +99,7 @@ func TestGopls(t *testing.T) {
 
 }
 
-func send(stdin io.WriteCloser, o interface{})  {
+func send(stdin io.WriteCloser, o interface{})	{
 	m, err := json.Marshal(o)
 	if err != nil { panic(err) }
 
@@ -203,7 +206,7 @@ func TestRustCompletion(t *testing.T) {
 	lsp.init(dir)
 	lsp.didOpen(file)
 
-	completion, _ := lsp.completion(file,  31-1, 5)
+	completion, _ := lsp.completion(file,	31-1, 5)
 	fmt.Println("completion", completion)
 
 	var options []string

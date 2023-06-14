@@ -83,7 +83,7 @@ func (e *Editor) initScreen() tcell.Screen {
 	encoding.Register()
 	s, err := tcell.NewScreen()
 	s.Init()
-	if s.HasMouse() { s.EnableMouse() }
+	s.EnableMouse()
 
 	if err != nil { fmt.Fprintf(os.Stderr, "%v\n", err); os.Exit(1) }
 	s.Clear()

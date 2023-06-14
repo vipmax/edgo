@@ -50,6 +50,9 @@ func (this *LspClient) start(language string) bool {
 	lspCmd, ok := langCommands[strings.ToLower(language)]
 	if !ok || len(lspCmd) == 0 { return false }  // lang is not supported.
 
+	_, lsperr := exec.LookPath(lspCmd[0])
+	if lsperr != nil { fmt.Println("lsp %s not found", lspCmd[0]); return false }
+
 	this.process = exec.Command(lspCmd[0], lspCmd[1:]...)
 
 	var stdin, err = this.process.StdinPipe()
