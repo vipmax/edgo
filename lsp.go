@@ -25,11 +25,13 @@ type LspClient struct {
 	isReady   	   bool
 	id        	   int
 	file2diagnostic map[string]DiagnosticParams
+	logger Logger
 }
 
 var langCommands = map[string][]string{
 	"go":         {"gopls"},
-	"python":     {"pyright-langserver", "--stdio"},
+	"python":     {"pylsp"},
+	//"python":     {"pyright-langserver", "--stdio"},
 	"typescript": {"typescript-language-server", "--stdio"},
 	"javascript": {"typescript-language-server", "--stdio"},
 	"html": 	  {"vscode-html-language-server","--stdio"},
@@ -51,26 +53,22 @@ func (this *LspClient) start(language string) bool {
 	if !ok || len(lspCmd) == 0 { return false }  // lang is not supported.
 
 	_, lsperr := exec.LookPath(lspCmd[0])
-	if lsperr != nil { fmt.Println("lsp %s not found", lspCmd[0]); return false }
+	if lsperr != nil { this.logger.info("lsp not found", lspCmd[0]); return false }
 
 	this.process = exec.Command(lspCmd[0], lspCmd[1:]...)
 
 	var stdin, err = this.process.StdinPipe()
-	if err != nil { fmt.Println(err) }
+	if err != nil { this.logger.info(err.Error()) }
 	this.stdin = stdin
 
 	stdout, err := this.process.StdoutPipe()
-	if err != nil { fmt.Println(err); return false }
+	if err != nil { this.logger.info(err.Error()); return false }
 	this.stdout = stdout
 
 	this.reader = textproto.NewReader(bufio.NewReader(stdout))
 
-	// for debug, todo write logs to file
-	//this.process.Stdout = os.Stdout
-	//this.process.Stderr = os.Stderr
-
 	err = this.process.Start()
-	if err != nil { fmt.Println("An error occured: ", err) }
+	if err != nil { this.logger.info(err.Error()) }
 
 	this.responsesMap = make(map[int]string)
 	this.file2diagnostic = make(map[string]DiagnosticParams)
@@ -81,11 +79,13 @@ func (this *LspClient) start(language string) bool {
 func (this *LspClient) send(o interface{})  {
 	m, err := json.Marshal(o)
 	if err != nil { panic(err) }
+	this.logger.info("->", string(m))
 
 	message := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(m), m)
-	//fmt.Println("[send]", message)
 	_, err = this.stdin.Write([]byte(message))
-	if err != nil { panic(err) }
+	if err != nil {
+		this.logger.info(err.Error())
+	}
 }
 
 func (this *LspClient) receive() string {
@@ -99,38 +99,40 @@ func (this *LspClient) receive() string {
 	body := make([]byte, length)
 	if _, err := this.reader.R.Read(body); err != nil { /*panic(err)*/ return "" }
 
-	return string(body)
+	message := string(body)
+	this.logger.info("<-", message)
+
+	return message
 }
 
 
 func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string) {
-	go func() {
-		for {
-			//message := this.receive()
-			_, message := this.read_stdout(false, false)
+	for {
+		//message := this.receive()
+		_, message := this.read_stdout(false, false)
+		this.logger.info("<-", message)
 
-			if strings.Contains(message,"textDocument/publishDiagnostics") {
-				var dr DiagnosticResponse
-				errp := json.Unmarshal([]byte(message), &dr)
-				if errp != nil { /*panic(errp)*/ continue }
-				this.file2diagnostic[dr.Params.Uri] = dr.Params
-				diagnosticUpdateChannel <- "update"
-				continue
-			}
+		if strings.Contains(message,"publishDiagnostics") {
+			var dr DiagnosticResponse
+			errp := json.Unmarshal([]byte(message), &dr)
+			if errp != nil { /*panic(errp)*/ continue }
+			this.file2diagnostic[dr.Params.Uri] = dr.Params
+			diagnosticUpdateChannel <- "update"
+			continue
+		}
 
-			responseJSON := make(map[string]interface{})
-			err := json.Unmarshal([]byte(message), &responseJSON)
-			if err != nil {  /*fmt.Println("Error parsing JSON response:", err)*/ continue }
+		responseJSON := make(map[string]interface{})
+		err := json.Unmarshal([]byte(message), &responseJSON)
+		if err != nil {  /*fmt.Println("Error parsing JSON response:", err)*/ continue }
 
-			if value, found := responseJSON["id"]; found {
-				if id, ok := value.(float64); ok {
-					this.someMapMutex.Lock()
-					this.responsesMap[int(id)] = message
-					this.someMapMutex.Unlock()
-				}
+		if value, found := responseJSON["id"]; found {
+			if id, ok := value.(float64); ok {
+				this.someMapMutex.Lock()
+				this.responsesMap[int(id)] = message
+				this.someMapMutex.Unlock()
 			}
 		}
-	}()
+	}
 }
 
 
@@ -149,28 +151,50 @@ func (this *LspClient) init(dir string) {
 	}
 
 	this.send(initializeRequest)
-	this.receive()
+
+	response := this.waitForResponse(this.id, 3000)
+
+	if response == "" {
+		this.logger.info("cant get initialize response from lsp server")
+		this.isReady = false
+		return
+	}
 
 	initializedRequest := InitializedRequest{
-		JSONRPC: "2.0",
-		Method:  "initialized",
-		Params:  struct{}{},
+		JSONRPC: "2.0", Method:  "initialized", Params:  struct{}{},
 	}
 	this.send(initializedRequest)
-
+	this.logger.info("lsp initialized ")
 	this.isReady = true
 }
 
-func (this *LspClient) didOpen(file string) {
+func (this *LspClient) waitForResponse(id, ms int) string {
+	start := time.Now()
+	for {
+		if time.Since(start) >= time.Second * time.Duration(ms) { return "" }
+		this.someMapMutex.Lock()
+		value, ok := this.responsesMap[id]
+		this.someMapMutex.Unlock()
+		if ok {
+			this.someMapMutex.Lock()
+			delete(this.responsesMap, id)
+			this.someMapMutex.Unlock()
+			return value
+		}
+	}
+}
+
+func (this *LspClient) didOpen(file string, lang string) {
 	filecontent, err := os.ReadFile(file)
 	if err != nil { fmt.Println("Error reading file:", err); return }
+
 
 	didOpenRequest := DidOpenRequest{
 		JSONRPC: "2.0",
 		Method:  "textDocument/didOpen",
 		Params: DidOpenParams{
 			TextDocument: TextDocument{
-				LanguageID: "go",
+				LanguageID: lang,
 				Text:       string(filecontent),
 				URI:        "file://" + file,
 				Version:    1,
@@ -179,13 +203,6 @@ func (this *LspClient) didOpen(file string) {
 	}
 
 	this.send(didOpenRequest)
-
-	//jsonString := this.receive()
-	//
-	//var dr DiagnosticResponse
-	//errp := json.Unmarshal([]byte(jsonString), &dr)
-	//if errp != nil { /*panic(errp)*/ return }
-	//this.file2diagnostic[dr.Params.Uri] = dr.Params
 }
 func (this *LspClient) didChange(file string) {
 	filecontent, _ := os.ReadFile(file)
@@ -243,9 +260,10 @@ func (this *LspClient) references(file string, line int, character int) {
 }
 func (this *LspClient) hover(file string, line int, character int) (HoverResponse, error) {
 	this.id++
+	id := this.id
 
 	request := BaseRequest{
-		ID: this.id, JSONRPC: "2.0", Method:  "textDocument/hover",
+		ID: id, JSONRPC: "2.0", Method:  "textDocument/hover",
 		Params: Params {
 			TextDocument: TextDocument { URI: "file://" + file },
 			Position: Position { Line: line, Character: character },
@@ -254,35 +272,20 @@ func (this *LspClient) hover(file string, line int, character int) (HoverRespons
 
 	this.send(request)
 
-	start := time.Now()
-	var jsonData string
-	for {
-		if time.Since(start) >= time.Second {
-			break
-		}
-		this.someMapMutex.Lock()
-		value, ok := this.responsesMap[this.id]
-		this.someMapMutex.Unlock()
-		if ok {
-			jsonData = value
-			this.someMapMutex.Lock()
-			delete(this.responsesMap, this.id)
-			this.someMapMutex.Unlock()
-			break
-		}
-	}
+	jsonData := this.waitForResponse(id,1000)
+	if jsonData == "" { this.logger.error("cant get hover response from lsp server") }
 
-	//jsonData := this.receive()
 	var response HoverResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	//if err != nil { panic("Error parsing JSON:" + err.Error()) }
+	if err != nil { this.logger.error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 func (this *LspClient) signatureHelp(file string, line int, character int) (SignatureHelpResponse, error) {
 	this.id++
+	id := this.id
 
 	request := BaseRequest{
-		ID: this.id, JSONRPC: "2.0", Method:  "textDocument/signatureHelp",
+		ID: id, JSONRPC: "2.0", Method:  "textDocument/signatureHelp",
 		Params: Params {
 			TextDocument: TextDocument { URI: "file://" + file },
 			Position: Position { Line: line, Character: character },
@@ -291,28 +294,12 @@ func (this *LspClient) signatureHelp(file string, line int, character int) (Sign
 
 	this.send(request)
 
-	start := time.Now()
-	var jsonData string
-	for {
-		if time.Since(start) >= time.Second {
-			break
-		}
-		this.someMapMutex.Lock()
-		value, ok := this.responsesMap[this.id]
-		this.someMapMutex.Unlock()
-		if ok {
-			jsonData = value
-			this.someMapMutex.Lock()
-			delete(this.responsesMap, this.id)
-			this.someMapMutex.Unlock()
-			break
-		}
-	}
+	jsonData := this.waitForResponse(id,1000)
+	if jsonData == "" { this.logger.error("cant get signature help response from lsp server") }
 
-	//jsonData := this.receive()
 	var response SignatureHelpResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	//if err != nil { panic("Error parsing JSON:" + err.Error()) }
+	if err != nil { this.logger.error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 func (this *LspClient) definition(file string, line int, character int) {
@@ -351,28 +338,14 @@ func (this *LspClient) completion(file string, line int, character int) (Complet
 
 	this.send(request)
 
-	start := time.Now()
-	var jsonData string
-	for {
-		if time.Since(start) >= time.Second {
-			break
-		}
-		this.someMapMutex.Lock()
-		value, ok := this.responsesMap[this.id]
-		this.someMapMutex.Unlock()
-		if ok {
-			jsonData = value
-			this.someMapMutex.Lock()
-			delete(this.responsesMap, this.id)
-			this.someMapMutex.Unlock()
-			break
-		}
-	}
 
-	//jsonData := this.receive()
+	jsonData := this.waitForResponse(id,1000)
+	if jsonData == "" { this.logger.error("cant get completion response from lsp server") }
+
+
 	var completionResponse CompletionResponse
 	err := json.Unmarshal([]byte(jsonData), &completionResponse)
-	//if err != nil { panic("Error parsing JSON:" + err.Error()) }
+	if err != nil { this.logger.error("Error parsing JSON:" + err.Error()) }
 	return completionResponse, err
 }
 

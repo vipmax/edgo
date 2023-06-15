@@ -38,9 +38,15 @@ var s tcell.Screen
 type Editor struct {
 	undoStack []Operation
 	redoStack []Operation
+	logger Logger
 }
 
 func (e *Editor) start() {
+	e.logger = Logger{ }
+	e.logger.start()
+	e.logger.info("starting edgo")
+	lsp.logger = e.logger
+
 	if len(os.Args) > 1 {
 		filename = os.Args[1]
 		inputFile = filename
@@ -60,6 +66,8 @@ func (e *Editor) start() {
 		directory = absoluteDir
 		filename = filepath.Base(filename)
 	}
+
+	e.logger.info("open", directory, filename)
 
 	code := e.ReadFile()
 	lang = detectLang(filename)
@@ -243,7 +251,7 @@ func (e *Editor) handleEvents() {
 	case *tcell.EventKey:
 		key := ev.Key()
 
-
+		if key == tcell.KeyTab   { e.onTab(); e.writeFile(); return	 }
 		if key == tcell.KeyCtrlH { e.onHover();  return }
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
@@ -287,7 +295,6 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyUp { e.onUp(); e.cleanSelection() }
 		if key == tcell.KeyLeft { e.onLeft(); e.cleanSelection() }
 		if key == tcell.KeyRight { e.onRight(); e.cleanSelection() }
-		if key == tcell.KeyTab { e.handleTabPress(); e.cleanSelection(); e.writeFile() }
 		if key == tcell.KeyCtrlT { } // TODO: tree
 		if key == tcell.KeyCtrlF { } // TODO: find
 		if key == tcell.KeyCtrlU { e.undo() }
@@ -324,11 +331,11 @@ func (e *Editor) init_lsp() {
 	started := lsp.start(lang)
 	if !started { return }
 
-	lsp.init(directory)
 	var diagnosticUpdateChan = make(chan string)
-	lsp.receiveLoop(diagnosticUpdateChan)
+	go lsp.receiveLoop(diagnosticUpdateChan)
 
-	lsp.didOpen(path.Join(directory, filename))
+	lsp.init(directory)
+	lsp.didOpen(path.Join(directory, filename), lang)
 
 	e.drawEverything()
 
@@ -338,19 +345,7 @@ func (e *Editor) init_lsp() {
 	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
 	e.cleanLineAfter(len(status), ROWS+1)
 	s.Show()
-
-
-	f := "file://" + path.Join(directory, filename)
-	for {
-		_, found := lsp.file2diagnostic[f]
-		if found {
-			break
-		}
-		time.Sleep(10*time.Millisecond)
-	}
-	e.drawEverything();
-	s.Show()
-
+	e.logger.info("lsp status", lspStatus)
 
 	go func() {
 		for range diagnosticUpdateChan {
@@ -364,6 +359,7 @@ func (e *Editor) init_lsp() {
 func markOverlayFalse() {
 	isOverlay = false
 }
+
 func (e *Editor) onCompletion() {
 	if !lsp.isReady { return }
     isOverlay = true
@@ -825,11 +821,9 @@ func (e *Editor) cleanLineAfter( x, y int) {
 
 func (e *Editor) writeFile() {
 
-
 	// Create a new file, or open it if it exists
 	f, err := os.Create(path.Join(directory, filename))
 	if err != nil { panic(err) }
-	defer f.Close()
 
 	// Create a buffered writer from the file
 	w := bufio.NewWriter(f)
@@ -844,11 +838,16 @@ func (e *Editor) writeFile() {
 				j++
 			}
 		}
-		if _, err := w.WriteRune('\n'); err != nil { panic(err) }
+
+		if i != len(content)-1 {
+			if _, err := w.WriteRune('\n'); err != nil { panic(err) }
+		}
+
 	}
 
 	// Don't forget to flush the buffered writer to ensure all data is written
 	if err := w.Flush(); err != nil { panic(err) }
+	if err := f.Close(); err != nil { panic(err) }
 
 	isFileChanged = false
 
@@ -857,7 +856,7 @@ func (e *Editor) writeFile() {
 			//star := time.Now()
 
 			//lsp.clearDiagnostic()
-			go lsp.didOpen(path.Join(directory, filename))
+			go lsp.didOpen(path.Join(directory, filename), lang)
 			//go lsp.read_stdout(false, true)
 			//e.drawDiagnostic();
 			//
@@ -934,9 +933,20 @@ func (e *Editor) updateColors() {
 	}
 }
 
-func (e *Editor) handleTabPress() {
-	e.addChar(' ')
-	e.addChar(' ')
+func (e *Editor) onTab() {
+	ch := ' '
+
+	content[r] = insert(content[r], c, ch)
+	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
+	c++
+	content[r] = insert(content[r], c, ch)
+	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
+	c++
+
+	isFileChanged = true
+	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
+	if len(content) <= 10000 { e.writeFile() }
+	e.updateColors()
 }
 
 func (e *Editor) paste() {

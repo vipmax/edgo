@@ -45,7 +45,7 @@ type Params struct {
 
 type TextDocument struct {
 	LanguageID string `json:"languageId,omitempty"`
-	Text       string `json:"text,omitempty"`
+	Text       string `json:"text"`
 	URI        string `json:"uri,omitempty"`
 	Version    int    `json:"version,omitempty"`
 }
