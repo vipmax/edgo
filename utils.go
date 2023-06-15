@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/alecthomas/chroma/lexers"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -188,6 +189,45 @@ func getSelectionString(content [][]rune, ssx, ssy, sex, sey int) string {
 }
 
 
+func getSelectedLines(content [][]rune, ssx, ssy, sex, sey int)  []int {
+	var lineNumbers = make(Set)
+	var in = false
+
+	// check for empty selection
+	if Equal(ssx, ssy, sex, sey) { return lineNumbers.GetKeys() }
+
+	// getting selection start point
+	var startx, starty = ssx, ssy
+	var endx, endy = sex, sey
+
+	if GreaterThan(startx, starty, endx, endy) {
+		startx, endx = endx, startx // swap  points if selection inverse
+		starty, endy = endy, starty
+	}
+
+	for j := starty; j < len(content); j++ {
+		row := content[j]
+		for i, _ := range row {
+			// if inside selection
+			if GreaterEqual(i, j, startx, starty) && LessThan(i, j, endx, endy) {
+				lineNumbers.Add(j)
+				in = true
+			} else {
+				in = false
+				// only one selection area can be, early return
+				if len(lineNumbers) > 0 {
+					return lineNumbers.GetKeys()
+				}
+			}
+		}
+		if in && LessThan(0, j, endx, endy) {
+			lineNumbers.Add(j)
+		}
+	}
+	return lineNumbers.GetKeys()
+}
+
+
 
 func maxString(arr []string) int {
 	maxLength := 0
@@ -252,4 +292,17 @@ func centerNumber(brw int, width int) string {
 	rightPad := fmt.Sprintf("%*s", padding-(padding/2), "")
 	lineNumber = leftPad + lineNumber + rightPad
 	return lineNumber
+}
+
+type Set map[int]struct{}
+
+// a value to the set.
+func (this Set) Add(value int) { this[value] = struct{}{} }
+
+// returns all keys in the set, sorted.
+func (this Set) GetKeys() []int {
+	keys := make([]int, 0, len(this))
+	for key := range this { keys = append(keys, key) }
+	sort.Ints(keys) // Sort the keys
+	return keys
 }

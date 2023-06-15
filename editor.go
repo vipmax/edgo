@@ -193,7 +193,10 @@ func (e *Editor) handleEvents() {
 
 		if isSelected && buttons&tcell.Button1 == 1 {
 
-			if isUnderSelection(mx+x, my+y)  {
+			isTripleClick := isUnderSelection(mx+x, my+y) &&
+				len(getSelectedLines(content, ssx, ssy, sex, sey)) == 1
+
+			if isTripleClick {
 				r = my + y
 				c = mx + x
 				if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
@@ -252,6 +255,7 @@ func (e *Editor) handleEvents() {
 		key := ev.Key()
 
 		if key == tcell.KeyTab   { e.onTab(); e.writeFile(); return	 }
+		if key == tcell.KeyBacktab { e.onBackTab(); e.writeFile(); return	 }
 		if key == tcell.KeyCtrlH { e.onHover();  return }
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
@@ -934,14 +938,64 @@ func (e *Editor) updateColors() {
 }
 
 func (e *Editor) onTab() {
-	ch := ' '
+	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
 
-	content[r] = insert(content[r], c, ch)
-	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
-	c++
-	content[r] = insert(content[r], c, ch)
-	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
-	c++
+	if len(selectedLines) == 0 {
+		ch := ' '
+
+		content[r] = insert(content[r], c, ch)
+		e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
+		c++
+		content[r] = insert(content[r], c, ch)
+		e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
+		c++
+	} else  {
+		ssx = 0
+		for _, linenumber := range selectedLines {
+			r = linenumber
+			ch := ' '
+
+			content[r] = insert(content[r], 0, ch)
+			content[r] = insert(content[r], 0, ch)
+			e.undoStack = append(e.undoStack, Operation{Insert, ch, r, 0})
+			e.undoStack = append(e.undoStack, Operation{Insert, ch, r, 0})
+			c = len(content[r])
+		}
+		sex = c
+	}
+
+	isFileChanged = true
+	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
+	if len(content) <= 10000 { e.writeFile() }
+	e.updateColors()
+}
+func (e *Editor) onBackTab() {
+	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
+
+	if len(selectedLines) == 0 {
+		deletedCount := 0
+		for _, char := range content[r] {
+			if char == ' ' && deletedCount < 2 {
+				content[r] = content[r][1:] // delete first
+				deletedCount++;
+				c--;
+			} else { break }
+		}
+	} else {
+		ssx = 0
+		for _, linenumber := range selectedLines {
+			r = linenumber
+			deletedCount := 0
+			for _, char := range content[r] {
+				if char == ' ' && deletedCount < 2 {
+					content[r] = content[r][1:] // delete first
+					deletedCount++;
+					c = len(content[r])
+				} else { break }
+			}
+
+		}
+	}
 
 	isFileChanged = true
 	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
@@ -978,26 +1032,6 @@ func (e *Editor) paste() {
 
 		r--
 	}
-
-	// Insert the lines at the r position
-	//for i, line := range lines {
-	//	runes := []rune(line)
-	//
-	//	if r >= len(content)  { content = append(content, []rune{}) }
-	//
-	//	for _, ch := range runes {
-	//		content[r] = insert(content[r], c, ch)
-	//		c++
-	//	}
-	//
-	//	if i < len(lines) - 1 {
-	//		r++; c = 0
-	//		if r >= len(content) { content = append(content, []rune{}) }
-	//		for i := 0; i < tabsCount*2; i++ {
-	//			content[r] = insert(content[r], c, ' '); c++
-	//		} // saving tabs
-	//	}
-	//}
 
 	update = true
 	isFileChanged = true
