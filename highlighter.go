@@ -6,11 +6,20 @@ import (
 	"github.com/alecthomas/chroma/lexers"
 	"github.com/gdamore/tcell"
 	"os"
+	"strings"
 )
 
 type Highlighter struct {
+
 }
 
+func detectLang(filename string) string {
+	lexer := lexers.Match(filename)
+	if lexer == nil { return "" }
+	config := lexer.Config()
+	if config == nil { return "" }
+	return strings.ToLower(config.Name)
+}
 func (h Highlighter) colorize(code string, filename string) [][]int {
 	//start := time.Now()
 	//defer log.Printf("Time taken: %s", time.Since(start))

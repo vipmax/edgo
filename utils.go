@@ -2,11 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/alecthomas/chroma/lexers"
 	"os"
 	"sort"
 	"strconv"
-	"strings"
 	"unicode/utf8"
 )
 
@@ -265,13 +263,6 @@ func limitString(s string, maxLength int) string {
 	return string(runes[:maxLength])
 }
 
-func detectLang(filename string) string {
-	lexer := lexers.Match(filename)
-	if lexer == nil { return "" }
-	config := lexer.Config()
-	if config == nil { return "" }
-	return strings.ToLower(config.Name)
-}
 
 func getFileSize(filename string) int64 {
 	file, err := os.Open(filename) // replace with your file name

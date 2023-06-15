@@ -47,35 +47,17 @@ func (e *Editor) start() {
 	e.logger.info("starting edgo")
 	lsp.logger = e.logger
 
+	s = e.initScreen()
+
 	if len(os.Args) > 1 {
 		filename = os.Args[1]
 		inputFile = filename
+		err := e.openFile(filename)
+		if err != nil { fmt.Println(err); os.Exit(130) }
 	} else {
 		fmt.Println("filename not found. usage: edgo [filename]")
 		os.Exit(130)
 	}
-
-	if path.IsAbs(filename) {
-		absoluteDir, err := filepath.Abs(path.Dir(filename))
-		if err != nil { fmt.Println("Error:", err); return }
-		directory = absoluteDir
-		filename = filepath.Base(filename)
-	} else {
-		absoluteDir, err := filepath.Abs(path.Dir(filename))
-		if err != nil { fmt.Println("Error:", err); return }
-		directory = absoluteDir
-		filename = filepath.Base(filename)
-	}
-
-	e.logger.info("open", directory, filename)
-
-	code := e.ReadFile()
-	lang = detectLang(filename)
-	colors = highlighter.colorize(code, filename)
-	s = e.initScreen()
-
-	e.undoStack = []Operation{}
-	e.redoStack = []Operation{}
 
 	go e.init_lsp()
 
@@ -88,19 +70,38 @@ func (e *Editor) start() {
 	}
 }
 
+func (e *Editor) openFile(fname string) error {
+	absoluteDir, err := filepath.Abs(path.Dir(fname))
+	if err != nil { return err }
+	directory = absoluteDir; filename = filepath.Base(fname)
+
+	e.logger.info("open", directory, filename)
+
+	lang = detectLang(filename)
+	code := e.ReadFile()
+	colors = highlighter.colorize(code, filename)
+
+	e.undoStack = []Operation{}
+	e.redoStack = []Operation{}
+
+	return nil
+}
+
 func (e *Editor) initScreen() tcell.Screen {
 	encoding.Register()
-	s, err := tcell.NewScreen()
-	s.Init()
-	s.EnableMouse()
-
+	screen, err := tcell.NewScreen()
 	if err != nil { fmt.Fprintf(os.Stderr, "%v\n", err); os.Exit(1) }
-	s.Clear()
 
-	COLUMNS, ROWS = s.Size()
-	ROWS -= 2
+	err2 := screen.Init()
+	if err2 != nil { fmt.Fprintf(os.Stderr, "%v\n", err2); os.Exit(1) }
 
-	return s
+	screen.EnableMouse()
+	screen.Clear()
+
+	COLUMNS, ROWS = screen.Size()
+	ROWS -= 2  // for status line
+
+	return screen
 }
 
 func (e *Editor) drawEverything() {
