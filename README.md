@@ -55,7 +55,7 @@ go install golang.org/x/tools/gopls@latest
 
 `python`
 ```shell  
-npm i -g pyright
+pip install -U 'python-lsp-server[all]'
 ```
 
 `javascript/typescript`
