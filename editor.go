@@ -205,12 +205,23 @@ func (e *Editor) handleEvents() {
 		if mx < 0  { return }
 		if my == ROWS  { return }
 
+		// if click with control, lookup for definition
 		if ev.Modifiers()&tcell.ModCtrl != 0 && buttons&tcell.Button1 == 1 {
 			r = my + y
 			c = mx + x
 			if r > len(content) - 1 { return }
 			if c > len(content[r]) { return }
 			e.onDefinition()
+			return
+		}
+
+		// if click with option, lookup for definition
+		if ev.Modifiers()&tcell.ModAlt != 0 && buttons&tcell.Button1 == 1 {
+			r = my + y
+			c = mx + x
+			if r > len(content) - 1 { return }
+			if c > len(content[r]) { return }
+			e.onReferences()
 			return
 		}
 
@@ -280,6 +291,7 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyTab   { e.onTab(); e.writeFile(); return	 }
 		if key == tcell.KeyBacktab { e.onBackTab(); e.writeFile(); return	 }
 		if key == tcell.KeyCtrlH { e.onHover();  return }
+		if key == tcell.KeyCtrlR { e.onReferences();  return }
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
 		if key == tcell.KeyCtrlG { e.onDefinition();  return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
@@ -572,6 +584,100 @@ func (e *Editor) onSignatureHelp() {
 				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
 				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
 				if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+
+			}
+		}
+	}
+}
+
+func (e *Editor) onReferences() {
+	if !lsp.isReady { return }
+
+	isOverlay = true
+	defer markOverlayFalse()
+
+	var end = false
+
+	// loop until escape or enter pressed
+	for !end {
+		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
+		tabsCount := countTabsFromString(textline, c)
+
+		start := time.Now()
+		referencesResponse, err := lsp.references(path.Join(directory, filename), r, c - tabsCount)
+		elapsed := time.Since(start)
+
+		lspStatus := "lsp references, elapsed " + elapsed.String()
+		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
+		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
+		e.cleanLineAfter(len(status), ROWS+1)
+
+		if err != nil || len(referencesResponse.Result) == 0 { return }
+
+		var options = []string{}
+		for _, ref := range referencesResponse.Result {
+			text := fmt.Sprintf(" %s %d %d ", ref.URI, ref.Range.Start.Line + 1, ref.Range.Start.Character + 1)
+			options = append(options, text)
+		}
+
+		if len(options) == 0 { return }
+		if len(options) == 1 {
+			// if only one option, no need to draw options
+			r = referencesResponse.Result[0].Range.Start.Line
+			tabs := tabsCountOnLineBefore(string(content[r]), c, lang)
+			c = referencesResponse.Result[0].Range.Start.Character + tabs
+			ssx = c; ssy = r;
+			sey = referencesResponse.Result[0].Range.End.Line
+			sex = referencesResponse.Result[0].Range.End.Character + tabsCountOnLineBefore(string(content[sey]), c, lang)
+			isSelected = true
+			r = sey; c = sex
+			s.Clear(); e.drawEverything()
+			return
+		}
+
+
+		width := max(30, maxString(options)) // width depends on max option len or 30 at min
+		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
+		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
+		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+		if len(options) > r - y { aty = r + 1 }
+
+		var selectionEnd = false; var selected = 0; var selectedOffset = 0
+
+		for !selectionEnd {
+			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
+			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
+
+			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
+			s.Show()
+
+			switch ev := s.PollEvent().(type) { // poll and handle event
+			case *tcell.EventKey:
+				key := ev.Key()
+				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
+					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
+				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == tcell.KeyUp { selected = max(0, selected-1) }
+				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				if key == tcell.KeyEnter {
+					selectionEnd = true
+					if referencesResponse.Result[selected].URI != "file://"+ absoluteFilePath {  // if another file
+						// do nothing
+					} else {
+						r = referencesResponse.Result[selected].Range.Start.Line
+						tabs := tabsCountOnLineBefore(string(content[r]), c, lang)
+						c = referencesResponse.Result[selected].Range.Start.Character + tabs
+						ssx = c; ssy = r;
+						sey = referencesResponse.Result[selected].Range.End.Line
+						sex = referencesResponse.Result[selected].Range.End.Character + tabsCountOnLineBefore(string(content[sey]), c, lang)
+						isSelected = true
+						r = sey; c = sex
+						s.Clear(); e.drawEverything();
+					}
+
+				}
 
 			}
 		}

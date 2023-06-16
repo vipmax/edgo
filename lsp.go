@@ -248,10 +248,12 @@ func (this *LspClient) didSave(file string) {
 	this.send(request)
 }
 
-func (this *LspClient) references(file string, line int, character int) {
+func (this *LspClient) references(file string, line int, character int) (ReferencesResponse, error) {
 	this.id++
+	id := this.id
+
 	referencesRequest := BaseRequest{
-		ID:      this.id,
+		ID:      id,
 		JSONRPC: "2.0",
 		Method:  "textDocument/references",
 		Params: Params{
@@ -266,8 +268,17 @@ func (this *LspClient) references(file string, line int, character int) {
 	}
 
 	this.send(referencesRequest)
-	time.Sleep(time.Millisecond * 10)
+
+	jsonData := this.waitForResponse(id,10000)
+	if jsonData == "" { this.logger.error("cant get hover response from lsp server") }
+
+	var response ReferencesResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	if err != nil { this.logger.error("Error parsing JSON:" + err.Error()) }
+	return response, err
+
 }
+
 func (this *LspClient) hover(file string, line int, character int) (HoverResponse, error) {
 	this.id++
 	id := this.id

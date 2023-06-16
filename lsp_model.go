@@ -325,3 +325,19 @@ type DidSaveRequest struct {
 	Method  string `json:"method"`
 	Params  DidSaveParams `json:"params"`
 }
+
+type ReferencesResponse struct {
+	JSONRPC string  `json:"jsonrpc"`
+	Result  []ReferencesRange `json:"result"`
+	ID      int     `json:"id"`
+}
+
+type ReferencesRange struct {
+	URI   string `json:"uri"`
+	Range Span   `json:"range"`
+}
+
+type Span struct {
+	Start Position `json:"start"`
+	End   Position `json:"end"`
+}
