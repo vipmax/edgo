@@ -39,13 +39,13 @@ type Context struct {
 
 type Params struct {
 	TextDocument TextDocument `json:"textDocument"`
-	Position     Position     `json:"position"`
+	Position     Position     `json:"position,omitempty"`
 	Context      Context      `json:"context,omitempty"`
 }
 
 type TextDocument struct {
 	LanguageID string `json:"languageId,omitempty"`
-	Text       string `json:"text"`
+	Text       string `json:"text,omitempty"`
 	URI        string `json:"uri,omitempty"`
 	Version    int    `json:"version,omitempty"`
 }
@@ -67,7 +67,7 @@ type InitializedRequest struct {
 }
 
 type BaseRequest struct {
-	ID      int    `json:"id"`
+	ID      int    `json:"id,omitempty"`
 	JSONRPC string `json:"jsonrpc"`
 	Method  string `json:"method"`
 	Params  Params `json:"params"`
@@ -272,4 +272,56 @@ type DiagnosticResponse struct {
 	Jsonrpc string `json:"jsonrpc"`
 	Method  string `json:"method"`
 	Params  DiagnosticParams `json:"params"`
+}
+
+
+
+
+type DefinitionResult struct {
+	URI   string `json:"uri"`
+	Range Range  `json:"range"`
+}
+
+type DefinitionResponse struct {
+	JSONRPC string   `json:"jsonrpc"`
+	Result  []DefinitionResult `json:"result"`
+	ID      int      `json:"id"`
+}
+
+
+
+type Character struct {
+	Character int `json:"character"`
+	Line      int `json:"line"`
+}
+
+type ChangeRange struct {
+	Start Character `json:"start"`
+	End   Character `json:"end"`
+}
+
+type ContentChange struct {
+	Range ChangeRange  `json:"range"`
+	Text  string `json:"text"`
+}
+
+type DidChangeParams struct {
+	ContentChanges []ContentChange `json:"contentChanges"`
+	TextDocument   TextDocument    `json:"textDocument"`
+}
+
+type DidChangeRequest struct {
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  DidChangeParams `json:"params"`
+}
+
+type DidSaveParams struct {
+	TextDocument   TextDocument    `json:"textDocument"`
+}
+
+type DidSaveRequest struct {
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  DidSaveParams `json:"params"`
 }

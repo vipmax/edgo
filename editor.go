@@ -25,6 +25,7 @@ var isSelected = false
 var inputFile = ""
 var filename = "main.go" // file name to show
 var directory = "" 		 // directory
+var absoluteFilePath = ""
 var isFileChanged = false
 var colorize = true
 var colors [][]int       // characters colors
@@ -34,6 +35,8 @@ var lang = ""
 var update = true
 var isOverlay = false
 var s tcell.Screen
+
+var ACCENT_COLOR = 8
 
 type Editor struct {
 	undoStack []Operation
@@ -71,9 +74,11 @@ func (e *Editor) start() {
 }
 
 func (e *Editor) openFile(fname string) error {
+
 	absoluteDir, err := filepath.Abs(path.Dir(fname))
 	if err != nil { return err }
 	directory = absoluteDir; filename = filepath.Base(fname)
+	absoluteFilePath = path.Join(directory, filename)
 
 	e.logger.info("open", directory, filename)
 
@@ -146,6 +151,8 @@ func (e *Editor) drawDiagnostic() {
 		//textStyle := tcell.StyleDefault.Foreground(tcell.ColorIndianRed)
 
 		for _, diagnostic := range maybeDiagnostic.Diagnostics {
+			if int(diagnostic.Range.Start.Line) >= len(content) { continue } // it out of content sometimes
+
 			//for i := int(diagnostic.Range.Start.Line); i <= int(diagnostic.Range.End.Line); i++ {
 			//	textline := strings.ReplaceAll(string(content[i]), "  ", "\t")
 			//	tabsCount := countTabsFromString(textline, c)
@@ -159,12 +166,18 @@ func (e *Editor) drawDiagnostic() {
 			//}
 
 			for i, m := range diagnostic.Message {
-				if int(diagnostic.Range.Start.Line) >= len(content) { continue }
-				s.SetContent(
-					i+LS+len(content[int(diagnostic.Range.Start.Line)])+5,
-					int(diagnostic.Range.Start.Line) - y, m, nil,
-					style,
-				)
+				xpos := i + LS + len(content[int(diagnostic.Range.Start.Line)]) + 5
+				ypos :=  int(diagnostic.Range.Start.Line) - y
+
+				for { // draw ch on the next line if not fit ti screen
+					if xpos >= COLUMNS {
+						ypos +=  (i / COLUMNS) + 1
+						if ypos >= len(content) { break}
+						xpos = len(content[ypos]) + 10 + (xpos % COLUMNS) % COLUMNS
+					} else { break }
+				}
+
+				s.SetContent( xpos,  ypos, m, nil,  style)
 			}
 		}
 
@@ -191,6 +204,15 @@ func (e *Editor) handleEvents() {
 
 		if mx < 0  { return }
 		if my == ROWS  { return }
+
+		if ev.Modifiers()&tcell.ModCtrl != 0 && buttons&tcell.Button1 == 1 {
+			r = my + y
+			c = mx + x
+			if r > len(content) - 1 { return }
+			if c > len(content[r]) { return }
+			e.onDefinition()
+			return
+		}
 
 		if isSelected && buttons&tcell.Button1 == 1 {
 
@@ -259,6 +281,7 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyBacktab { e.onBackTab(); e.writeFile(); return	 }
 		if key == tcell.KeyCtrlH { e.onHover();  return }
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
+		if key == tcell.KeyCtrlG { e.onDefinition();  return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
 		if key == tcell.KeyCtrlV { e.paste(); return }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
@@ -339,7 +362,9 @@ func (e *Editor) init_lsp() {
 	var diagnosticUpdateChan = make(chan string)
 	go lsp.receiveLoop(diagnosticUpdateChan)
 
-	lsp.init(directory)
+	currentDir, _ := os.Getwd()
+
+	lsp.init(currentDir)
 	lsp.didOpen(path.Join(directory, filename), lang)
 
 	e.drawEverything()
@@ -397,6 +422,7 @@ func (e *Editor) onCompletion() {
 		if r - y  >= ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
+
 
 		for !selectionEnd {
 			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
@@ -649,17 +675,40 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 
 	// add newText to chars
 	for _, char := range newText {
-		content[r] = insert(content[r], c, char)
+		e.insertCharacter(r,c,char)
 		c++
 	}
 
 }
 
+func (e *Editor) onDefinition() {
+	tabsCount := tabsCountOnLineBefore(string(content[r]), c, lang)
+
+	definition, err := lsp.definition(path.Join(directory, filename), r, c - tabsCount)
+
+	if err != nil || len(definition.Result) == 0 ||
+		definition.Result[0].URI != "file://" + path.Join(directory, filename) || // same file
+		int(definition.Result[0].Range.Start.Line) > len(content) ||  // not out of content
+		int(definition.Result[0].Range.Start.Character) > len(content[int(definition.Result[0].Range.Start.Line)]) {
+		return
+	}
+
+
+	r = int(definition.Result[0].Range.Start.Line)
+	c = int(definition.Result[0].Range.Start.Character) + tabsCountOnLineBefore(string(content[r]), c, lang)
+	ssx = c; ssy = r;
+	sey = int(definition.Result[0].Range.End.Line)
+	sex = int(definition.Result[0].Range.End.Character) + tabsCountOnLineBefore(string(content[sey]), c, lang)
+	r = sey; c = sex
+	isSelected = true
+}
+
 func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Style {
-	if isSelected { style = style.Background(tcell.ColorHotPink) } else {
+	if isSelected {
+		style = style.Background(tcell.Color(ACCENT_COLOR)) } else {
 		style = tcell.StyleDefault // .Background(tcell.ColorDimGray)
 	}
-	return style
+	return style.Foreground(tcell.ColorWhite)
 }
 
 func (e *Editor) cleanSelection() {
@@ -673,15 +722,14 @@ func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 	if ry >= len(colors) || cx >= len(colors[ry])  { return style }
 	color := colors[ry][cx]
 	if color > 0 { style = tcell.StyleDefault.Foreground(tcell.Color(color)) }
-	if isUnderSelection(cx, ry) { style = style.Background(56) }
+	if isUnderSelection(cx, ry) { style = style.Background(tcell.Color(ACCENT_COLOR)) }
 	return style
 }
 
 func (e *Editor) addChar(ch rune) {
 	if ssx != -1 && sex != -1 && isSelected  && ssx != sex { e.cut() }
 
-	content[r] = insert(content[r], c, ch)
-	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
+	e.insertCharacter(r, c, ch)
 	c++
 
 	e.maybeAddPair(ch)
@@ -691,6 +739,19 @@ func (e *Editor) addChar(ch rune) {
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
+
+func (e *Editor) insertCharacter(line, pos int, ch rune) {
+	content[line] = insert(content[line], pos, ch)
+	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line, pos, line, pos, string(ch)) }
+	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
+}
+
+func (e *Editor) deleteCharacter(line, pos int) {
+	e.undoStack = append(e.undoStack, Operation{Delete, content[line][pos], line, pos})
+	content[line] = remove(content[line], pos)
+	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line,pos,line,pos+1, "")}
+}
+
 
 func (e *Editor) maybeAddPair(ch rune) {
 	pairMap := map[rune]rune{
@@ -704,7 +765,7 @@ func (e *Editor) maybeAddPair(ch rune) {
 		isStringAndClosedBracketNext := closeChar == '"' && c < len(content[r]) && content[r][c] == ')'
 
 		if noMoreChars || isSpaceNext || isStringAndClosedBracketNext {
-			content[r] = insert(content[r], c, closeChar)
+			e.insertCharacter(r, c, closeChar)
 		}
 	}
 }
@@ -721,8 +782,7 @@ func (e *Editor) onDelete() {
 			content[r] = remove(content[r], c)
 		} else {
 			c--
-			e.undoStack = append(e.undoStack, Operation{Delete, content[r][c], r, c})
-			content[r] = remove(content[r], c)
+			e.deleteCharacter(r,c)
 		}
 
 	} else if r > 0 { // delete line
@@ -835,7 +895,7 @@ func (e *Editor) writeFile() {
 
 	for i, row := range content {
 		for j := 0; j < len(row); {
-			if row[j] == ' ' && len(content[i]) > j+1 && content[i][j+1] == ' ' && lang != "python" { // todo fix
+			if row[j] == ' ' && len(content[i]) > j+1 && content[i][j+1] == ' ' && lang != "python" && lang != "haskell" { // todo fix
 				if _, err := w.WriteRune('\t'); err != nil { panic(err) }
 				j += 2
 			} else {
@@ -857,21 +917,9 @@ func (e *Editor) writeFile() {
 	isFileChanged = false
 
 	if lsp.isReady {
-		//go func() {
-			//star := time.Now()
-
-			//lsp.clearDiagnostic()
-			go lsp.didOpen(path.Join(directory, filename), lang)
-			//go lsp.read_stdout(false, true)
-			//e.drawDiagnostic();
-			//
-			//lspStatus := "lsp diagnostic, elapsed " + time.Since(star).String()
-			//status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-			//e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-			//e.cleanLineAfter(len(status), ROWS+1)
-			//s.Show()
-		//}()
-
+		go lsp.didOpen(path.Join(directory, filename), lang) // todo remove it in future
+		//go lsp.didChange(path.Join(directory, filename))
+		//go lsp.didSave(path.Join(directory, filename))
 	}
 
 }
@@ -943,23 +991,15 @@ func (e *Editor) onTab() {
 
 	if len(selectedLines) == 0 {
 		ch := ' '
-
-		content[r] = insert(content[r], c, ch)
-		e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
-		c++
-		content[r] = insert(content[r], c, ch)
-		e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
-		c++
+		e.insertCharacter(r, c, ch); c++
+		e.insertCharacter(r, c, ch); c++
 	} else  {
 		ssx = 0
 		for _, linenumber := range selectedLines {
 			r = linenumber
 			ch := ' '
-
-			content[r] = insert(content[r], 0, ch)
-			content[r] = insert(content[r], 0, ch)
-			e.undoStack = append(e.undoStack, Operation{Insert, ch, r, 0})
-			e.undoStack = append(e.undoStack, Operation{Insert, ch, r, 0})
+			e.insertCharacter(r, 0, ch)
+			e.insertCharacter(r, 0, ch)
 			c = len(content[r])
 		}
 		sex = c
@@ -1005,6 +1045,8 @@ func (e *Editor) onBackTab() {
 }
 
 func (e *Editor) paste() {
+	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut() }
+
 	text, _ := clipboard.ReadAll()
 	text = strings.ReplaceAll(text, "\t", `  `)
 	lines := strings.Split(text, "\n")
@@ -1017,7 +1059,7 @@ func (e *Editor) paste() {
 
 	if len(lines) == 1 { // single line paste
 		for _, ch := range lines[0] {
-			content[r] = insert(content[r], c, ch)
+			e.insertCharacter(r, c, ch)
 			c++
 		}
 	}
@@ -1125,10 +1167,9 @@ func (e *Editor) handleSmartMoveDown() {
 	r++; c = 0 // moving down and insert tabs
 	content = insert(content, r, []rune{})
 	for i := 0; i < tabsCount*2; i++ {
-		content[r] = insert(content[r], c, ' ');
+		e.insertCharacter(r, c, ' ')
 		c++
 	}
-	//r--
 
 	update = true
 	isFileChanged = true
@@ -1143,7 +1184,7 @@ func (e *Editor) handleSmartMoveUp() {
 	c = 0 // moving up and insert tabs
 	content = insert(content, r, []rune{})
 	for i := 0; i < tabsCount*2; i++ {
-		content[r] = insert(content[r], c, ' ');
+		e.insertCharacter(r, c, ' ')
 		c++
 	}
 	//r++

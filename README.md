@@ -21,6 +21,7 @@ Features:
 - `Control + space` - lsp completion
 - `Control + h` - lsp hover
 - `Control + p` - lsp signature help
+- `Control + g / Control + mouse click` - lsp definition
 
 
 Note: map `Caps lock` to `Control` button, everything will be easier.   
@@ -46,6 +47,15 @@ edgo [filename]
 edgo ~/.zshrc 
 ```
 ### Lsp
+
+Following lsp features are supported:
+- completion
+- hover
+- signature help
+- definition
+
+
+
 Following languages are supported:
 
 `go`

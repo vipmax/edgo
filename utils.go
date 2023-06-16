@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -175,6 +176,8 @@ func getSelectionString(content [][]rune, ssx, ssy, sex, sey int) string {
 				in = false
 				// only one selection area can be, early return
 				if len(ret) > 0 {
+					// remove the last newline if present
+					if len(ret) > 0 && ret[len(ret)-1] == '\n' { ret = ret[:len(ret)-1] }
 					return string(ret)
 				}
 			}
@@ -183,6 +186,8 @@ func getSelectionString(content [][]rune, ssx, ssy, sex, sey int) string {
 			ret = append(ret, '\n')
 		}
 	}
+
+	if len(ret) > 0 && ret[len(ret)-1] == '\n' { ret = ret[:len(ret)-1] }
 	return string(ret)
 }
 
@@ -250,6 +255,13 @@ func countTabsFromString(str string, stopIndex int) int {
 		if char == '\t' { count++ }
 	}
 	return count
+}
+
+func tabsCountOnLineBefore(line string, stopIndex int, lang string) int {
+	textline := strings.ReplaceAll(line, "  ", "\t")
+	tabsCount := countTabsFromString(textline, stopIndex)
+	if lang == "python"  ||  lang == "haskell" { return 0 }
+	return tabsCount
 }
 
 func formatText(left, right string, maxWidth int) string {
