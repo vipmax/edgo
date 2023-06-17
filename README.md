@@ -3,28 +3,31 @@ Yet another console text editor, but with lsp support
 ![editor](screen.png)
 
 Features:
-- `Esc` - exit
 - `Control + s` - save file
-- `Control + q` - quit
+- `Esc / Control + q` - quit
 - `Control + d` - duplicate line
 - `Control + x` - cut 
 - `Control + c` - copy 
 - `Control + v` - paste
 - `Control + u` - undo
 - `Control + r` - redo
+
+
 - `Shift + arrow` - select text
 - `Option + right/left` - smart horizontal movement by words
 - `Option + down/up` - smart vertical movement (adds new line)
+
+
 - `mouse selection`  - select text 
 - `mouse double click`  - select word 
 - `mouse triple click`  - select line
+
+
 - `Control + space` - lsp completion
 - `Control + h` - lsp hover
 - `Control + p` - lsp signature help
 - `Control + g / Control + mouse click` - lsp definition
-
-
-Note: map `Caps lock` to `Control` button, everything will be easier.   
+- `Control + r / Option + mouse click` - lsp references
 
 
 ### Installation:
@@ -107,8 +110,29 @@ brew install jdtls
 brew install kotlin-language-server
 ```
 
+`swift`
+```shell  
+# https://github.com/apple/sourcekit-lsp
+
+```
+
+`haskell`
+```shell  
+# https://haskell-language-server.readthedocs.io/en/latest/installation.html
+ghcup install hls
+```
+
+
+`zig`
+```shell  
+# https://haskell-language-server.readthedocs.io/en/latest/installation.html
+brew install zls
+```
+
 
 ### Notes:  
+Map `Caps lock` to `Control` button, everything will be easier.
+
 Add alias to  shell environment `nano ~/.zshrc` - `alias edgo="./$pwd./edgo"`
 
 
