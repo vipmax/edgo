@@ -28,6 +28,7 @@ Features:
 - `Control + p` - lsp signature help
 - `Control + g / Control + mouse click` - lsp definition
 - `Control + r / Option + mouse click` - lsp references
+- `Control + e` - lsp diagnostic (errors)
 
 
 ### Installation:
@@ -88,19 +89,19 @@ npm i -g vls
 
 `rust`
 ```shell  
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+#curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup component add rust-analyzer
 ```
 
 `c/c++`
 ```shell  
-glang, go to https://clangd.llvm.org/installation.html
+# go to https://clangd.llvm.org/installation.html
+clangd
 ```
 
 `java`
 ```shell  
-# jdtls requires at least Java 17
-# check also JAVA_HOME must be set 
+# jdtls requires at least Java 17, check also JAVA_HOME must be set 
 brew install jdtls
 ```
 
@@ -113,7 +114,7 @@ brew install kotlin-language-server
 `swift`
 ```shell  
 # https://github.com/apple/sourcekit-lsp
-
+xcrun
 ```
 
 `haskell`
@@ -121,7 +122,6 @@ brew install kotlin-language-server
 # https://haskell-language-server.readthedocs.io/en/latest/installation.html
 ghcup install hls
 ```
-
 
 `zig`
 ```shell  
@@ -134,7 +134,6 @@ brew install zls
 Map `Caps lock` to `Control` button, everything will be easier.
 
 Add alias to  shell environment `nano ~/.zshrc` - `alias edgo="./$pwd./edgo"`
-
 
 If you are using `tmux` I recommend to add `set-option -g default-terminal "xterm-256color" ` to `~/.tmux.conf`  for shift and option keys. Do not forget apply it as `tmux source-file ~/.tmux.conf`  
 

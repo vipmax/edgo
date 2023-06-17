@@ -36,6 +36,7 @@ var update = true
 var isOverlay = false
 var s tcell.Screen
 var SelectionColor = 8
+var OverlayColor = -1
 var AccentColor = 303
 
 type Editor struct {
@@ -192,34 +193,40 @@ func (e *Editor) drawDiagnostic() {
 		//textStyle := tcell.StyleDefault.Foreground(tcell.ColorIndianRed)
 
 		for _, diagnostic := range maybeDiagnostic.Diagnostics {
-			if int(diagnostic.Range.Start.Line) >= len(content) { continue } // sometimes it out of content
+			dline := int(diagnostic.Range.Start.Line)
+			if dline >= len(content) { continue } // sometimes it out of content
+			if dline - y > ROWS { continue } // sometimes it out of content
 
 			// iterate over error range and, todo::fix
-			//for i := int(diagnostic.Range.Start.Line); i <= int(diagnostic.Range.End.Line); i++ {
+			//for i := dline; i <= int(diagnostic.Range.End.Line); i++ {
 			//	if i >= len(content) { continue }
-			//
-			//
+			//	tabs := countTabs(content[i], dline)
 			//	for j := int(diagnostic.Range.Start.Character); j <= int(diagnostic.Range.End.Character); j++ {
 			//		if j >= len(content[i]) { continue }
-			//		tabs := countTabs(content[i], j)
-			//		ch := content[i][j]
-			//		s.SetContent(j+LS + tabs*e.tabWidth , i-y, ch, nil, textStyle)
+			//
+			//		ch := content[dline][j]
+			//		s.SetContent(j+LS + tabs*e.tabWidth + x, i-y, ch, nil, textStyle)
 			//	}
 			//}
 
 			// iterate over message characters and draw it
+			var shifty = 0
 			for i, m := range diagnostic.Message {
-				ypos :=  int(diagnostic.Range.Start.Line) - y
-				tabs := countTabs(content[ypos], len(content[ypos]))
-				xpos := i + LS + len(content[int(diagnostic.Range.Start.Line)]) + tabs*e.tabWidth + 5
+				ypos :=  dline - y
+				if ypos < 0 || ypos >= len(content) { break }
 
-				for { // draw ch on the next line if not fit to screen
-					if xpos >= COLUMNS {
-						ypos +=  (i / COLUMNS) + 1
-						if ypos >= len(content) { break}
-						xpos = len(content[ypos]) + 10 + (xpos % COLUMNS) % COLUMNS
-					} else { break }
-				}
+				tabs := countTabs(content[dline], len(content[dline]))
+				xpos := i + LS + len(content[dline+shifty]) + tabs*e.tabWidth + 5
+
+				//for { // draw ch on the next line if not fit to screen
+				//	if xpos >= COLUMNS {
+				//		shifty++
+				//		tabs = countTabs(content[dline+shifty], len(content[dline+shifty]))
+				//		ypos +=  (i / COLUMNS) + 1
+				//		if ypos >= len(content) { break}
+				//		xpos = len(content[dline+shifty]) + 5 + (xpos % COLUMNS) % COLUMNS
+				//	} else { break }
+				//}
 
 				s.SetContent( xpos,  ypos, m, nil,  style)
 			}
@@ -369,6 +376,7 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyCtrlR { e.onReferences();  return }
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
 		if key == tcell.KeyCtrlG { e.onDefinition();  return }
+		if key == tcell.KeyCtrlE { e.onErrors();  return }
 		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
 		if key == tcell.KeyCtrlV { e.paste(); return }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
@@ -802,7 +810,12 @@ func (e *Editor) drawCompletion(atx int, aty int, height int, width int,
 	for row := 0; row < aty+height; row++ {
 		if row >= len(options) || row >= height { break }
 		var option = options[row+selectedOffset]
-		style = e.getSelectedStyle(selected == row+selectedOffset, style)
+
+		isRowSelected := selected == row+selectedOffset
+		if isRowSelected { style = style.Background(tcell.Color(AccentColor)) } else {
+			style = tcell.StyleDefault.Background(tcell.Color(OverlayColor))
+		}
+		style = style.Foreground(tcell.ColorWhite)
 
 		s.SetContent(atx-1, row+aty, ' ', nil, style)
 		for col, char := range option { s.SetContent(col+atx, row+aty, char, nil, style) }
@@ -868,11 +881,135 @@ func (e *Editor) onDefinition() {
 	isSelected = true
 }
 
+func (e *Editor) onErrors() {
+	if !lsp.isReady { return }
+
+	maybeDiagnostics, found := lsp.file2diagnostic["file://" + absoluteFilePath]
+
+	if !found || len(maybeDiagnostics.Diagnostics) == 0 { return }
+
+	isOverlay = true
+	defer markOverlayFalse()
+
+	var end = false
+
+	// loop until escape or enter pressed
+	for !end {
+
+		var options = []string{}
+		for _, diagnistic := range maybeDiagnostics.Diagnostics {
+			text := fmt.Sprintf("[%d:%d] %s ",
+				int(diagnistic.Range.Start.Line) + 1, int(diagnistic.Range.Start.Character + 1),
+				diagnistic.Message,
+			)
+			options = append(options, text)
+		}
+
+
+		width := max(50, maxString(options)) // width depends on max option len or 30 at min
+		height := minMany(len(options) + 1) // depends on min option len or 5 at min or how many rows to the end of screen
+		atx := 0 + LS; aty := 0 // Define the window  position and dimensions
+		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+
+		var selectionEnd = false; var selected = 0; var selectedOffset = 0
+
+		for !selectionEnd {
+			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
+			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
+
+			//draw errors
+			var shifty = 0
+			for row := 0; row < aty+height; row++ {
+				if row >= len(options) || row >= height { break }
+				var option = options[row+selectedOffset]
+
+				isRowSelected := selected == row+selectedOffset
+				if isRowSelected { style = style.Background(tcell.Color(AccentColor)) } else {
+					//style = tcell.StyleDefault.Background(tcell.ColorIndianRed)
+					style = tcell.StyleDefault.Background(tcell.Color(OverlayColor))
+				}
+				style = style.Foreground(tcell.ColorWhite)
+
+				shiftx :=0
+				runes := []rune(option)
+				for j :=0;  j < len(option); j++ {
+					ch := runes[j]
+					nextWord := findNextWord(runes, j)
+					if shiftx == 0 { s.SetContent(atx, row+aty+shifty, ' ', nil, style) }
+					if shiftx+atx + (nextWord - j) >= COLUMNS {
+						for k := shiftx; k <= COLUMNS; k++ { // Fill the remaining space
+							s.SetContent(k+atx, row+aty+shifty, ' ', nil, style)
+						}
+						shifty++; shiftx = 0
+
+					}
+					s.SetContent(atx + shiftx, row+aty+shifty, ch, nil, style)
+					shiftx++
+				}
+
+				for col := shiftx; col < COLUMNS; col++ { // Fill the remaining space
+					s.SetContent(col+atx, row+aty+shifty, ' ', nil, style)
+				}
+			}
+
+			for col := 0; col < width; col++ { // Fill empty line below
+				s.SetContent(col+atx, height + aty + shifty-1, ' ', nil,
+					tcell.StyleDefault.Background(tcell.Color(OverlayColor)))
+			}
+
+			s.Show()
+
+			switch ev := s.PollEvent().(type) { // poll and handle event
+			case *tcell.EventResize:
+				COLUMNS, ROWS = s.Size()
+				ROWS -= 2
+				s.Sync()
+				s.Clear(); e.drawEverything(); s.Show()
+
+			case *tcell.EventKey:
+				key := ev.Key()
+				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
+					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 ||
+					key == tcell.KeyCtrlE { s.Clear(); selectionEnd = true; end = true }
+				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == tcell.KeyUp { selected = max(0, selected-1) }
+				if key == tcell.KeyCtrlC {
+					diagnostic := maybeDiagnostics.Diagnostics[selected]
+					clipboard.WriteAll(diagnostic.Message)
+				}
+				//if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == tcell.KeyRight {
+					diagnostic := maybeDiagnostics.Diagnostics[selected]
+					r = int(diagnostic.Range.Start.Line)
+					c = int(diagnostic.Range.Start.Character)
+					s.Clear(); e.drawEverything(); s.Show()
+				}
+				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				if key == tcell.KeyEnter {
+					selectionEnd = true; end = true
+					diagnostic := maybeDiagnostics.Diagnostics[selected]
+					r = int(diagnostic.Range.Start.Line)
+					c = int(diagnostic.Range.Start.Character)
+
+					ssx = c; ssy = r;
+					sey = int(diagnostic.Range.End.Line)
+					sex = int(diagnostic.Range.End.Character)
+					r = sey; c = sex
+					isSelected = true
+
+					s.Clear(); e.drawEverything(); s.Show()
+				}
+			}
+		}
+	}
+
+}
+
 func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Style {
 	if isSelected {
 		style = style.Background(tcell.Color(AccentColor))
 	} else {
-		style = tcell.StyleDefault
+		style = tcell.StyleDefault.Background(tcell.Color(SelectionColor))
 	}
 	return style.Foreground(tcell.ColorWhite)
 }
