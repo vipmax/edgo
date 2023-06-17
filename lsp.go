@@ -44,6 +44,7 @@ var langCommands = map[string][]string{
 	"java": 	  {"jdtls"},
 	"swift": 	  {"xcrun", "sourcekit-lsp"},
 	"haskell": 	  {"haskell-language-server-wrapper", "--lsp"},
+	"zig": 	  	  {"zls"},
 }
 
 func (this *LspClient) start(language string) bool {
@@ -328,9 +329,9 @@ func (this *LspClient) definition(file string, line int, character int) (Definit
 	this.id++
 	id := this.id
 
-	request := BaseRequest{
+	request := DefinitionRequest{
 		ID: this.id, JSONRPC: "2.0", Method:  "textDocument/definition",
-		Params: Params {
+		Params: DefinitionParams {
 			TextDocument: TextDocument{ URI: "file://" + file },
 			Position: Position{ Line: line, Character: character, },
 		},

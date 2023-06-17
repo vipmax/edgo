@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 func max(x, y int) int {
@@ -82,7 +81,7 @@ func insert[T any](a []T, index int, value T) []T {
 }
 
 var matched = []rune{
-	' ', '.', ',', '=', '+', '-', '[', '(', '{', ']', ')', '}', '"', ':', '&', '?','!',';',
+	' ', '.', ',', '=', '+', '-', '[', '(', '{', ']', ')', '}', '"', ':', '&', '?','!',';','\t',
 }
 
 func findNextWord(chars []rune, from int) int {
@@ -148,6 +147,40 @@ func Equal(x, y, x1, y1 int) bool {
 	return x == x1 && y == y1
 }
 
+func getSelectedIndices(content [][]rune, ssx, ssy, sex, sey int) [][]int {
+	var selectedIndices = [][]int{}
+
+	// check for empty selection
+	if Equal(ssx, ssy, sex, sey) {
+		return selectedIndices
+	}
+
+	// getting selection start point
+	var startx, starty = ssx, ssy
+	var endx, endy = sex, sey
+
+	// swap points if selection is inversed
+	if GreaterThan(startx, starty, endx, endy) {
+		startx, endx = endx, startx
+		starty, endy = endy, starty
+	}
+
+	var inside = false
+	// iterate over content, starting from selection start point until out ouf selection
+	for j := starty; j < len(content); j++ {
+		for i := 0; i < len(content[j]); i++ {
+			if isUnderSelection(i, j) {
+				selectedIndices = append(selectedIndices, []int{i, j})
+				inside = true
+			} else  {
+				if inside == true { // first time when out ouf selection
+					return selectedIndices
+				}
+			}
+		}
+	}
+	return selectedIndices
+}
 
 func getSelectionString(content [][]rune, ssx, ssy, sex, sey int) string {
 	var ret = []rune {}
@@ -230,8 +263,6 @@ func getSelectedLines(content [][]rune, ssx, ssy, sex, sey int)  []int {
 	return lineNumbers.GetKeys()
 }
 
-
-
 func maxString(arr []string) int {
 	maxLength := 0
 	for _, str := range arr {
@@ -248,20 +279,24 @@ func readFileToString(filePath string) (string, error) {
 	return string(filecontent), nil
 }
 
-func countTabsFromString(str string, stopIndex int) int {
+func convertToString(content [][]rune) string {
+	var result strings.Builder
+	for i, row := range content {
+		for _, ch := range row { result.WriteRune(ch) }
+		if i != len(content)-1 { result.WriteByte('\n') }
+	}
+	return result.String()
+}
+
+func countTabs(str []rune, stopIndex int) int {
+	if stopIndex == 0 { return 0 }
+
 	count := 0
 	for i, char := range str {
-		if i > stopIndex { break }
+		if i >= stopIndex { break }
 		if char == '\t' { count++ }
 	}
 	return count
-}
-
-func tabsCountOnLineBefore(line string, stopIndex int, lang string) int {
-	textline := strings.ReplaceAll(line, "  ", "\t")
-	tabsCount := countTabsFromString(textline, stopIndex)
-	if lang == "python"  ||  lang == "haskell" { return 0 }
-	return tabsCount
 }
 
 func formatText(left, right string, maxWidth int) string {
@@ -269,12 +304,6 @@ func formatText(left, right string, maxWidth int) string {
 	right = fmt.Sprintf("%s",  right)
 	return fmt.Sprintf("%s %s", left, right)
 }
-func limitString(s string, maxLength int) string {
-	if utf8.RuneCountInString(s) <= maxLength { return s }
-	runes := []rune(s)
-	return string(runes[:maxLength])
-}
-
 
 func getFileSize(filename string) int64 {
 	file, err := os.Open(filename) // replace with your file name
@@ -309,3 +338,4 @@ func (this Set) GetKeys() []int {
 	sort.Ints(keys) // Sort the keys
 	return keys
 }
+

@@ -275,6 +275,17 @@ type DiagnosticResponse struct {
 }
 
 
+type DefinitionRequest struct {
+	ID      int    `json:"id"`
+	JSONRPC string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  DefinitionParams `json:"params"`
+}
+
+type DefinitionParams struct {
+	TextDocument TextDocument `json:"textDocument"`
+	Position     Position     `json:"position,omitempty"`
+}
 
 
 type DefinitionResult struct {

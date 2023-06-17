@@ -132,7 +132,7 @@ func TestGoLangCompletion(t *testing.T) {
 	lsp := LspClient{}
 	lsp.start("go")
 	lsp.init(dir)
-	lsp.didOpen(file)
+	lsp.didOpen(file, "go")
 
 	completion, _ := lsp.completion(file, 18-1, 8)
 	fmt.Println("completion", completion)
@@ -150,13 +150,14 @@ func TestGoLangCompletion(t *testing.T) {
 func TestPythonCompletion(t *testing.T) {
 	dir := "/Users/max/apps/python/editor/src/"
 	file := path.Join(dir, "logger.py")
+	language := "python"
 
 	fmt.Println("starting lsp server")
 
 	lsp := LspClient{}
-	lsp.start("python")
+	lsp.start(language)
 	lsp.init(dir)
-	lsp.didOpen(file)
+	lsp.didOpen(file, language)
 
 	completion, _ := lsp.completion(file, 8-1, 20)
 	fmt.Println("completion", completion)
@@ -174,13 +175,14 @@ func TestPythonCompletion(t *testing.T) {
 func TestTypescriptCompletion(t *testing.T) {
 	dir := "/Users/max/apps/ts/lsp-examples/"
 	file := path.Join(dir, "lsp-test-ts.ts")
+	language := "typescript"
 
 	fmt.Println("starting lsp server for ", file)
 
 	lsp := LspClient{}
-	lsp.start("typescript")
+	lsp.start(language)
 	lsp.init(dir)
-	lsp.didOpen(file)
+	lsp.didOpen(file,language)
 
 	completion, _ := lsp.completion(file, 31-1, 5)
 	fmt.Println("completion", completion)
@@ -198,13 +200,14 @@ func TestTypescriptCompletion(t *testing.T) {
 func TestRustCompletion(t *testing.T) {
 	dir := "/Users/max/apps/rust/lsp-examples/"
 	file := path.Join(dir, "lsp-test-ts.ts")
+	language := "typescript"
 
 	fmt.Println("starting lsp server for ", file)
 
 	lsp := LspClient{}
-	lsp.start("typescript")
+	lsp.start(language)
 	lsp.init(dir)
-	lsp.didOpen(file)
+	lsp.didOpen(file,language)
 
 	completion, _ := lsp.completion(file,	31-1, 5)
 	fmt.Println("completion", completion)
@@ -222,13 +225,15 @@ func TestRustCompletion(t *testing.T) {
 func TestScalaCompletion(t *testing.T) {
 	dir := "/Users/max/apps/scala/chrome4s"
 	file := path.Join(dir, "/src/main/scala/chrome4s/Main.scala")
+	language := "scala"
 
 	fmt.Println("starting lsp server for ", file)
 
 	lsp := LspClient{}
-	lsp.start("scala")
+	lsp.start(language)
 	lsp.init(dir)
-	lsp.didOpen(file)
+	lsp.didOpen(file,language)
+
 	time.Sleep(3*time.Second)
 	completion, _ := lsp.completion(file, 17-1, 8)
 	fmt.Println("completion", completion)
@@ -247,13 +252,14 @@ func TestScalaCompletion(t *testing.T) {
 func TestGoLangHover(t *testing.T) {
 	dir, _ := os.Getwd()
 	file := dir + "/lsp_test.go"
+	language := "go"
 
 	fmt.Println("starting lsp server")
 
 	lsp := LspClient{}
-	lsp.start("go")
+	lsp.start(language)
 	lsp.init(dir)
-	lsp.didOpen(file)
+	lsp.didOpen(file,language)
 
 	hover, _ := lsp.hover(file,18-1, 13)
 	fmt.Println("hover range: ", hover.Result.Range)
@@ -266,13 +272,14 @@ func TestGoLangHover(t *testing.T) {
 func TestGoLangSignatureHelp(t *testing.T) {
 	dir, _ := os.Getwd()
 	file := dir + "/lsp_test.go"
+	language := "go"
 
 	fmt.Println("starting lsp server")
 
 	lsp := LspClient{}
-	lsp.start("go")
+	lsp.start(language)
 	lsp.init(dir)
-	lsp.didOpen(file)
+	lsp.didOpen(file,language)
 
 	response, _ := lsp.signatureHelp(file,14-1, 36)
 	fmt.Println("signatureHelp: ", response)

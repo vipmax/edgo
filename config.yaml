@@ -1,0 +1,16 @@
+langs:
+  go:
+    name: "go"
+    lsp: "gopls"
+    tabwidth: 4
+  python:
+    name: "python"
+    lsp: "pylsp"
+    comment: "#"
+    tabwidth: 4
+  js:
+    name: "javascript"
+    lsp: "typescript-language-server --stdio"
+  ts:
+    name: "typescript"
+    lsp: "typescript-language-server --stdio"

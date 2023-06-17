@@ -22,10 +22,10 @@ var y, x = 0, 0          // offset for scrolling for row and column
 var LS = 6               // left shift for line number
 var ssx, ssy, sex, sey = -1, -1, -1, -1    // left shift for line number
 var isSelected = false
-var inputFile = ""
-var filename = "main.go" // file name to show
+var inputFile = ""  	 // exact user input
+var filename = "" // file name to show
 var directory = "" 		 // directory
-var absoluteFilePath = ""
+var absoluteFilePath = "" // file name and directory
 var isFileChanged = false
 var colorize = true
 var colors [][]int       // characters colors
@@ -35,35 +35,49 @@ var lang = ""
 var update = true
 var isOverlay = false
 var s tcell.Screen
-
-var ACCENT_COLOR = 8
+var SelectionColor = 8
+var AccentColor = 303
 
 type Editor struct {
 	undoStack []Operation
 	redoStack []Operation
 	logger Logger
+	config Config
+	langConf Lang
+	tabWidth int
 }
 
 func (e *Editor) start() {
+	e.config = GetConfig()
+
 	e.logger = Logger{ }
 	e.logger.start()
-	e.logger.info("starting edgo")
+	highlighter.logger = e.logger
 	lsp.logger = e.logger
+
+	e.logger.info("starting edgo")
 
 	s = e.initScreen()
 
+	// reading file from cmd args
 	if len(os.Args) > 1 {
 		filename = os.Args[1]
 		inputFile = filename
 		err := e.openFile(filename)
-		if err != nil { fmt.Println(err); os.Exit(130) }
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(130)
+		}
 	} else {
 		fmt.Println("filename not found. usage: edgo [filename]")
+		// in the future it will open current directory
 		os.Exit(130)
 	}
 
+	// async initialize lsp
 	go e.init_lsp()
 
+	// main draw cycle
 	for {
 		if update {
 			e.drawEverything()
@@ -83,7 +97,14 @@ func (e *Editor) openFile(fname string) error {
 	e.logger.info("open", directory, filename)
 
 	lang = detectLang(filename)
-	code := e.ReadFile()
+	e.logger.info("lang is", lang)
+
+	conf, found := e.config.Langs[lang]
+	if !found { conf = UnknownLang }
+	e.langConf = conf
+	e.tabWidth = conf.TabWidth
+
+	code := e.readFile()
 	colors = highlighter.colorize(code, filename)
 
 	e.undoStack = []Operation{}
@@ -123,12 +144,27 @@ func (e *Editor) drawEverything() {
 		if row >= len(content) || ry >= len(content) { break }
 		e.drawLineNumber(ry, row)
 
+		tabsOffset := 0
 		for col := 0; col <= COLUMNS; col++ {
 			cx := col + x // index to get right column in characters buffer by scrolling offset x
 			if cx >= len(content[ry]) { break }
 			ch := content[ry][cx]
 			style := e.getStyle(ry, cx)
-			s.SetContent(col + LS, row, ch, nil, style)
+			if ch == '\t'  {
+				if ry == r && cx == c {
+					style = tcell.StyleDefault.Background(tcell.Color(colors[ry][cx+1]))
+				} else {
+
+				}
+				for i := 0; i < e.tabWidth ; i++ {
+					s.SetContent(col + LS + tabsOffset, row, ' ', nil, style)
+					if i != e.tabWidth-1 { tabsOffset++ }
+				}
+
+
+			} else {
+				s.SetContent(col + LS + tabsOffset, row, ch, nil, style)
+			}
 		}
 	}
 
@@ -138,12 +174,17 @@ func (e *Editor) drawEverything() {
 	status := fmt.Sprintf(" %s %d %d %s%s", lang, r+1, c+1, inputFile, changes)
 	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
 	e.cleanLineAfter(len(status), ROWS+1)
-	s.ShowCursor(c-x+LS, r-y) // show cursor
+
+	if r < len(content) && c < len(content[r]) && content[r][c] == '\t' { s.HideCursor()} else  {
+		tabs := countTabs(content[r], c) * (e.tabWidth -1)
+		s.ShowCursor(c-x+LS+tabs, r-y) // show cursor
+	}
+
 }
 
 func (e *Editor) drawDiagnostic() {
 	//lsp.someMapMutex2.Lock()
-	maybeDiagnostic, found := lsp.file2diagnostic["file://"+path.Join(directory, filename)]
+	maybeDiagnostic, found := lsp.file2diagnostic["file://" + absoluteFilePath]
 	//lsp.someMapMutex2.Unlock()
 
 	if found {
@@ -151,25 +192,28 @@ func (e *Editor) drawDiagnostic() {
 		//textStyle := tcell.StyleDefault.Foreground(tcell.ColorIndianRed)
 
 		for _, diagnostic := range maybeDiagnostic.Diagnostics {
-			if int(diagnostic.Range.Start.Line) >= len(content) { continue } // it out of content sometimes
+			if int(diagnostic.Range.Start.Line) >= len(content) { continue } // sometimes it out of content
 
+			// iterate over error range and, todo::fix
 			//for i := int(diagnostic.Range.Start.Line); i <= int(diagnostic.Range.End.Line); i++ {
-			//	textline := strings.ReplaceAll(string(content[i]), "  ", "\t")
-			//	tabsCount := countTabsFromString(textline, c)
-			//	spacesCount := tabsCount*2
+			//	if i >= len(content) { continue }
+			//
 			//
 			//	for j := int(diagnostic.Range.Start.Character); j <= int(diagnostic.Range.End.Character); j++ {
-			//		if i >= len(content) || j >= len(content[i]){ continue }
+			//		if j >= len(content[i]) { continue }
+			//		tabs := countTabs(content[i], j)
 			//		ch := content[i][j]
-			//		s.SetContent(j+LS + spacesCount, i-y, ch, nil, textStyle)
+			//		s.SetContent(j+LS + tabs*e.tabWidth , i-y, ch, nil, textStyle)
 			//	}
 			//}
 
+			// iterate over message characters and draw it
 			for i, m := range diagnostic.Message {
-				xpos := i + LS + len(content[int(diagnostic.Range.Start.Line)]) + 5
 				ypos :=  int(diagnostic.Range.Start.Line) - y
+				tabs := countTabs(content[ypos], len(content[ypos]))
+				xpos := i + LS + len(content[int(diagnostic.Range.Start.Line)]) + tabs*e.tabWidth + 5
 
-				for { // draw ch on the next line if not fit ti screen
+				for { // draw ch on the next line if not fit to screen
 					if xpos >= COLUMNS {
 						ypos +=  (i / COLUMNS) + 1
 						if ypos >= len(content) { break}
@@ -193,6 +237,12 @@ func (e *Editor) drawLineNumber(brw int, row int) {
 	}
 }
 
+func (e *Editor) cleanLineAfter(x, y int) {
+	for i := x; i < COLUMNS; i++ {
+		s.SetContent(i, y, ' ', nil, tcell.StyleDefault)
+	}
+}
+
 func (e *Editor) handleEvents() {
 	update = true
 	ev := s.PollEvent()      // Poll event
@@ -205,34 +255,48 @@ func (e *Editor) handleEvents() {
 		if mx < 0  { return }
 		if my == ROWS  { return }
 
-		// if click with control, lookup for definition
-		if ev.Modifiers()&tcell.ModCtrl != 0 && buttons&tcell.Button1 == 1 {
+		// if click with control or option, lookup for definition or references
+		if buttons&tcell.Button1 == 1 && ( ev.Modifiers()&tcell.ModAlt != 0  || ev.Modifiers()&tcell.ModCtrl != 0 )  {
 			r = my + y
-			c = mx + x
-			if r > len(content) - 1 { return }
-			if c > len(content[r]) { return }
-			e.onDefinition()
-			return
-		}
+			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 
-		// if click with option, lookup for definition
-		if ev.Modifiers()&tcell.ModAlt != 0 && buttons&tcell.Button1 == 1 {
-			r = my + y
-			c = mx + x
-			if r > len(content) - 1 { return }
-			if c > len(content[r]) { return }
-			e.onReferences()
+			count := 0; realCount := 0  // searching x position
+			for _, ch := range content[r] {
+				if count >= mx + x { break }
+				if ch == '\t' {
+					count += e.tabWidth; realCount++
+				} else {
+					count++; realCount++
+				}
+			}
+			c = realCount
+
+			if ev.Modifiers()&tcell.ModAlt != 0 { e.onReferences() }
+			if ev.Modifiers()&tcell.ModCtrl != 0 { e.onDefinition() }
+
 			return
 		}
 
 		if isSelected && buttons&tcell.Button1 == 1 {
+			r = my + y
+			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 
-			isTripleClick := isUnderSelection(mx+x, my+y) &&
+			count := 0; realCount := 0  // searching x position
+			for _, ch := range content[r] {
+				if count >= mx + x { break }
+				if ch == '\t' {
+					count += e.tabWidth; realCount++
+				} else {
+					count++; realCount++
+				}
+			}
+
+			isTripleClick := isUnderSelection(realCount, r) &&
 				len(getSelectedLines(content, ssx, ssy, sex, sey)) == 1
 
 			if isTripleClick {
 				r = my + y
-				c = mx + x
+				c = realCount
 				if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 				if c > len(content[r]) { c = len(content[r]) }
 				//if c < 0 { sex = len(content[r]) }
@@ -243,7 +307,6 @@ func (e *Editor) handleEvents() {
 			} else {
 				e.cleanSelection()
 			}
-
 		}
 
 		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1)
@@ -253,7 +316,20 @@ func (e *Editor) handleEvents() {
 		if buttons&tcell.Button1 == 0 && ssx == -1 { update = false; return }
 
 		if buttons&tcell.Button1 == 1 {
-			if c == mx+x && r == my+y  {
+			r = my + y
+			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+
+			count := 0; realCount := 0  // searching x position
+			for _, ch := range content[r] {
+				if count >= mx + x { break }
+				if ch == '\t' {
+					count += e.tabWidth; realCount++
+				} else {
+					count++; realCount++
+				}
+			}
+
+			if c == realCount && len(getSelectedLines(content, ssx, ssy, sex, sey)) == 0 {
 				// double click
 				prw := findPrevWord(content[r], c)
 				nxw := findNextWord(content[r], c)
@@ -263,10 +339,9 @@ func (e *Editor) handleEvents() {
 				return
 			}
 
-			r = my + y
-			c = mx + x
-			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
-			if c > len(content[r]) { c = len(content[r]) }
+			c = realCount
+
+
 			if c < 0 { c = 0 }
 
 			if ssx < 0  { ssx, ssy = c, r }
@@ -344,23 +419,23 @@ func (e *Editor) handleEvents() {
 	}
 }
 
-func (e *Editor) ReadFile() string {
+func (e *Editor) readFile() string {
 	/// if file is big, read only first 1000 lines and read rest async
-	fileSize := getFileSize(path.Join(directory, filename))
+	fileSize := getFileSize(absoluteFilePath)
 	fileSizeMB := fileSize / (1024 * 1024) // Convert size to megabytes
 
 	var code string
 	if fileSizeMB >= 1 {
 		//colorize = false
-		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000)
+		code = e.readFileAndBuildContent(absoluteFilePath, 1000)
 
 		go func() { // sync?? no need
-			code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
+			code = e.readFileAndBuildContent(absoluteFilePath, 1000000)
 			if colorize { colors = highlighter.colorize(code, filename); e.drawEverything();s.Show() }
 		}()
 
 	} else {
-		code = e.readFileAndBuildContent(path.Join(directory, filename), 1000000)
+		code = e.readFileAndBuildContent(absoluteFilePath, 1000000)
 	}
 	return code
 }
@@ -377,7 +452,7 @@ func (e *Editor) init_lsp() {
 	currentDir, _ := os.Getwd()
 
 	lsp.init(currentDir)
-	lsp.didOpen(path.Join(directory, filename), lang)
+	lsp.didOpen(absoluteFilePath, lang)
 
 	e.drawEverything()
 
@@ -411,11 +486,9 @@ func (e *Editor) onCompletion() {
 
 	// loop until escape or enter pressed
 	for !completionEnd {
-		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-		tabsCount := countTabsFromString(textline, c)
 
 		start := time.Now()
-		completion, err := lsp.completion(path.Join(directory, filename), r, c-tabsCount)
+		completion, err := lsp.completion(absoluteFilePath, r, c)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
@@ -426,7 +499,8 @@ func (e *Editor) onCompletion() {
 		options := e.buildCompletionOptions(completion)
 		if err != nil || len(options) == 0 { return }
 
-		atx := c + LS; aty := r + 1 - y // Define the window  position and dimensions
+		tabs := countTabs(content[r], c)
+		atx := c + LS + tabs*e.tabWidth; aty := r + 1 - y // Define the window  position and dimensions
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(5, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
 		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
@@ -476,11 +550,8 @@ func (e *Editor) onHover() {
 	// loop until escape or enter pressed
 	for !hoverEnd {
 
-		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-		tabsCount := countTabsFromString(textline, c)
-
 		start := time.Now()
-		hover, err := lsp.hover(path.Join(directory, filename), r, c - tabsCount)
+		hover, err := lsp.hover(absoluteFilePath, r, c)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp hover, elapsed " + elapsed.String()
@@ -492,9 +563,10 @@ func (e *Editor) onHover() {
 		options := strings.Split(hover.Result.Contents.Value, "\n")
 		if len(options) == 0 { return }
 
+		tabs := countTabs(content[r], c)
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
+		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
 		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
@@ -533,11 +605,9 @@ func (e *Editor) onSignatureHelp() {
 
 	// loop until escape or enter pressed
 	for !end {
-		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-		tabsCount := countTabsFromString(textline, c)
 
 		start := time.Now()
-		signatureHelpResponse, err := lsp.signatureHelp(path.Join(directory, filename), r, c - tabsCount)
+		signatureHelpResponse, err := lsp.signatureHelp(absoluteFilePath, r, c)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp signature help, elapsed " + elapsed.String()
@@ -559,9 +629,10 @@ func (e *Editor) onSignatureHelp() {
 
 		if len(options) == 0 { return }
 
+		tabs := countTabs(content[r], c)
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
+		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
 		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
@@ -600,11 +671,9 @@ func (e *Editor) onReferences() {
 
 	// loop until escape or enter pressed
 	for !end {
-		textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-		tabsCount := countTabsFromString(textline, c)
 
 		start := time.Now()
-		referencesResponse, err := lsp.references(path.Join(directory, filename), r, c - tabsCount)
+		referencesResponse, err := lsp.references(absoluteFilePath, r, c)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp references, elapsed " + elapsed.String()
@@ -624,21 +693,20 @@ func (e *Editor) onReferences() {
 		if len(options) == 1 {
 			// if only one option, no need to draw options
 			r = referencesResponse.Result[0].Range.Start.Line
-			tabs := tabsCountOnLineBefore(string(content[r]), c, lang)
-			c = referencesResponse.Result[0].Range.Start.Character + tabs
+			c = referencesResponse.Result[0].Range.Start.Character
 			ssx = c; ssy = r;
 			sey = referencesResponse.Result[0].Range.End.Line
-			sex = referencesResponse.Result[0].Range.End.Character + tabsCountOnLineBefore(string(content[sey]), c, lang)
+			sex = referencesResponse.Result[0].Range.End.Character
 			isSelected = true
 			r = sey; c = sex
 			s.Clear(); e.drawEverything()
 			return
 		}
 
-
+		tabs := countTabs(content[r], c)
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := c + LS; aty := r - height - y // Define the window  position and dimensions
+		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
 		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
@@ -667,18 +735,15 @@ func (e *Editor) onReferences() {
 						// do nothing
 					} else {
 						r = referencesResponse.Result[selected].Range.Start.Line
-						tabs := tabsCountOnLineBefore(string(content[r]), c, lang)
-						c = referencesResponse.Result[selected].Range.Start.Character + tabs
+						c = referencesResponse.Result[selected].Range.Start.Character
 						ssx = c; ssy = r;
 						sey = referencesResponse.Result[selected].Range.End.Line
-						sex = referencesResponse.Result[selected].Range.End.Character + tabsCountOnLineBefore(string(content[sey]), c, lang)
+						sex = referencesResponse.Result[selected].Range.End.Character
 						isSelected = true
 						r = sey; c = sex
 						s.Clear(); e.drawEverything();
 					}
-
 				}
-
 			}
 		}
 	}
@@ -754,16 +819,12 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 	end := item.TextEdit.Range.End.Character
 	newText := item.TextEdit.NewText
 
-	// update tabs count because it may be changed
-	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-	tabsCount := countTabsFromString(textline, c)
-
 	if item.TextEdit.Range.Start.Character != 0 && item.TextEdit.Range.End.Character != 0 {
 		// text edit supported by lsp server
 		// move cursor to beginning
-		c = int(from) + tabsCount
+		c = int(from)
 		// remove chars between from and end
-		content[r] = append(content[r][:c], content[r][int(end) + tabsCount:]...)
+		content[r] = append(content[r][:c], content[r][int(end):]...)
 		newText = item.TextEdit.NewText
 	}
 
@@ -788,12 +849,10 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 }
 
 func (e *Editor) onDefinition() {
-	tabsCount := tabsCountOnLineBefore(string(content[r]), c, lang)
-
-	definition, err := lsp.definition(path.Join(directory, filename), r, c - tabsCount)
+	definition, err := lsp.definition(absoluteFilePath, r, c )
 
 	if err != nil || len(definition.Result) == 0 ||
-		definition.Result[0].URI != "file://" + path.Join(directory, filename) || // same file
+		definition.Result[0].URI != "file://" + absoluteFilePath || // same file
 		int(definition.Result[0].Range.Start.Line) > len(content) ||  // not out of content
 		int(definition.Result[0].Range.Start.Character) > len(content[int(definition.Result[0].Range.Start.Line)]) {
 		return
@@ -801,18 +860,19 @@ func (e *Editor) onDefinition() {
 
 
 	r = int(definition.Result[0].Range.Start.Line)
-	c = int(definition.Result[0].Range.Start.Character) + tabsCountOnLineBefore(string(content[r]), c, lang)
+	c = int(definition.Result[0].Range.Start.Character)
 	ssx = c; ssy = r;
 	sey = int(definition.Result[0].Range.End.Line)
-	sex = int(definition.Result[0].Range.End.Character) + tabsCountOnLineBefore(string(content[sey]), c, lang)
+	sex = int(definition.Result[0].Range.End.Character)
 	r = sey; c = sex
 	isSelected = true
 }
 
 func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Style {
 	if isSelected {
-		style = style.Background(tcell.Color(ACCENT_COLOR)) } else {
-		style = tcell.StyleDefault // .Background(tcell.ColorDimGray)
+		style = style.Background(tcell.Color(AccentColor))
+	} else {
+		style = tcell.StyleDefault
 	}
 	return style.Foreground(tcell.ColorWhite)
 }
@@ -828,7 +888,9 @@ func (e *Editor) getStyle(ry int, cx int) tcell.Style {
 	if ry >= len(colors) || cx >= len(colors[ry])  { return style }
 	color := colors[ry][cx]
 	if color > 0 { style = tcell.StyleDefault.Foreground(tcell.Color(color)) }
-	if isUnderSelection(cx, ry) { style = style.Background(tcell.Color(ACCENT_COLOR)) }
+	if isUnderSelection(cx, ry) {
+		style = style.Background(tcell.Color(SelectionColor))
+	}
 	return style
 }
 
@@ -879,17 +941,8 @@ func (e *Editor) onDelete() {
 	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut(); return }
 
 	if c > 0 {
-		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
-			c--
-			e.undoStack = append(e.undoStack, Operation{Delete, content[r][c], r, c})
-			content[r] = remove(content[r], c)
-			c--
-			e.undoStack = append(e.undoStack, Operation{Delete, content[r][c], r, c})
-			content[r] = remove(content[r], c)
-		} else {
-			c--
-			e.deleteCharacter(r,c)
-		}
+		c--
+		e.deleteCharacter(r,c)
 
 	} else if r > 0 { // delete line
 		e.undoStack = append(e.undoStack, Operation{DeleteLine, ' ', r-1, len(content[r-1])})
@@ -923,13 +976,8 @@ func (e *Editor) onUp() {
 func (e *Editor) onLeft() {
 	if len(content) == 0 { return }
 
-	if c != 0 {
-		if c >= 2 && content[r][c-1] == ' ' && content[r][c-2] == ' ' {
-			c -= 2
-		} else {
-			c--
-		}
-
+	if c > 0 {
+		c--
 	} else if r > 0 {
 		r -= 1
 		c = len(content[r]) // fit to content
@@ -939,12 +987,7 @@ func (e *Editor) onRight() {
 	if len(content) == 0 { return }
 
 	if c < len(content[r]) {
-		if len(content[r]) > c+1 && content[r][c] == ' ' && content[r][c+1] == ' ' {
-			c += 2
-		} else {
-			c++
-		}
-
+		c++
 	} else if r < len(content)-1 {
 		r += 1 // to newline
 		c = 0
@@ -952,6 +995,7 @@ func (e *Editor) onRight() {
 }
 
 func (e *Editor) onEnter(isSaveTabs bool) {
+	tabs := countTabs(content[r], c) // todo: spaces also can be
 	e.undoStack = append(e.undoStack, Operation{Enter, '\n', r, c})
 
 	after := content[r][c:]
@@ -962,9 +1006,8 @@ func (e *Editor) onEnter(isSaveTabs bool) {
 
 	begining := []rune{}
 	if isSaveTabs {
-		tabs := countTabsInRow(r - 1)
 		for i := 0; i < tabs; i++ {
-			begining = append(begining, ' ')
+			begining = append(begining, '\t')
 			e.undoStack = append(e.undoStack, Operation{Insert, ' ', r, c + i})
 		}
 		c = tabs
@@ -978,22 +1021,11 @@ func (e *Editor) onEnter(isSaveTabs bool) {
 	e.updateColors()
 }
 
-func (e *Editor) cleanLine(c int, C int, s tcell.Screen, row int) {
-	for i := c; i < C; i++ {
-		s.SetContent(i, row, ' ', nil, tcell.StyleDefault)
-	}
-}
-
-func (e *Editor) cleanLineAfter( x, y int) {
-	for i := x; i < COLUMNS; i++ {
-		s.SetContent(i, y, ' ', nil, tcell.StyleDefault)
-	}
-}
 
 func (e *Editor) writeFile() {
 
 	// Create a new file, or open it if it exists
-	f, err := os.Create(path.Join(directory, filename))
+	f, err := os.Create(absoluteFilePath)
 	if err != nil { panic(err) }
 
 	// Create a buffered writer from the file
@@ -1001,16 +1033,11 @@ func (e *Editor) writeFile() {
 
 	for i, row := range content {
 		for j := 0; j < len(row); {
-			if row[j] == ' ' && len(content[i]) > j+1 && content[i][j+1] == ' ' && lang != "python" && lang != "haskell" { // todo fix
-				if _, err := w.WriteRune('\t'); err != nil { panic(err) }
-				j += 2
-			} else {
-				if _, err := w.WriteRune(row[j]); err != nil { panic(err) }
-				j++
-			}
+			if _, err := w.WriteRune(row[j]); err != nil { panic(err) }
+			j++
 		}
 
-		if i != len(content)-1 {
+		if i != len(content) - 1 { // do not write \n at the end
 			if _, err := w.WriteRune('\n'); err != nil { panic(err) }
 		}
 
@@ -1023,9 +1050,9 @@ func (e *Editor) writeFile() {
 	isFileChanged = false
 
 	if lsp.isReady {
-		go lsp.didOpen(path.Join(directory, filename), lang) // todo remove it in future
-		//go lsp.didChange(path.Join(directory, filename))
-		//go lsp.didSave(path.Join(directory, filename))
+		go lsp.didOpen(absoluteFilePath, lang) // todo remove it in future
+		//go lsp.didChange(absoluteFilePath)
+		//go lsp.didSave(absoluteFilePath)
 	}
 
 }
@@ -1044,7 +1071,6 @@ func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
 	lines := ""
 	for scanner.Scan() {
 		var line = scanner.Text()
-		line = strings.ReplaceAll(line, "\t", "  ")
 		lines += line + "\n"
 		var lineChars = []rune{}
 		for _, char := range line {
@@ -1087,7 +1113,7 @@ func (e *Editor) updateColors() {
 		linecolors := highlighter.colorize(line, filename)
 		colors[r] = linecolors[0]
 	} else {
-		code := convertToString(false)
+		code := convertToString(content)
 		colors = highlighter.colorize(code, filename)
 	}
 }
@@ -1096,15 +1122,14 @@ func (e *Editor) onTab() {
 	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
 
 	if len(selectedLines) == 0 {
-		ch := ' '
-		e.insertCharacter(r, c, ch); c++
-		e.insertCharacter(r, c, ch); c++
+		ch := '\t'
+		e.insertCharacter(r, c, ch);
+		c++
 	} else  {
 		ssx = 0
 		for _, linenumber := range selectedLines {
 			r = linenumber
-			ch := ' '
-			e.insertCharacter(r, 0, ch)
+			ch := '\t'
 			e.insertCharacter(r, 0, ch)
 			c = len(content[r])
 		}
@@ -1116,31 +1141,26 @@ func (e *Editor) onTab() {
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
+
 func (e *Editor) onBackTab() {
 	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
 
+	// deleting tabs from begining
 	if len(selectedLines) == 0 {
-		deletedCount := 0
-		for _, char := range content[r] {
-			if char == ' ' && deletedCount < 2 {
-				content[r] = content[r][1:] // delete first
-				deletedCount++;
-				c--;
-			} else { break }
+		if content[r][0] == '\t'  {
+			e.deleteCharacter(r,0)
+			//content[r] = content[r][1:] // delete first
+			c--
 		}
 	} else {
 		ssx = 0
 		for _, linenumber := range selectedLines {
 			r = linenumber
-			deletedCount := 0
-			for _, char := range content[r] {
-				if char == ' ' && deletedCount < 2 {
-					content[r] = content[r][1:] // delete first
-					deletedCount++;
-					c = len(content[r])
-				} else { break }
+			if content[r][0] == '\t'  {
+				e.deleteCharacter(r,0)
+				//content[r] = content[r][1:] // delete first
+				c = len(content[r])
 			}
-
 		}
 	}
 
@@ -1154,14 +1174,9 @@ func (e *Editor) paste() {
 	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut() }
 
 	text, _ := clipboard.ReadAll()
-	text = strings.ReplaceAll(text, "\t", `  `)
 	lines := strings.Split(text, "\n")
 
 	if len(lines) == 0 { return }
-
-	// update tabs count because it may be changed
-	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-	tabsCount := countTabsFromString(textline, c)
 
 	if len(lines) == 1 { // single line paste
 		for _, ch := range lines[0] {
@@ -1171,15 +1186,17 @@ func (e *Editor) paste() {
 	}
 
 	if len(lines) > 1 { // multiple line paste
+		tabs := countTabs(content[r], c) // todo: spaces also can be
+
 		for _, line := range lines {
 			if r >= len(content)  { content = append(content, []rune{}) } // if last line adding
 
-			nl := strings.Repeat(" ", tabsCount) + line
+			nl := strings.Repeat("\t", tabs) + line
 			content = insert(content, r, []rune(nl))
 			c = len(nl); r++
 		}
 
-		r--
+		r-- // ?
 	}
 
 	update = true
@@ -1190,26 +1207,18 @@ func (e *Editor) paste() {
 
 func (e *Editor) cut() {
 	if len(content) <= 1 {
-		content[0] = []rune{}
+		content[0] = []rune{};
 		r, c = 0, 0
 		return
 	}
 
-	if ssx == -1 && sex == -1 && !isSelected  && ssx == sex {
+	if ssx == -1 && sex == -1 && !isSelected  && ssx == sex { // cut single line
 		content = append(content[:r], content[r+1:]...)
 		if r == len(content) { r--; c = min(c, len(content[r])) } else {
 			c = min(c, len(content[r]))
 		}
-	} else {
-		var selectedIndices [][]int
-		// calculate elements to remove
-		for j := 0; j < len(content); j++ {
-			for i := 0; i < len(content[j]); i++ {
-				if isUnderSelection(i, j) {
-					selectedIndices = append(selectedIndices, []int{i, j})
-				}
-			}
-		}
+	} else { // cut selection
+		selectedIndices := getSelectedIndices(content, ssx, ssy, sex, sey)
 
 		// Sort selectedIndices in reverse order to delete characters from the end
 		for i := len(selectedIndices) - 1; i >= 0; i-- {
@@ -1225,7 +1234,10 @@ func (e *Editor) cut() {
 				colors = append(colors[:yd], colors[yd+1:]...)
 			}
 		}
-		if r >= len(content) { r = len(content) - 1; c = len(content[r])  }
+		if r >= len(content) {
+			r = len(content) - 1
+			c = len(content[r])
+		}
 		e.cleanSelection()
 	}
 
@@ -1266,16 +1278,11 @@ func (e *Editor) handleSmartMove(char rune) {
 }
 
 func (e *Editor) handleSmartMoveDown() {
-	// update tabs count because it may be changed
-	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-	tabsCount := countTabsFromString(textline, c)
-
-	r++; c = 0 // moving down and insert tabs
+	// moving down, insert new line, add same amount of tabs
+	tabs := countTabs(content[r], c)
+	r++; c = 0
 	content = insert(content, r, []rune{})
-	for i := 0; i < tabsCount*2; i++ {
-		e.insertCharacter(r, c, ' ')
-		c++
-	}
+	for i := 0; i < tabs; i++ { e.insertCharacter(r, c, '\t'); c++ }
 
 	update = true
 	isFileChanged = true
@@ -1283,17 +1290,11 @@ func (e *Editor) handleSmartMoveDown() {
 	e.updateColors()
 }
 func (e *Editor) handleSmartMoveUp() {
-	// update tabs count because it may be changed
-	textline := strings.ReplaceAll(string(content[r]), "  ", "\t")
-	tabsCount := countTabsFromString(textline, c)
-
-	c = 0 // moving up and insert tabs
+	// add new line and shift all lines, add same amount of tabs
+	tabs := countTabs(content[r], c)
+	c = 0
 	content = insert(content, r, []rune{})
-	for i := 0; i < tabsCount*2; i++ {
-		e.insertCharacter(r, c, ' ')
-		c++
-	}
-	//r++
+	for i := 0; i < tabs; i++ { e.insertCharacter(r, c, '\t'); c++ }
 
 	update = true
 	isFileChanged = true
@@ -1389,53 +1390,4 @@ func isUnderSelection(x, y int) bool {
 	}
 
 	return GreaterEqual(x, y, startx, starty) && LessThan(x, y, endx, endy)
-}
-
-func getSelection() string {
-	var ret = ""
-
-	var in = false
-	for j, row := range content {
-		for i, char := range row {
-			if isUnderSelection(i, j) {
-				ret += string(char)
-				in = true
-			} else {
-				in = false
-			}
-		}
-		if in {
-			ret += "\n"
-		}
-	}
-	return ret
-}
-
-func convertToString(replaceSpaces bool) string {
-	var result strings.Builder
-	for _, row := range content {
-		result.WriteString(string(row) + "\n")
-	}
-	resultString := result.String()
-	if replaceSpaces {
-		resultString = strings.ReplaceAll(resultString, "  ", "\t")
-	}
-	return resultString
-}
-
-func countTabsInRow(i int) int {
-	if i < 0 || i >= len(content) {
-		return 0
-	} // Invalid row index
-
-	row := content[i]
-	count := 0
-	for _, char := range row {
-		if char == ' ' {
-			count++
-		} else {
-			return count
-		}
-	}
-	return count
 }
