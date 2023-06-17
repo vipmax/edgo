@@ -189,7 +189,8 @@ func (e *Editor) drawDiagnostic() {
 	//lsp.someMapMutex2.Unlock()
 
 	if found {
-		style := tcell.StyleDefault.Background(tcell.ColorIndianRed).Foreground(tcell.ColorWhite)
+		//style := tcell.StyleDefault.Background(tcell.ColorIndianRed).Foreground(tcell.ColorWhite)
+		style := tcell.StyleDefault.Foreground(tcell.Color(AccentColor))
 		//textStyle := tcell.StyleDefault.Foreground(tcell.ColorIndianRed)
 
 		for _, diagnostic := range maybeDiagnostic.Diagnostics {
@@ -209,13 +210,18 @@ func (e *Editor) drawDiagnostic() {
 			//	}
 			//}
 
-			// iterate over message characters and draw it
+
+			tabs := countTabs(content[dline], len(content[dline]))
 			var shifty = 0
-			for i, m := range diagnostic.Message {
+			errorMessage := "error: " + diagnostic.Message
+			errorMessage = PadLeft(errorMessage, COLUMNS - len(content[dline]) - tabs*e.tabWidth - 5 - LS)
+
+			// iterate over message characters and draw it
+			for i, m := range errorMessage {
 				ypos :=  dline - y
 				if ypos < 0 || ypos >= len(content) { break }
 
-				tabs := countTabs(content[dline], len(content[dline]))
+				tabs = countTabs(content[dline], len(content[dline]))
 				xpos := i + LS + len(content[dline+shifty]) + tabs*e.tabWidth + 5
 
 				//for { // draw ch on the next line if not fit to screen
@@ -451,7 +457,11 @@ func (e *Editor) readFile() string {
 func (e *Editor) init_lsp() {
 	start := time.Now()
 
-	started := lsp.start(lang)
+	// Getting the lsp command with args for a language:
+	conf, ok := e.config.Langs[strings.ToLower(lang)]
+	if !ok || len(conf.Lsp) == 0 { return }  // lang is not supported.
+
+	started := lsp.start(lang, strings.Split(conf.Lsp, " "))
 	if !started { return }
 
 	var diagnosticUpdateChan = make(chan string)

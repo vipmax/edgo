@@ -339,3 +339,8 @@ func (this Set) GetKeys() []int {
 	return keys
 }
 
+func PadLeft(str string, length int) string {
+	format := fmt.Sprintf("%%%ds", length)
+	return fmt.Sprintf(format, str)
+}
+

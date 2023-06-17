@@ -18,8 +18,19 @@ type Config struct {
 
 var DefaultConfig = Config { Langs:
 	map[string]Lang{
-		"go": { Name: "go", Lsp: "gopls", TabWidth: 4 },
-		"python": { Name: "python", Lsp: "pylsp", Comment: "#", TabWidth: 4},
+		"go": 	      { Lsp: "gopls", TabWidth: 4 },
+		"python": 	  { Lsp: "pylsp", Comment: "#", TabWidth: 4 },
+		"typescript": { Lsp: "typescript-language-server --stdio" },
+		"javascript": { Lsp: "typescript-language-server --stdio" },
+		"html": 	  { Lsp: "vscode-html-language-server --stdio" },
+		"vue": 	  	  { Lsp: "vscode-html-language-server --stdio" },
+		"rust": 	  { Lsp: "rust-analyzer", TabWidth: 4 },
+		"c": 	      { Lsp: "clangd" },
+		"c++": 	      { Lsp: "clangd" },
+		"java": 	  { Lsp: "jdtls",TabWidth: 4 },
+		"swift": 	  { Lsp: "xcrun sourcekit-lsp" },
+		"haskell": 	  { Lsp: "haskell-language-server-wrapper --lsp", Comment: "--" },
+		"zig": 	  	  { Lsp: "zls", TabWidth: 4 },
 	},
 }
 
@@ -36,11 +47,12 @@ func GetConfig() (Config) {
 	err = yaml.Unmarshal(data, &languages)
 	if err != nil { return DefaultConfig }
 
-	// Set default TabWidth and comment if not specified
-	for langName, lang := range languages.Langs {
-		if lang.TabWidth == 0 { lang.TabWidth = 2; languages.Langs[langName] = lang }
-		if lang.Comment == "" { lang.Comment = "//"; languages.Langs[langName] = lang }
-		DefaultConfig.Langs[lang.Name] = lang
+	//override default config
+	for langName, langConf := range languages.Langs {
+		//set default tab width and comment if not specified
+		if langConf.TabWidth == 0 { langConf.TabWidth = 2 }
+		if langConf.Comment == "" { langConf.Comment = "//" }
+		DefaultConfig.Langs[langName] = langConf
 	}
 
 	return DefaultConfig

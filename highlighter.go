@@ -14,6 +14,30 @@ type Highlighter struct {
 	logger Logger
 }
 
+var defaultStyle, _ = chroma.NewStyle("edgo", chroma.StyleEntries{
+	chroma.Comment: "#a8a8a8",
+
+	chroma.Keyword: "#FF69B4",
+	chroma.KeywordNamespace: "#FF69B4",
+
+	chroma.String: "#90EE90",
+	chroma.LiteralStringDouble: "#90EE90",
+	chroma.Literal: "#90EE90",
+	chroma.StringChar: "#90EE90",
+
+	chroma.KeywordType: "#7FFFD4",
+	chroma.KeywordDeclaration: "#7FFFD4",
+	chroma.KeywordReserved: "#7FFFD4",
+	chroma.NameTag: "#7FFFD4",
+	chroma.NameFunction: "#7FFFD4",
+
+	chroma.NumberInteger: "#00BFFF",
+})
+
+var theme = defaultStyle
+//var theme = styles.Get("nord")
+
+
 func detectLang(filename string) string {
 	lexer := lexers.Match(filename)
 	if lexer == nil { return "" }
@@ -52,29 +76,6 @@ func (h Highlighter) colorize(code string, filename string) [][]int {
 
 	return textColors
 }
-
-var defaultStyle, _ = chroma.NewStyle("edgo", chroma.StyleEntries{
-	chroma.Comment: "#a8a8a8",
-
-	chroma.Keyword: "#FF69B4",
-	chroma.KeywordNamespace: "#FF69B4",
-
-	chroma.String: "#90EE90",
-	chroma.LiteralStringDouble: "#90EE90",
-	chroma.Literal: "#90EE90",
-	chroma.StringChar: "#90EE90",
-
-	chroma.KeywordType: "#7FFFD4",
-	chroma.KeywordDeclaration: "#7FFFD4",
-	chroma.KeywordReserved: "#7FFFD4",
-	chroma.NameTag: "#7FFFD4",
-	chroma.NameFunction: "#7FFFD4",
-
-	chroma.NumberInteger: "#00BFFF",
-})
-
-var theme = defaultStyle
-//var theme = styles.Get("nord")
 
 
 func getColor(tokenType chroma.TokenType) int {

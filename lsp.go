@@ -28,35 +28,12 @@ type LspClient struct {
 	logger Logger
 }
 
-var langCommands = map[string][]string{
-	"go":         {"gopls"},
-	"python":     {"pylsp"},
-	//"python":     {"pyright-langserver", "--stdio"},
-	"typescript": {"typescript-language-server", "--stdio"},
-	"javascript": {"typescript-language-server", "--stdio"},
-	"html": 	  {"vscode-html-language-server","--stdio"},
-	"vue": 	  	  {"vls"},
-	"rust": 	  {"rust-analyzer"},
-	"c": 	  	  {"clangd"},
-	"c++": 	  	  {"clangd"},
-	"scala": 	  {"metals", "-Dmetals.ammoniteJvmProperties=metals.ammoniteJvmProperties=-Xmx4G"},
-	"kotlin": 	  {"kotlin-language-server"},
-	"java": 	  {"jdtls"},
-	"swift": 	  {"xcrun", "sourcekit-lsp"},
-	"haskell": 	  {"haskell-language-server-wrapper", "--lsp"},
-	"zig": 	  	  {"zls"},
-}
-
-func (this *LspClient) start(language string) bool {
+func (this *LspClient) start(language string, lspCmd []string) bool {
 	this.isReady = false
 	this.someMapMutex = sync.RWMutex{}
 
-	// Getting the lsp command with args for a language:
-	lspCmd, ok := langCommands[strings.ToLower(language)]
-	if !ok || len(lspCmd) == 0 { return false }  // lang is not supported.
-
 	_, lsperr := exec.LookPath(lspCmd[0])
-	if lsperr != nil { this.logger.info("lsp not found", lspCmd[0]); return false }
+	if lsperr != nil { this.logger.info("lsp not found:", lspCmd[0]); return false }
 
 	this.process = exec.Command(lspCmd[0], lspCmd[1:]...)
 
