@@ -294,7 +294,7 @@ func countTabs(str []rune, stopIndex int) int {
 	count := 0
 	for i, char := range str {
 		if i >= stopIndex { break }
-		if char == '\t' { count++ }
+		if char == '\t' { count++ } else { break }
 	}
 	return count
 }
@@ -304,7 +304,7 @@ func countSpaces(str []rune, stopIndex int) int {
 	count := 0
 	for i, char := range str {
 		if i >= stopIndex { break }
-		if char == ' ' { count++ }
+		if char == ' ' { count++ } else { break }
 	}
 	return count
 }

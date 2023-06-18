@@ -151,18 +151,12 @@ func (e *Editor) drawEverything() {
 			if cx >= len(content[ry]) { break }
 			ch := content[ry][cx]
 			style := e.getStyle(ry, cx)
-			if ch == '\t'  {
-				if ry == r && cx == c {
-					style = tcell.StyleDefault.Background(tcell.Color(colors[ry][cx+1]))
-				} else {
-
-				}
+			if ch == '\t'  { //draw big cursor with next symbol color
+				if ry == r && cx == c { style = tcell.StyleDefault.Background(tcell.Color(colors[ry][cx+1])) }
 				for i := 0; i < e.tabWidth ; i++ {
 					s.SetContent(col + LS + tabsOffset, row, ' ', nil, style)
 					if i != e.tabWidth-1 { tabsOffset++ }
 				}
-
-
 			} else {
 				s.SetContent(col + LS + tabsOffset, row, ch, nil, style)
 			}
@@ -384,7 +378,7 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyCtrlG { e.onDefinition();  return }
 		if key == tcell.KeyCtrlE { e.onErrors();  return }
 		if key == tcell.KeyCtrlC { e.onCopy(); return; }
-		if key == tcell.KeyCtrlY { e.paste(); return }
+		if key == tcell.KeyCtrlV { e.paste(); return }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
 		if key == tcell.KeyCtrlD { e.duplicate() }
 
@@ -416,10 +410,14 @@ func (e *Editor) handleEvents() {
 			if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear();}
 		}
 
-		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
+		if /*key == tcell.KeyEscape ||*/ key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
 		if key == tcell.KeyCtrlS { e.writeFile() }
 		if key == tcell.KeyEnter { e.onEnter(); s.Clear() }
+		//if ev.Modifiers()&tcell.ModAlt != 0 && key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
+		//	e.cut(); return
+		//}
 		if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { e. onDelete(); s.Clear() }
+
 		if key == tcell.KeyDown { e.onDown(); e.cleanSelection() }
 		if key == tcell.KeyUp { e.onUp(); e.cleanSelection() }
 		if key == tcell.KeyLeft { e.onLeft(); e.cleanSelection() }
@@ -1081,12 +1079,13 @@ func (e *Editor) insertLines(line, pos int, lines []string) {
 	var ops = EditOperation{}
 
 	tabs := countTabs(content[r], c) // todo: spaces also can be
+    r++
+	//ops = append(ops, Operation{Enter, '\n', r, c})
+	for _, linestr := range lines {
+		c = 0
+		if r >= len(content)  { content = append(content, []rune{}) } // if last line adding empty line before
 
-	for i, line := range lines {
-		if i != 0 { c = 0 }
-		if r >= len(content)  { content = append(content, []rune{}) } // if last line adding
-
-		nl := strings.Repeat("\t", tabs) + line
+		nl := strings.Repeat("\t", tabs) + linestr
 		content = insert(content, r, []rune(nl))
 
 		ops = append(ops, Operation{Enter, '\n', r, c})
@@ -1185,7 +1184,9 @@ func (e *Editor) onRight() {
 
 func (e *Editor) onEnter() {
 	var ops = EditOperation{{Enter, '\n', r, c}}
+
 	tabs := countTabs(content[r], c)
+	spaces := countSpaces(content[r], c)
 
 	after := content[r][c:]
 	before := content[r][:c]
@@ -1193,12 +1194,16 @@ func (e *Editor) onEnter() {
 	r++
 	c = 0
 
+	countToInsert := tabs
+	characterToInsert := '\t'
+	if tabs == 0 && spaces != 0 { characterToInsert = ' '; countToInsert = spaces }
+
 	begining := []rune{}
-	for i := 0; i < tabs; i++ {
-		begining = append(begining, '\t')
-		ops = append(ops, Operation{Insert, ' ', r, c + i})
+	for i := 0; i < countToInsert; i++ {
+		begining = append(begining, characterToInsert)
+		ops = append(ops, Operation{Insert, characterToInsert, r, c+i})
 	}
-	c = tabs
+	c = countToInsert
 
 	newline := append(begining, after...)
 	content = insert(content, r, newline)
@@ -1315,14 +1320,16 @@ func (e *Editor) onTab() {
 		e.insertCharacter(r, c, ch);
 		c++
 	} else  {
+		var ops = EditOperation{}
 		ssx = 0
 		for _, linenumber := range selectedLines {
 			r = linenumber
-			ch := '\t'
-			e.insertCharacter(r, 0, ch)
+			content[r] = insert(content[r], 0, '\t')
+			ops = append(ops, Operation{Insert, '\t', r, 0})
 			c = len(content[r])
 		}
 		sex = c
+		e.undoStack = append(e.undoStack, ops)
 	}
 
 	isFileChanged = true
@@ -1392,24 +1399,28 @@ func (e *Editor) cut() {
 		r, c = 0, 0
 		return
 	}
+	var ops = EditOperation{}
 
 	if len(getSelectionString(content, ssx, ssy, sex, sey)) == 0 { // cut single line
-		var ops = EditOperation{}
-		ops = append(ops, Operation{MoveCursor, content[r][c], r, c})
+		ops = append(ops, Operation{MoveCursor, ' ', r, c})
 
 		for i := len(content[r])-1; i >= 0; i-- {
 			ops = append(ops, Operation{Delete, content[r][i], r, i})
 		}
-		ops = append(ops, Operation{DeleteLine, ' ', r-1, len(content[r-1])})
-		e.undoStack = append(e.undoStack, ops)
+
+		if r == 0 {
+			ops = append(ops, Operation{DeleteLine, '\n', 0, 0})
+			c = 0
+		} else {
+			ops = append(ops, Operation{DeleteLine, '\n', r-1, len(content[r-1])})
+			c = len(content[r-1])
+		}
 
 		content = append(content[:r], content[r+1:]...)
-		if r == len(content) { r--; c = min(c, len(content[r])) } else {
-			c = min(c, len(content[r]))
-		}
+		if r > 0 { r-- }
+
 	} else { // cut selection
-		var ops = EditOperation{}
-		ops = append(ops, Operation{MoveCursor, content[r][c], r, c})
+		ops = append(ops, Operation{MoveCursor, ' ', r, c})
 
 		selectedIndices := getSelectedIndices(content, ssx, ssy, sex, sey)
 
@@ -1424,7 +1435,12 @@ func (e *Editor) cut() {
 			ops = append(ops, Operation{Delete, content[yd][xd], yd, xd})
 			content[yd] = append(content[yd][:xd], content[yd][xd+1:]...)
 			if len(content[yd]) == 0 { // delete line
-				ops = append(ops, Operation{DeleteLine, ' ', r-1, len(content[r-1])})
+				if r == 0 {
+					ops = append(ops, Operation{DeleteLine, '\n', 0, 0})
+				} else {
+					ops = append(ops, Operation{DeleteLine, '\n', r-1, len(content[r-1])})
+				}
+
 				content = append(content[:yd], content[yd+1:]...)
 				colors = append(colors[:yd], colors[yd+1:]...)
 			}
@@ -1437,6 +1453,7 @@ func (e *Editor) cut() {
 		e.undoStack = append(e.undoStack, ops)
 	}
 
+	e.undoStack = append(e.undoStack, ops)
 	isFileChanged = true
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
