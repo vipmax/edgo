@@ -15,6 +15,7 @@ Features:
 - `Shift + arrow` - select text
 - `Option + right/left` - smart horizontal movement by words
 - `Option + down/up` - smart vertical movement (adds new line)
+- `Control + Shift + down/up` - lines swap
 
 
 - `mouse selection`  - select text 

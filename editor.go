@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gdamore/tcell"
+	. "github.com/gdamore/tcell"
 	"github.com/gdamore/tcell/encoding"
 )
 
@@ -34,13 +34,13 @@ var lsp = LspClient{}
 var lang = ""
 var update = true
 var isOverlay = false
-var s tcell.Screen
+var s Screen
 var SelectionColor = 8
 var OverlayColor = -1
 var AccentColor = 303
 
 type Editor struct {
-	undoStack []EditOperation
+	undo      []EditOperation
 	redoStack []EditOperation
 	logger Logger
 	config Config
@@ -108,15 +108,15 @@ func (e *Editor) openFile(fname string) error {
 	code := e.readFile()
 	colors = highlighter.colorize(code, filename)
 
-	e.undoStack = []EditOperation{}
+	e.undo = []EditOperation{}
 	e.redoStack = []EditOperation{}
 
 	return nil
 }
 
-func (e *Editor) initScreen() tcell.Screen {
+func (e *Editor) initScreen() Screen {
 	encoding.Register()
-	screen, err := tcell.NewScreen()
+	screen, err := NewScreen()
 	if err != nil { fmt.Fprintf(os.Stderr, "%v\n", err); os.Exit(1) }
 
 	err2 := screen.Init()
@@ -152,7 +152,7 @@ func (e *Editor) drawEverything() {
 			ch := content[ry][cx]
 			style := e.getStyle(ry, cx)
 			if ch == '\t'  { //draw big cursor with next symbol color
-				if ry == r && cx == c { style = tcell.StyleDefault.Background(tcell.Color(colors[ry][cx+1])) }
+				if ry == r && cx == c { style = StyleDefault.Background(Color(colors[ry][cx+1])) }
 				for i := 0; i < e.tabWidth ; i++ {
 					s.SetContent(col + LS + tabsOffset, row, ' ', nil, style)
 					if i != e.tabWidth-1 { tabsOffset++ }
@@ -184,7 +184,7 @@ func (e *Editor) drawDiagnostic() {
 
 	if found {
 		//style := tcell.StyleDefault.Background(tcell.ColorIndianRed).Foreground(tcell.ColorWhite)
-		style := tcell.StyleDefault.Foreground(tcell.Color(AccentColor))
+		style := StyleDefault.Foreground(Color(AccentColor))
 		//textStyle := tcell.StyleDefault.Foreground(tcell.ColorIndianRed)
 
 		for _, diagnostic := range maybeDiagnostic.Diagnostics {
@@ -236,8 +236,9 @@ func (e *Editor) drawDiagnostic() {
 }
 
 func (e *Editor) drawLineNumber(brw int, row int) {
-	var style = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
-	if brw == r { style = tcell.StyleDefault }
+	var style = StyleDefault.Foreground(ColorDimGray)
+	if brw == r { style = StyleDefault
+	}
 	lineNumber := centerNumber(brw + 1, LS)
 	for index, char := range lineNumber {
 		s.SetContent(index, row, char, nil, style)
@@ -246,7 +247,7 @@ func (e *Editor) drawLineNumber(brw int, row int) {
 
 func (e *Editor) cleanLineAfter(x, y int) {
 	for i := x; i < COLUMNS; i++ {
-		s.SetContent(i, y, ' ', nil, tcell.StyleDefault)
+		s.SetContent(i, y, ' ', nil, StyleDefault)
 	}
 }
 
@@ -254,16 +255,18 @@ func (e *Editor) handleEvents() {
 	update = true
 	ev := s.PollEvent()      // Poll event
 	switch ev := ev.(type) { // Process event
-	case *tcell.EventMouse:
+	case *EventMouse:
 		mx, my := ev.Position()
 		buttons := ev.Buttons()
+		modifiers := ev.Modifiers()
 		mx -= LS
 
 		if mx < 0  { return }
 		if my == ROWS  { return }
 
 		// if click with control or option, lookup for definition or references
-		if buttons&tcell.Button1 == 1 && ( ev.Modifiers()&tcell.ModAlt != 0  || ev.Modifiers()&tcell.ModCtrl != 0 )  {
+
+		if buttons & Button1 == 1 && ( modifiers & ModAlt != 0  || modifiers & ModCtrl != 0 )  {
 			r = my + y
 			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 
@@ -278,13 +281,13 @@ func (e *Editor) handleEvents() {
 			}
 			c = realCount
 
-			if ev.Modifiers()&tcell.ModAlt != 0 { e.onReferences() }
-			if ev.Modifiers()&tcell.ModCtrl != 0 { e.onDefinition() }
+			if modifiers & ModAlt != 0 { e.onReferences() }
+			if modifiers & ModCtrl != 0 { e.onDefinition() }
 
 			return
 		}
 
-		if isSelected && buttons&tcell.Button1 == 1 {
+		if isSelected && buttons & Button1 == 1 {
 			r = my + y
 			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 
@@ -318,11 +321,11 @@ func (e *Editor) handleEvents() {
 
 		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1)
 
-		if ev.Buttons()&tcell.WheelDown != 0 { e.onDown(); return }
-		if ev.Buttons()&tcell.WheelUp != 0 { e.onUp(); return }
-		if buttons&tcell.Button1 == 0 && ssx == -1 { update = false; return }
+		if buttons & WheelDown != 0 { e.onDown(); return }
+		if buttons & WheelUp != 0 { e.onUp(); return }
+		if buttons & Button1 == 0 && ssx == -1 { update = false; return }
 
-		if buttons&tcell.Button1 == 1 {
+		if buttons & Button1 == 1 {
 			r = my + y
 			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 
@@ -355,78 +358,81 @@ func (e *Editor) handleEvents() {
 			if ssx >= 0  { sex, sey = c, r }
 		}
 
-		if buttons&tcell.Button1 == 0 {
+		if buttons & Button1 == 0 {
 			if ssx != -1 && sex != -1 {
 				isSelected = true
 			}
 		}
 
-	case *tcell.EventResize:
+	case *EventResize:
 		COLUMNS, ROWS = s.Size()
 		ROWS -= 2
 		s.Sync()
 		s.Clear()
 
-	case *tcell.EventKey:
+	case *EventKey:
 		key := ev.Key()
+		modifiers := ev.Modifiers()
 
-		if key == tcell.KeyTab   { e.onTab(); e.writeFile(); return	 }
-		if key == tcell.KeyBacktab { e.onBackTab(); e.writeFile(); return	 }
-		if key == tcell.KeyCtrlH { e.onHover();  return }
-		if key == tcell.KeyCtrlR { e.onReferences();  return }
-		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
-		if key == tcell.KeyCtrlG { e.onDefinition();  return }
-		if key == tcell.KeyCtrlE { e.onErrors();  return }
-		if key == tcell.KeyCtrlC { e.onCopy(); return; }
-		if key == tcell.KeyCtrlV { e.paste(); return }
-		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
-		if key == tcell.KeyCtrlD { e.duplicate() }
+		if key == KeyUp   && modifiers == 3 { e.onSwapLinesUp(); return }   // control + shift + up
+		if key == KeyDown && modifiers == 3 { e.onSwapLinesDown(); return } // control + shift + down
+		if key == KeyBacktab { e.onBackTab(); e.writeFile(); return	 }
+		if key == KeyTab { e.onTab(); e.writeFile(); return	 }
+		if key == KeyCtrlH { e.onHover();  return }
+		if key == KeyCtrlR { e.onReferences();  return }
+		if key == KeyCtrlP { e.onSignatureHelp();  return }
+		if key == KeyCtrlG { e.onDefinition();  return }
+		if key == KeyCtrlE { e.onErrors();  return }
+		if key == KeyCtrlC { e.onCopy(); return; }
+		if key == KeyCtrlV { e.paste(); return }
+		if key == KeyCtrlX { e.cut(); s.Clear() }
+		if key == KeyCtrlD { e.duplicate() }
 
-		if ev.Modifiers()&tcell.ModShift != 0 && (
-				key == tcell.KeyRight ||
-				key == tcell.KeyLeft ||
-				key == tcell.KeyUp ||
-				key == tcell.KeyDown ) {
+		if modifiers &ModShift != 0 && (
+				key == KeyRight ||
+				key == KeyLeft ||
+				key == KeyUp ||
+				key == KeyDown) {
 
 			if ssx < 0 { ssx, ssy = c, r }
-			if key == tcell.KeyRight { e.onRight() }
-			if key == tcell.KeyLeft { e.onLeft() }
-			if key == tcell.KeyUp { e.onUp() }
-			if key == tcell.KeyDown { e.onDown() }
+			if key == KeyRight { e.onRight() }
+			if key == KeyLeft { e.onLeft() }
+			if key == KeyUp { e.onUp() }
+			if key == KeyDown { e.onDown() }
 			if ssx >= 0 { sex, sey = c, r; isSelected = true }
 			return
 		}
 
-		if key == tcell.KeyRune && ev.Modifiers()&tcell.ModAlt != 0 {
+		if key == KeyRune && modifiers &ModAlt != 0 {
 			if len(content) > 0 { e.handleSmartMove(ev.Rune()) }
 			return
 		}
-		if key == tcell.KeyDown && ev.Modifiers()&tcell.ModAlt != 0 { e.handleSmartMoveDown(); return }
-		if key == tcell.KeyUp && ev.Modifiers()&tcell.ModAlt != 0 { e.handleSmartMoveUp(); return }
+		if key == KeyDown && modifiers &ModAlt != 0 { e.handleSmartMoveDown(); return }
+		if key == KeyUp && modifiers &ModAlt != 0 { e.handleSmartMoveUp(); return }
 
-		if key == tcell.KeyRune {
+		if key == KeyRune {
 			e.addChar(ev.Rune());
 			if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear();}
 			if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear();}
 		}
 
-		if /*key == tcell.KeyEscape ||*/ key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
-		if key == tcell.KeyCtrlS { e.writeFile() }
-		if key == tcell.KeyEnter { e.onEnter(); s.Clear() }
+		if /*key == tcell.KeyEscape ||*/ key == KeyCtrlQ { s.Fini(); os.Exit(1) }
+		if key == KeyCtrlS { e.writeFile() }
+		if key == KeyEnter { e.onEnter(); s.Clear() }
 		//if ev.Modifiers()&tcell.ModAlt != 0 && key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
 		//	e.cut(); return
 		//}
-		if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { e. onDelete(); s.Clear() }
+		if key == KeyBackspace || key == KeyBackspace2 { e. onDelete(); s.Clear() }
 
-		if key == tcell.KeyDown { e.onDown(); e.cleanSelection() }
-		if key == tcell.KeyUp { e.onUp(); e.cleanSelection() }
-		if key == tcell.KeyLeft { e.onLeft(); e.cleanSelection() }
-		if key == tcell.KeyRight { e.onRight(); e.cleanSelection() }
-		if key == tcell.KeyCtrlT { } // TODO: tree
-		if key == tcell.KeyCtrlF { } // TODO: find
-		if key == tcell.KeyCtrlU { e.undo() }
+		if key == KeyDown { e.onDown(); e.cleanSelection() }
+		if key == KeyUp { e.onUp(); e.cleanSelection() }
+		if key == KeyLeft { e.onLeft(); e.cleanSelection() }
+		if key == KeyRight { e.onRight(); e.cleanSelection() }
+		if key == KeyCtrlT { } // TODO: tree
+		if key == KeyCtrlF { } // TODO: find
+		if key == KeyCtrlU { e.onUndo() }
 		//if key == tcell.KeyCtrlR { e.redo() } // todo: fix it
-		if key == tcell.KeyCtrlSpace { e.onCompletion(); s.Clear(); }
+		if key == KeyCtrlSpace { e.onCompletion(); s.Clear(); }
 
 	}
 }
@@ -519,7 +525,7 @@ func (e *Editor) onCompletion() {
 		atx := c + LS + tabs*e.tabWidth; aty := r + 1 - y // Define the window  position and dimensions
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(5, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
-		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+		style := StyleDefault.Foreground(ColorWhite)
 		// if completion on last two rows of the screen - move window up
 		if r - y  >= ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
 
@@ -534,18 +540,18 @@ func (e *Editor) onCompletion() {
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
-				case *tcell.EventKey:
+				case *EventKey:
 					key := ev.Key()
-					if key == tcell.KeyEscape || key == tcell.KeyCtrlSpace { selectionEnd = true; completionEnd = true }
-					if key == tcell.KeyDown { selected = min(len(options)-1, selected+1); s.Clear(); e.drawEverything(); }
-					if key == tcell.KeyUp { selected = max(0, selected-1); s.Clear(); e.drawEverything(); }
-					if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-					if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-					if key == tcell.KeyRune { e.addChar(ev.Rune()); s.Clear(); e.drawEverything(); selectionEnd = true  }
-					if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
+					if key == KeyEscape || key == KeyCtrlSpace { selectionEnd = true; completionEnd = true }
+					if key == KeyDown { selected = min(len(options)-1, selected+1); s.Clear(); e.drawEverything() }
+					if key == KeyUp { selected = max(0, selected-1); s.Clear(); e.drawEverything(); }
+					if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+					if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+					if key == KeyRune { e.addChar(ev.Rune()); s.Clear(); e.drawEverything(); selectionEnd = true  }
+					if key == KeyBackspace || key == KeyBackspace2 {
 						e.onDelete(); s.Clear(); e.drawEverything(); selectionEnd = true
 					}
-					if key == tcell.KeyEnter {
+					if key == KeyEnter {
 						selectionEnd = true; completionEnd = true
 						e.completionApply(completion, selected)
 						e.updateColors(); s.Show(); e.writeFile()
@@ -583,7 +589,7 @@ func (e *Editor) onHover() {
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
 		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
-		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+		style := StyleDefault.Foreground(ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
@@ -596,16 +602,16 @@ func (e *Editor) onHover() {
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *tcell.EventKey:
+			case *EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
-					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
+				if key == KeyEscape || key == KeyEnter ||
+					key == KeyBackspace || key == KeyBackspace2 {
 					s.Clear(); selectionEnd = true; hoverEnd = true
 				}
-				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == tcell.KeyUp { selected = max(0, selected-1) }
-				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == KeyUp { selected = max(0, selected-1) }
+				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
 			}
 		}
 	}
@@ -649,7 +655,7 @@ func (e *Editor) onSignatureHelp() {
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
 		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
-		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+		style := StyleDefault.Foreground(ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
@@ -662,15 +668,15 @@ func (e *Editor) onSignatureHelp() {
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *tcell.EventKey:
+			case *EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
-					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
-				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == tcell.KeyUp { selected = max(0, selected-1) }
-				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				if key == KeyEscape || key == KeyEnter ||
+					key == KeyBackspace || key == KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
+				if key == KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == KeyUp { selected = max(0, selected-1) }
+				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
 
 			}
 		}
@@ -723,7 +729,7 @@ func (e *Editor) onReferences() {
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
 		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
-		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+		style := StyleDefault.Foreground(ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
@@ -736,16 +742,16 @@ func (e *Editor) onReferences() {
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *tcell.EventKey:
+			case *EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
-					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
-				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == tcell.KeyUp { selected = max(0, selected-1) }
-				if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == tcell.KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
-				if key == tcell.KeyEnter {
+				if key == KeyEscape || key == KeyEnter ||
+					key == KeyBackspace || key == KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
+				if key == KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == KeyUp { selected = max(0, selected-1) }
+				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				if key == KeyEnter {
 					selectionEnd = true
 					if referencesResponse.Result[selected].URI != "file://"+ absoluteFilePath {  // if another file
 						// do nothing
@@ -813,17 +819,17 @@ func scoreMatches(src, matchStr string) int {
 }
 
 func (e *Editor) drawCompletion(atx int, aty int, height int, width int,
-	options []string, selected int, selectedOffset int, style tcell.Style) {
+	options []string, selected int, selectedOffset int, style Style) {
 
 	for row := 0; row < aty+height; row++ {
 		if row >= len(options) || row >= height { break }
 		var option = options[row+selectedOffset]
 
 		isRowSelected := selected == row+selectedOffset
-		if isRowSelected { style = style.Background(tcell.Color(AccentColor)) } else {
-			style = tcell.StyleDefault.Background(tcell.Color(OverlayColor))
+		if isRowSelected { style = style.Background(Color(AccentColor)) } else {
+			style = StyleDefault.Background(Color(OverlayColor))
 		}
-		style = style.Foreground(tcell.ColorWhite)
+		style = style.Foreground(ColorWhite)
 
 		s.SetContent(atx-1, row+aty, ' ', nil, style)
 		for col, char := range option { s.SetContent(col+atx, row+aty, char, nil, style) }
@@ -917,7 +923,7 @@ func (e *Editor) onErrors() {
 		width := max(50, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(len(options) + 1) // depends on min option len or 5 at min or how many rows to the end of screen
 		atx := 0 + LS; aty := 0 // Define the window  position and dimensions
-		style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+		style := StyleDefault.Foreground(ColorWhite)
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
@@ -932,11 +938,11 @@ func (e *Editor) onErrors() {
 				var option = options[row+selectedOffset]
 
 				isRowSelected := selected == row+selectedOffset
-				if isRowSelected { style = style.Background(tcell.Color(AccentColor)) } else {
+				if isRowSelected { style = style.Background(Color(AccentColor)) } else {
 					//style = tcell.StyleDefault.Background(tcell.ColorIndianRed)
-					style = tcell.StyleDefault.Background(tcell.Color(OverlayColor))
+					style = StyleDefault.Background(Color(OverlayColor))
 				}
-				style = style.Foreground(tcell.ColorWhite)
+				style = style.Foreground(ColorWhite)
 
 				shiftx :=0
 				runes := []rune(option)
@@ -962,38 +968,38 @@ func (e *Editor) onErrors() {
 
 			for col := 0; col < width; col++ { // Fill empty line below
 				s.SetContent(col+atx, height + aty + shifty-1, ' ', nil,
-					tcell.StyleDefault.Background(tcell.Color(OverlayColor)))
+					StyleDefault.Background(Color(OverlayColor)))
 			}
 
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *tcell.EventResize:
+			case *EventResize:
 				COLUMNS, ROWS = s.Size()
 				ROWS -= 2
 				s.Sync()
 				s.Clear(); e.drawEverything(); s.Show()
 
-			case *tcell.EventKey:
+			case *EventKey:
 				key := ev.Key()
-				if key == tcell.KeyEscape || key == tcell.KeyEnter ||
-					key == tcell.KeyBackspace || key == tcell.KeyBackspace2 ||
-					key == tcell.KeyCtrlE { s.Clear(); selectionEnd = true; end = true }
-				if key == tcell.KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == tcell.KeyUp { selected = max(0, selected-1) }
-				if key == tcell.KeyCtrlC {
+				if key == KeyEscape || key == KeyEnter ||
+					key == KeyBackspace || key == KeyBackspace2 ||
+					key == KeyCtrlE { s.Clear(); selectionEnd = true; end = true }
+				if key == KeyDown { selected = min(len(options)-1, selected+1) }
+				if key == KeyUp { selected = max(0, selected-1) }
+				if key == KeyCtrlC {
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
 					clipboard.WriteAll(diagnostic.Message)
 				}
 				//if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == tcell.KeyRight {
+				if key == KeyRight {
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
 					r = int(diagnostic.Range.Start.Line)
 					c = int(diagnostic.Range.Start.Character)
 					s.Clear(); e.drawEverything(); s.Show()
 				}
 				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
-				if key == tcell.KeyEnter {
+				if key == KeyEnter {
 					selectionEnd = true; end = true
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
 					r = int(diagnostic.Range.Start.Line)
@@ -1013,13 +1019,13 @@ func (e *Editor) onErrors() {
 
 }
 
-func (e *Editor) getSelectedStyle(isSelected bool, style tcell.Style) tcell.Style {
+func (e *Editor) getSelectedStyle(isSelected bool, style Style) Style {
 	if isSelected {
-		style = style.Background(tcell.Color(AccentColor))
+		style = style.Background(Color(AccentColor))
 	} else {
-		style = tcell.StyleDefault.Background(tcell.Color(SelectionColor))
+		style = StyleDefault.Background(Color(SelectionColor))
 	}
-	return style.Foreground(tcell.ColorWhite)
+	return style.Foreground(ColorWhite)
 }
 
 func (e *Editor) cleanSelection() {
@@ -1027,14 +1033,14 @@ func (e *Editor) cleanSelection() {
 	ssx, ssy, sex, sey = -1, -1, -1, -1
 }
 
-func (e *Editor) getStyle(ry int, cx int) tcell.Style {
-	var style = tcell.StyleDefault
+func (e *Editor) getStyle(ry int, cx int) Style {
+	var style = StyleDefault
 	if !colorize { return style }
 	if ry >= len(colors) || cx >= len(colors[ry])  { return style }
 	color := colors[ry][cx]
-	if color > 0 { style = tcell.StyleDefault.Foreground(tcell.Color(color)) }
+	if color > 0 { style = StyleDefault.Foreground(Color(color)) }
 	if isUnderSelection(cx, ry) {
-		style = style.Background(tcell.Color(SelectionColor))
+		style = style.Background(Color(SelectionColor))
 	}
 	return style
 }
@@ -1047,16 +1053,14 @@ func (e *Editor) addChar(ch rune) {
 
 	e.maybeAddPair(ch)
 
-	isFileChanged = true
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.updateNeeded()
 }
 
 func (e *Editor) insertCharacter(line, pos int, ch rune) {
 	content[line] = insert(content[line], pos, ch)
 	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line, pos, line, pos, string(ch)) }
-	e.undoStack = append(e.undoStack, EditOperation{{Insert, ch, r, c}})
+	e.undo = append(e.undo, EditOperation{{Insert, ch, r, c}})
 }
 
 func (e *Editor) insertString(line, pos int, linestring string) {
@@ -1072,7 +1076,7 @@ func (e *Editor) insertString(line, pos int, linestring string) {
 		pos++
 	}
 	c = pos
-	e.undoStack = append(e.undoStack, ops)
+	e.undo = append(e.undo, ops)
 }
 
 func (e *Editor) insertLines(line, pos int, lines []string) {
@@ -1096,11 +1100,11 @@ func (e *Editor) insertLines(line, pos int, lines []string) {
 		r++
 	}
 	r--
-	e.undoStack = append(e.undoStack, ops)
+	e.undo = append(e.undo, ops)
 }
 
 func (e *Editor) deleteCharacter(line, pos int) {
-	e.undoStack = append(e.undoStack, EditOperation{
+	e.undo = append(e.undo, EditOperation{
 		{MoveCursor, content[line][pos], line, pos+1},
 		{Delete, content[line][pos], line, pos},
 	})
@@ -1133,7 +1137,7 @@ func (e *Editor) onDelete() {
 		e.deleteCharacter(r,c)
 
 	} else if r > 0 { // delete line
-		e.undoStack = append(e.undoStack, EditOperation{{DeleteLine, ' ', r-1, len(content[r-1])}})
+		e.undo = append(e.undo, EditOperation{{DeleteLine, ' ', r-1, len(content[r-1])}})
 		l := content[r][c:]
 		content = remove(content, r)
 		r--
@@ -1141,10 +1145,8 @@ func (e *Editor) onDelete() {
 		content[r] = append(content[r], l...)
 	}
 
-	isFileChanged = true
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.updateNeeded()
 }
 
 func (e *Editor) onDown() {
@@ -1208,11 +1210,10 @@ func (e *Editor) onEnter() {
 	newline := append(begining, after...)
 	content = insert(content, r, newline)
 
-	e.undoStack = append(e.undoStack, ops)
+	e.undo = append(e.undo, ops)
 
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.updateNeeded()
 }
 
 
@@ -1286,7 +1287,7 @@ func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
 func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
 	row := y1
 	col := x1
-	var style = tcell.StyleDefault.Foreground(tcell.ColorGray)
+	var style = StyleDefault.Foreground(ColorGray)
 	for _, ch := range []rune(text) {
 		s.SetContent(col, row, ch, nil, style)
 		col++
@@ -1329,13 +1330,11 @@ func (e *Editor) onTab() {
 			c = len(content[r])
 		}
 		sex = c
-		e.undoStack = append(e.undoStack, ops)
+		e.undo = append(e.undo, ops)
 	}
 
-	isFileChanged = true
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.updateNeeded()
 }
 
 func (e *Editor) onBackTab() {
@@ -1360,10 +1359,8 @@ func (e *Editor) onBackTab() {
 		}
 	}
 
-	isFileChanged = true
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.updateNeeded()
 }
 
 func (e *Editor) onCopy() {
@@ -1388,9 +1385,7 @@ func (e *Editor) paste() {
 	}
 
 	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.updateNeeded()
 }
 
 func (e *Editor) cut() {
@@ -1450,13 +1445,11 @@ func (e *Editor) cut() {
 			c = len(content[r])
 		}
 		e.cleanSelection()
-		e.undoStack = append(e.undoStack, ops)
+		e.undo = append(e.undo, ops)
 	}
 
-	e.undoStack = append(e.undoStack, ops)
-	isFileChanged = true
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.undo = append(e.undo, ops)
+	e.updateNeeded()
 }
 
 func (e *Editor) duplicate() {
@@ -1469,10 +1462,12 @@ func (e *Editor) duplicate() {
 
 		duplicatedSlice := make([]rune, len(content[r]))
 		copy(duplicatedSlice, content[r])
-		for i, ch := range duplicatedSlice { ops = append(ops, Operation{Insert, ch, r, i}) }
+		for i, ch := range duplicatedSlice {
+			ops = append(ops, Operation{Insert, ch, r, i})
+		}
 		r++
 		content = insert(content, r, duplicatedSlice)
-		e.undoStack = append(e.undoStack, ops)
+		e.undo = append(e.undo, ops)
 	} else {
 		selection := getSelectionString(content, ssx,ssy,sex,sey)
 		if len(selection) == 0 { return }
@@ -1491,6 +1486,52 @@ func (e *Editor) duplicate() {
 		e.cleanSelection()
 	}
 
+	e.updateNeeded()
+}
+
+func (e *Editor) onSwapLinesUp() {
+	if r == 0 { return }
+	var ops = EditOperation{}
+	ops = append(ops, Operation{MoveCursor, ' ', r, c})
+
+	line1 := content[r]; line2 := content[r-1]
+
+	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], r, i}) }
+	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], r-1, i}) }
+	for i, ch := range line1 { ops = append(ops, Operation{Insert, ch, r-1, i}) }
+	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, r, i}) }
+
+	content[r] = line2; content[r-1] = line1 // swap
+	r--
+
+	e.undo = append(e.undo, ops)
+	e.cleanSelection()
+	e.updateNeeded()
+}
+
+func (e *Editor) onSwapLinesDown() {
+	if r+1 == len(content) { return }
+
+	var ops = EditOperation{}
+	ops = append(ops, Operation{MoveCursor, ' ', r, c})
+
+	line1 := content[r]
+	line2 := content[r+1]
+
+	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], r, i}) }
+	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], r+1, i}) }
+	for i, ch := range line1 { ops = append(ops, Operation{Insert, ch, r+1, i}) }
+	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, r, i}) }
+
+	content[r] = line2; content[r+1] = line1 // swap
+	r++
+
+	e.undo = append(e.undo, ops)
+	e.cleanSelection()
+	e.updateNeeded()
+}
+
+func (e *Editor) updateNeeded() {
 	update = true
 	isFileChanged = true
 	if len(content) <= 10000 { e.writeFile() }
@@ -1528,11 +1569,8 @@ func (e *Editor) handleSmartMoveDown() {
 		c++
 	}
 
-	e.undoStack = append(e.undoStack, ops)
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.undo = append(e.undo, ops)
+	e.updateNeeded()
 }
 func (e *Editor) handleSmartMoveUp() {
 	// add new line and shift all lines, add same amount of tabs/spaces
@@ -1553,18 +1591,15 @@ func (e *Editor) handleSmartMoveUp() {
 		c++
 	}
 
-	e.undoStack = append(e.undoStack, ops)
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.undo = append(e.undo, ops)
+	e.updateNeeded()
 }
 
-func (e *Editor) undo() {
-	if len(e.undoStack) == 0 { return }
+func (e *Editor) onUndo() {
+	if len(e.undo) == 0 { return }
 
-	lastOperation := e.undoStack[len(e.undoStack)-1]
-	e.undoStack = e.undoStack[:len(e.undoStack)-1]
+	lastOperation := e.undo[len(e.undo)-1]
+	e.undo = e.undo[:len(e.undo)-1]
 
 	for i := len(lastOperation) - 1; i >= 0; i-- {
 		o := lastOperation[i]
@@ -1598,10 +1633,7 @@ func (e *Editor) undo() {
 	}
 
 	e.redoStack = append(e.redoStack, lastOperation)
-
-	isFileChanged = true
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.updateNeeded()
 }
 
 func (e *Editor) redo() {
@@ -1638,11 +1670,8 @@ func (e *Editor) redo() {
 		}
 	}
 
-	e.undoStack = append(e.undoStack, lastRedoOperation)
-
-	isFileChanged = true
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
+	e.undo = append(e.undo, lastRedoOperation)
+	e.updateNeeded()
 }
 
 func isUnderSelection(x, y int) bool {
