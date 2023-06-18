@@ -15,20 +15,20 @@ import (
 	"github.com/gdamore/tcell/encoding"
 )
 
-var content [][]rune     // characters
-var COLUMNS, ROWS = 0, 0 // term size
-var r, c = 0, 0          // cursor position, row and column
-var y, x = 0, 0          // offset for scrolling for row and column
-var LS = 6               // left shift for line number
+var content [][]rune      // characters
+var COLUMNS, ROWS = 0, 0  //  term size
+var r, c = 0, 0           // cursor position, row and column
+var y, x = 0, 0           // offset for scrolling for row and column
+var LS = 6                // left shift for line number
 var ssx, ssy, sex, sey = -1, -1, -1, -1    // left shift for line number
 var isSelected = false
-var inputFile = ""  	 // exact user input
-var filename = "" // file name to show
-var directory = "" 		 // directory
+var inputFile = ""  	  // exact user input
+var filename = "" 	    // file name to show
+var directory = ""        // directory
 var absoluteFilePath = "" // file name and directory
 var isFileChanged = false
 var colorize = true
-var colors [][]int       // characters colors
+var colors [][]int        // characters colors
 var highlighter = Highlighter{}
 var lsp = LspClient{}
 var lang = ""
@@ -40,8 +40,8 @@ var OverlayColor = -1
 var AccentColor = 303
 
 type Editor struct {
-	undoStack []Operation
-	redoStack []Operation
+	undoStack []EditOperation
+	redoStack []EditOperation
 	logger Logger
 	config Config
 	langConf Lang
@@ -108,8 +108,8 @@ func (e *Editor) openFile(fname string) error {
 	code := e.readFile()
 	colors = highlighter.colorize(code, filename)
 
-	e.undoStack = []Operation{}
-	e.redoStack = []Operation{}
+	e.undoStack = []EditOperation{}
+	e.redoStack = []EditOperation{}
 
 	return nil
 }
@@ -383,8 +383,8 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyCtrlP { e.onSignatureHelp();  return }
 		if key == tcell.KeyCtrlG { e.onDefinition();  return }
 		if key == tcell.KeyCtrlE { e.onErrors();  return }
-		if key == tcell.KeyCtrlC { clipboard.WriteAll(getSelectionString(content, ssx, ssy, sex, sey)) }
-		if key == tcell.KeyCtrlV { e.paste(); return }
+		if key == tcell.KeyCtrlC { e.onCopy(); return; }
+		if key == tcell.KeyCtrlY { e.paste(); return }
 		if key == tcell.KeyCtrlX { e.cut(); s.Clear() }
 		if key == tcell.KeyCtrlD { e.duplicate() }
 
@@ -418,8 +418,8 @@ func (e *Editor) handleEvents() {
 
 		if key == tcell.KeyEscape || key == tcell.KeyCtrlQ { s.Fini(); os.Exit(1) }
 		if key == tcell.KeyCtrlS { e.writeFile() }
-		if key == tcell.KeyEnter { e.onEnter(true); s.Clear() }
-		if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { e.onDelete(); s.Clear() }
+		if key == tcell.KeyEnter { e.onEnter(); s.Clear() }
+		if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 { e. onDelete(); s.Clear() }
 		if key == tcell.KeyDown { e.onDown(); e.cleanSelection() }
 		if key == tcell.KeyUp { e.onUp(); e.cleanSelection() }
 		if key == tcell.KeyLeft { e.onLeft(); e.cleanSelection() }
@@ -427,7 +427,7 @@ func (e *Editor) handleEvents() {
 		if key == tcell.KeyCtrlT { } // TODO: tree
 		if key == tcell.KeyCtrlF { } // TODO: find
 		if key == tcell.KeyCtrlU { e.undo() }
-		if key == tcell.KeyCtrlR { e.redo() }
+		//if key == tcell.KeyCtrlR { e.redo() } // todo: fix it
 		if key == tcell.KeyCtrlSpace { e.onCompletion(); s.Clear(); }
 
 	}
@@ -1050,7 +1050,7 @@ func (e *Editor) addChar(ch rune) {
 	e.maybeAddPair(ch)
 
 	isFileChanged = true
-	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
+	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
@@ -1058,11 +1058,53 @@ func (e *Editor) addChar(ch rune) {
 func (e *Editor) insertCharacter(line, pos int, ch rune) {
 	content[line] = insert(content[line], pos, ch)
 	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line, pos, line, pos, string(ch)) }
-	e.undoStack = append(e.undoStack, Operation{Insert, ch, r, c})
+	e.undoStack = append(e.undoStack, EditOperation{{Insert, ch, r, c}})
+}
+
+func (e *Editor) insertString(line, pos int, linestring string) {
+	// Convert the string to insert to a slice of runes
+	insertRunes := []rune(linestring)
+
+	// Record the operation on the undo stack. Note that we're creating a new EditOperation
+	// and adding all the Operations to it
+	var ops = EditOperation{}
+	for _, ch := range insertRunes {
+		content[line] = insert(content[line], pos, ch)
+		ops = append(ops, Operation{Insert, ch, line, pos})
+		pos++
+	}
+	c = pos
+	e.undoStack = append(e.undoStack, ops)
+}
+
+func (e *Editor) insertLines(line, pos int, lines []string) {
+	var ops = EditOperation{}
+
+	tabs := countTabs(content[r], c) // todo: spaces also can be
+
+	for i, line := range lines {
+		if i != 0 { c = 0 }
+		if r >= len(content)  { content = append(content, []rune{}) } // if last line adding
+
+		nl := strings.Repeat("\t", tabs) + line
+		content = insert(content, r, []rune(nl))
+
+		ops = append(ops, Operation{Enter, '\n', r, c})
+		for _, ch := range nl {
+			ops = append(ops, Operation{Insert, ch, r, c})
+			c++
+		}
+		r++
+	}
+	r--
+	e.undoStack = append(e.undoStack, ops)
 }
 
 func (e *Editor) deleteCharacter(line, pos int) {
-	e.undoStack = append(e.undoStack, Operation{Delete, content[line][pos], line, pos})
+	e.undoStack = append(e.undoStack, EditOperation{
+		{MoveCursor, content[line][pos], line, pos+1},
+		{Delete, content[line][pos], line, pos},
+	})
 	content[line] = remove(content[line], pos)
 	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line,pos,line,pos+1, "")}
 }
@@ -1092,7 +1134,7 @@ func (e *Editor) onDelete() {
 		e.deleteCharacter(r,c)
 
 	} else if r > 0 { // delete line
-		e.undoStack = append(e.undoStack, Operation{DeleteLine, ' ', r-1, len(content[r-1])})
+		e.undoStack = append(e.undoStack, EditOperation{{DeleteLine, ' ', r-1, len(content[r-1])}})
 		l := content[r][c:]
 		content = remove(content, r)
 		r--
@@ -1101,7 +1143,7 @@ func (e *Editor) onDelete() {
 	}
 
 	isFileChanged = true
-	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
+	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
@@ -1141,9 +1183,9 @@ func (e *Editor) onRight() {
 	}
 }
 
-func (e *Editor) onEnter(isSaveTabs bool) {
-	tabs := countTabs(content[r], c) // todo: spaces also can be
-	e.undoStack = append(e.undoStack, Operation{Enter, '\n', r, c})
+func (e *Editor) onEnter() {
+	var ops = EditOperation{{Enter, '\n', r, c}}
+	tabs := countTabs(content[r], c)
 
 	after := content[r][c:]
 	before := content[r][:c]
@@ -1152,18 +1194,18 @@ func (e *Editor) onEnter(isSaveTabs bool) {
 	c = 0
 
 	begining := []rune{}
-	if isSaveTabs {
-		for i := 0; i < tabs; i++ {
-			begining = append(begining, '\t')
-			e.undoStack = append(e.undoStack, Operation{Insert, ' ', r, c + i})
-		}
-		c = tabs
+	for i := 0; i < tabs; i++ {
+		begining = append(begining, '\t')
+		ops = append(ops, Operation{Insert, ' ', r, c + i})
 	}
+	c = tabs
 
 	newline := append(begining, after...)
 	content = insert(content, r, newline)
 
-	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
+	e.undoStack = append(e.undoStack, ops)
+
+	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
@@ -1284,7 +1326,7 @@ func (e *Editor) onTab() {
 	}
 
 	isFileChanged = true
-	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
+	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
@@ -1312,9 +1354,14 @@ func (e *Editor) onBackTab() {
 	}
 
 	isFileChanged = true
-	if len(e.redoStack) > 0 { e.redoStack = []Operation{} }
+	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
+}
+
+func (e *Editor) onCopy() {
+	selectionString := getSelectionString(content, ssx, ssy, sex, sey)
+	clipboard.WriteAll(selectionString)
 }
 
 func (e *Editor) paste() {
@@ -1326,24 +1373,11 @@ func (e *Editor) paste() {
 	if len(lines) == 0 { return }
 
 	if len(lines) == 1 { // single line paste
-		for _, ch := range lines[0] {
-			e.insertCharacter(r, c, ch)
-			c++
-		}
+		e.insertString(r,c, lines[0])
 	}
 
 	if len(lines) > 1 { // multiple line paste
-		tabs := countTabs(content[r], c) // todo: spaces also can be
-
-		for _, line := range lines {
-			if r >= len(content)  { content = append(content, []rune{}) } // if last line adding
-
-			nl := strings.Repeat("\t", tabs) + line
-			content = insert(content, r, []rune(nl))
-			c = len(nl); r++
-		}
-
-		r-- // ?
+		e.insertLines(r,c, lines)
 	}
 
 	update = true
@@ -1359,12 +1393,24 @@ func (e *Editor) cut() {
 		return
 	}
 
-	if ssx == -1 && sex == -1 && !isSelected  && ssx == sex { // cut single line
+	if len(getSelectionString(content, ssx, ssy, sex, sey)) == 0 { // cut single line
+		var ops = EditOperation{}
+		ops = append(ops, Operation{MoveCursor, content[r][c], r, c})
+
+		for i := len(content[r])-1; i >= 0; i-- {
+			ops = append(ops, Operation{Delete, content[r][i], r, i})
+		}
+		ops = append(ops, Operation{DeleteLine, ' ', r-1, len(content[r-1])})
+		e.undoStack = append(e.undoStack, ops)
+
 		content = append(content[:r], content[r+1:]...)
 		if r == len(content) { r--; c = min(c, len(content[r])) } else {
 			c = min(c, len(content[r]))
 		}
 	} else { // cut selection
+		var ops = EditOperation{}
+		ops = append(ops, Operation{MoveCursor, content[r][c], r, c})
+
 		selectedIndices := getSelectedIndices(content, ssx, ssy, sex, sey)
 
 		// Sort selectedIndices in reverse order to delete characters from the end
@@ -1374,9 +1420,11 @@ func (e *Editor) cut() {
 			yd := indices[1]
 			c, r = xd, yd
 
-			// Delete the character at indices (x, j)
+			// Delete the character at index (x, j)
+			ops = append(ops, Operation{Delete, content[yd][xd], yd, xd})
 			content[yd] = append(content[yd][:xd], content[yd][xd+1:]...)
 			if len(content[yd]) == 0 { // delete line
+				ops = append(ops, Operation{DeleteLine, ' ', r-1, len(content[r-1])})
 				content = append(content[:yd], content[yd+1:]...)
 				colors = append(colors[:yd], colors[yd+1:]...)
 			}
@@ -1386,6 +1434,7 @@ func (e *Editor) cut() {
 			c = len(content[r])
 		}
 		e.cleanSelection()
+		e.undoStack = append(e.undoStack, ops)
 	}
 
 	isFileChanged = true
@@ -1397,18 +1446,37 @@ func (e *Editor) duplicate() {
 	if len(content) == 0 { return }
 
 	if ssx == -1 && ssy == -1 || ssx == sex && ssy == sey  {
+		var ops = EditOperation{}
+		ops = append(ops, Operation{MoveCursor, ' ', r, c})
+		ops = append(ops, Operation{Enter, '\n', r, len(content[r])})
+
 		duplicatedSlice := make([]rune, len(content[r]))
 		copy(duplicatedSlice, content[r])
-		content = insert(content, r+1, duplicatedSlice)
+		for i, ch := range duplicatedSlice { ops = append(ops, Operation{Insert, ch, r, i}) }
 		r++
+		content = insert(content, r, duplicatedSlice)
+		e.undoStack = append(e.undoStack, ops)
 	} else {
 		selection := getSelectionString(content, ssx,ssy,sex,sey)
 		if len(selection) == 0 { return }
-		clipboard.WriteAll(selection)
-		e.paste()
+		lines := strings.Split(selection, "\n")
+
+		if len(lines) == 0 { return }
+
+		if len(lines) == 1 { // single line
+			lines[0] = " " + lines[0]// add space before
+			e.insertString(r,c, lines[0])
+		}
+
+		if len(lines) > 1 { // multiple line
+			e.insertLines(r,c, lines)
+		}
 		e.cleanSelection()
 	}
+
+	update = true
 	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
 
@@ -1425,24 +1493,50 @@ func (e *Editor) handleSmartMove(char rune) {
 }
 
 func (e *Editor) handleSmartMoveDown() {
+	var ops = EditOperation{{Enter, '\n', r, c}}
+
 	// moving down, insert new line, add same amount of tabs
 	tabs := countTabs(content[r], c)
+	spaces := countSpaces(content[r], c)
+
+	countToInsert := tabs
+	characterToInsert := '\t'
+	if tabs == 0 && spaces != 0 { characterToInsert = ' '; countToInsert = spaces }
+
 	r++; c = 0
 	content = insert(content, r, []rune{})
-	for i := 0; i < tabs; i++ { e.insertCharacter(r, c, '\t'); c++ }
+	for i := 0; i < countToInsert; i++ {
+		content[r] = insert(content[r], c, characterToInsert)
+		ops = append(ops, Operation{Insert, characterToInsert, r, c })
+		c++
+	}
 
+	e.undoStack = append(e.undoStack, ops)
 	update = true
 	isFileChanged = true
 	if len(content) <= 10000 { e.writeFile() }
 	e.updateColors()
 }
 func (e *Editor) handleSmartMoveUp() {
-	// add new line and shift all lines, add same amount of tabs
+	// add new line and shift all lines, add same amount of tabs/spaces
 	tabs := countTabs(content[r], c)
-	c = 0
-	content = insert(content, r, []rune{})
-	for i := 0; i < tabs; i++ { e.insertCharacter(r, c, '\t'); c++ }
+	spaces := countSpaces(content[r], c)
 
+	countToInsert := tabs
+	characterToInsert := '\t'
+	if tabs == 0 && spaces != 0 { characterToInsert = ' '; countToInsert = spaces }
+
+	var ops = EditOperation{{Enter, '\n', r, c}}
+	content = insert(content, r, []rune{})
+
+	c = 0
+	for i := 0; i < countToInsert; i++ {
+		content[r] = insert(content[r], c, characterToInsert)
+		ops = append(ops, Operation{Insert, characterToInsert, r, c })
+		c++
+	}
+
+	e.undoStack = append(e.undoStack, ops)
 	update = true
 	isFileChanged = true
 	if len(content) <= 10000 { e.writeFile() }
@@ -1452,35 +1546,41 @@ func (e *Editor) handleSmartMoveUp() {
 func (e *Editor) undo() {
 	if len(e.undoStack) == 0 { return }
 
-	o := e.undoStack[len(e.undoStack)-1]
+	lastOperation := e.undoStack[len(e.undoStack)-1]
 	e.undoStack = e.undoStack[:len(e.undoStack)-1]
 
-	if o.action == Insert {
-		r = o.line; c = o.column
-		content[r] = append(content[r][:c], content[r][c+1:]...)
+	for i := len(lastOperation) - 1; i >= 0; i-- {
+		o := lastOperation[i]
 
-	} else if o.action == Delete {
-		r = o.line; c = o.column
-		content[r] = insert(content[r], c, o.char)
+		if o.action == Insert {
+			r = o.line; c = o.column
+			content[r] = append(content[r][:c], content[r][c+1:]...)
 
-	} else if o.action == Enter {
-		// Merge lines
-		content[o.line] = append(content[o.line], content[o.line+1]...)
-		content = append(content[:o.line+1], content[o.line+2:]...)
-		r = o.line; c = o.column
+		} else if o.action == Delete {
+			r = o.line; c = o.column
+			content[r] = insert(content[r], c, o.char)
 
-	} else if o.action == DeleteLine {
-		// Insert enter
-		r = o.line; c = o.column
-		after := content[r][c:]
-		before := content[r][:c]
-		content[r] = before
-		r++; c = 0
-		newline := append([]rune{}, after...)
-		content = insert(content, r, newline)
+		} else if o.action == Enter {
+			// Merge lines
+			content[o.line] = append(content[o.line], content[o.line+1]...)
+			content = append(content[:o.line+1], content[o.line+2:]...)
+			r = o.line; c = o.column
+
+		} else if o.action == DeleteLine {
+			// Insert enter
+			r = o.line; c = o.column
+			after := content[r][c:]
+			before := content[r][:c]
+			content[r] = before
+			r++; c = 0
+			newline := append([]rune{}, after...)
+			content = insert(content, r, newline)
+		} else if o.action == MoveCursor {
+			r = o.line; c = o.column
+		}
 	}
 
-	e.redoStack = append(e.redoStack, o)
+	e.redoStack = append(e.redoStack, lastOperation)
 
 	isFileChanged = true
 	if len(content) <= 10000 { e.writeFile() }
@@ -1490,32 +1590,38 @@ func (e *Editor) undo() {
 func (e *Editor) redo() {
 	if len(e.redoStack) == 0 { return }
 
-	o := e.redoStack[len(e.redoStack)-1]
+	lastRedoOperation := e.redoStack[len(e.redoStack)-1]
 	e.redoStack = e.redoStack[:len(e.redoStack)-1]
 
-	if o.action == Insert {
-		r = o.line; c = o.column
-		content[r] = insert(content[r], c, o.char)
-		c++
-	} else if o.action == Delete {
-		r = o.line; c = o.column
-		content[r] = append(content[r][:c], content[r][c+1:]...)
-	} else if o.action == Enter {
-		r = o.line; c = o.column
-		after := content[r][c:]
-		before := content[r][:c]
-		content[r] = before
-		r++; c = 0
-		newline := append([]rune{}, after...)
-		content = insert(content, r, newline)
-	} else if o.action == DeleteLine {
-		// Merge lines
-		content[o.line] = append(content[o.line], content[o.line+1]...)
-		content = append(content[:o.line+1], content[o.line+2:]...)
-		r = o.line; c = o.column
+	for i := 0; i < len(lastRedoOperation); i++ {
+		o := lastRedoOperation[i]
+
+		if o.action == Insert {
+			r = o.line; c = o.column
+			content[r] = insert(content[r], c, o.char)
+			c++
+		} else if o.action == Delete {
+			r = o.line; c = o.column
+			content[r] = append(content[r][:c], content[r][c+1:]...)
+		} else if o.action == Enter {
+			r = o.line; c = o.column
+			after := content[r][c:]
+			before := content[r][:c]
+			content[r] = before
+			r++; c = 0
+			newline := append([]rune{}, after...)
+			content = insert(content, r, newline)
+		} else if o.action == DeleteLine {
+			// Merge lines
+			content[o.line] = append(content[o.line], content[o.line+1]...)
+			content = append(content[:o.line+1], content[o.line+2:]...)
+			r = o.line; c = o.column
+		} else if o.action == MoveCursor {
+			r = o.line; c = o.column
+		}
 	}
 
-	e.undoStack = append(e.undoStack, o)
+	e.undoStack = append(e.undoStack, lastRedoOperation)
 
 	isFileChanged = true
 	if len(content) <= 10000 { e.writeFile() }
@@ -1524,9 +1630,7 @@ func (e *Editor) redo() {
 
 func isUnderSelection(x, y int) bool {
 	// Check if there is an active selection
-	if ssx == -1 || ssy == -1  || sex == -1 || sey == -1{
-		return false
-	}
+	if ssx == -1 || ssy == -1  || sex == -1 || sey == -1{ return false }
 
 	var startx, starty = ssx, ssy
 	var endx, endy = sex, sey

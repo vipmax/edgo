@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/alecthomas/chroma"
 	"github.com/alecthomas/chroma/lexers"
+//	"github.com/alecthomas/chroma/styles"
 	"math"
 	"os"
 	"strings"
@@ -35,7 +36,13 @@ var defaultStyle, _ = chroma.NewStyle("edgo", chroma.StyleEntries{
 })
 
 var theme = defaultStyle
+//var theme = styles.Get("dracula")
 //var theme = styles.Get("nord")
+//var theme = styles.Get("monokai")
+//var theme = styles.Get("paraiso-dark")
+//var theme = styles.Get("vulcan")
+//var theme = styles.Get("witchhazel")
+//var theme = styles.Get("xcode-dark")
 
 
 func detectLang(filename string) string {
@@ -45,7 +52,7 @@ func detectLang(filename string) string {
 	if config == nil { return "" }
 	return strings.ToLower(config.Name)
 }
-func (h Highlighter) colorize(code string, filename string) [][]int {
+func (h *Highlighter) colorize(code string, filename string) [][]int {
 	start := time.Now()
 	defer h.logger.info("[highlighter] colorize elapsed: " + time.Since(start).String())
 

@@ -7,6 +7,7 @@ const (
 	Delete Action = "delete"
 	Enter  Action = "enter"
 	DeleteLine Action = "deleteline"
+	MoveCursor Action = "movecursor"
 )
 
 type Operation struct {
@@ -15,3 +16,5 @@ type Operation struct {
 	line   int
 	column int
 }
+
+type EditOperation []Operation
