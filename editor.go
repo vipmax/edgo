@@ -136,7 +136,7 @@ func (e *Editor) drawEverything() {
 	if r < y { y = r }
 	if r >= y + ROWS { y = r - ROWS }
 	if c < x { x = c }
-	if c >= x + COLUMNS { x = c - COLUMNS + 1 }
+	if c + LS >= x + COLUMNS  { x = c - COLUMNS + 1 + LS }
 
 	// draw line number and chars according to scrolling offsets
 	for row := 0; row <= ROWS; row++ {
@@ -262,7 +262,7 @@ func (e *Editor) handleEvents() {
 		mx -= LS
 
 		if mx < 0  { return }
-		if my == ROWS  { return }
+		if my > ROWS  { return }
 
 		// if click with control or option, lookup for definition or references
 
@@ -447,9 +447,13 @@ func (e *Editor) readFile() string {
 		//colorize = false
 		code = e.readFileAndBuildContent(absoluteFilePath, 1000)
 
-		go func() { // sync?? no need
+		go func() { // sync?? no need yet
 			code = e.readFileAndBuildContent(absoluteFilePath, 1000000)
-			if colorize { colors = highlighter.colorize(code, filename); e.drawEverything();s.Show() }
+			code, _ = getFirstLines(code, 20000)
+			colors = highlighter.colorize(code, filename);
+			e.drawEverything();
+			s.Show()
+
 		}()
 
 	} else {
@@ -1253,6 +1257,10 @@ func (e *Editor) writeFile() {
 }
 
 func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
+	start := time.Now()
+	e.logger.info("read file start", filename, string(limit))
+	defer e.logger.info("read file end",   filename, string(limit), "elapsed", time.Since(start).String())
+
 	file, err := os.Open(filename)
 	if err != nil {
 		filec, err2 := os.Create(filename)
@@ -1263,16 +1271,12 @@ func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
 
 	scanner := bufio.NewScanner(file)
 
-	lines := ""
 	for scanner.Scan() {
 		var line = scanner.Text()
-		lines += line + "\n"
 		var lineChars = []rune{}
-		for _, char := range line {
-			lineChars = append(lineChars, char)
-		}
+		for _, char := range line { lineChars = append(lineChars, char) }
 		content = append(content, lineChars)
-		if len(content) >= limit { break }
+		if len(content) > limit { break }
 	}
 
 	// if no content, consider it like one line for next editing
@@ -1281,8 +1285,9 @@ func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
 		colors = make([][]int, 1)
 	}
 
-	return lines
+	return convertToString(content)
 }
+
 
 func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
 	row := y1

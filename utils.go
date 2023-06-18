@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"sort"
@@ -352,5 +353,26 @@ func (this Set) GetKeys() []int {
 func PadLeft(str string, length int) string {
 	format := fmt.Sprintf("%%%ds", length)
 	return fmt.Sprintf(format, str)
+}
+
+func getFirstLines(s string, lineNum int) (string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(s))
+	count := 0
+	var builder strings.Builder
+	for scanner.Scan() {
+		builder.WriteString(scanner.Text())
+		builder.WriteString("\n")
+		count++
+		if count == lineNum {
+			break
+		}
+	}
+
+	if scanner.Err() != nil {
+		// handle error.
+		return "", scanner.Err()
+	}
+
+	return builder.String(), nil
 }
 

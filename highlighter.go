@@ -53,8 +53,8 @@ func detectLang(filename string) string {
 	return strings.ToLower(config.Name)
 }
 func (h *Highlighter) colorize(code string, filename string) [][]int {
+	h.logger.info("colorize start")
 	start := time.Now()
-	defer h.logger.info("[highlighter] colorize elapsed: " + time.Since(start).String())
 
 	// get lexer depending on filename
 	lexer := lexers.Match(filename)
@@ -63,7 +63,7 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 	// get iterator for tokenizing the code
 	iterator, err := lexer.Tokenise(nil, code)
 	if err != nil {
-		h.logger.info("[highlighter] tokenization error: " + err.Error())
+		h.logger.info("tokenization error: " + err.Error())
 		os.Exit(1)
 	}
 
@@ -81,6 +81,7 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 		textColors = append(textColors, lineColors)
 	}
 
+	h.logger.info("colorize end, elapsed: " + time.Since(start).String())
 	return textColors
 }
 
