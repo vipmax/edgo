@@ -10,7 +10,6 @@ Features:
 - `Control + c` - copy 
 - `Control + v` - paste
 - `Control + u` - undo
-- `Control + r` - redo
 
 
 - `Shift + arrow` - select text
