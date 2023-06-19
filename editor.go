@@ -622,7 +622,6 @@ func (e *Editor) onSignatureHelp() {
 
 		lspStatus := "lsp signature help, elapsed " + elapsed.String()
 		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
-		status = PadLeft(status,COLUMNS)
 		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
@@ -985,7 +984,10 @@ func (e *Editor) onErrors() {
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
 					r = int(diagnostic.Range.Start.Line)
 					c = int(diagnostic.Range.Start.Character)
-					s.Clear(); e.drawEverything(); s.Show()
+					e.focus();
+					// add space for errors panel
+					if r - y  < shifty + len(options) { y -= shifty + len(options) + 1}
+					e.drawEverything(); s.Show()
 				}
 				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
 				if key == KeyEnter {
@@ -999,8 +1001,10 @@ func (e *Editor) onErrors() {
 					sex = int(diagnostic.Range.End.Character)
 					r = sey; c = sex
 					isSelected = true
-					e.focus()
-					s.Clear(); e.drawEverything(); s.Show()
+					e.focus();
+					// add space for errors panel
+					if r - y  < shifty + len(options) { y -= shifty + len(options) + 1}
+					e.drawEverything(); s.Show()
 				}
 			}
 		}
