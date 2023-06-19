@@ -4,7 +4,7 @@ while true; do
 		tput civis # hide cursor
 
 		# Use fd to generate a list of files and directories, excluding .git and __pycache__
-		fd_output=$(fd --type f --follow --exclude .git --exclude __pycache__ --exclude node_modules --exclude target --exclude build)
+		fd_output=$(fd --type f --follow --exclude .git --exclude __pycache__ --exclude node_modules --exclude target --exclude build --exclude dist)
 
 		tput civis # hide cursor
 

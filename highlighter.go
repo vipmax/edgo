@@ -103,8 +103,8 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 			chromeColor := theme.Get(token.Type).Colour.String()
 			tcellColor := tcell.GetColor(chromeColor)
 			color := int(tcellColor)
-			if color == -1 { color = 15 } // sometimes it returs -1 and cursor is black, make it write
-
+			// sometimes it returns -1 and cursor is black, make it write
+			if color == -1 { color = 15 }
 			// copy color for each token character
 			for range token.Value { lineColors = append(lineColors, color) }
 		}

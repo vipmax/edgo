@@ -911,7 +911,7 @@ func (e *Editor) onErrors() {
 
 
 		width := max(50, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(len(options) + 1) // depends on min option len or 5 at min or how many rows to the end of screen
+		height := minMany(10, len(options) + 1) // depends on min option len or 5 at min or how many rows to the end of screen
 		atx := 0 + LS; aty := 0 // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 
@@ -986,7 +986,8 @@ func (e *Editor) onErrors() {
 					c = int(diagnostic.Range.Start.Character)
 					e.focus();
 					// add space for errors panel
-					if r - y  < shifty + len(options) { y -= shifty + len(options) + 1}
+					if r - y  < shifty + height { y -= shifty + height + 1}
+					if y < 0 { y = 0 }
 					e.drawEverything(); s.Show()
 				}
 				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
@@ -1003,7 +1004,8 @@ func (e *Editor) onErrors() {
 					isSelected = true
 					e.focus();
 					// add space for errors panel
-					if r - y  < shifty + len(options) { y -= shifty + len(options) + 1}
+					if r - y  < shifty + height { y -= shifty + height + 1}
+					if y < 0 { y = 0 }
 					e.drawEverything(); s.Show()
 				}
 			}
