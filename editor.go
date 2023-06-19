@@ -1158,20 +1158,20 @@ func (e *Editor) onScrollDown() {
 
 func (e *Editor) onDown() {
 	if len(content) == 0 { return }
-	if r+1 >= len(content) { return }
+	if r+1 >= len(content) { y = r - ROWS + 1; return }
 	r++
 	if c > len(content[r]) { c = len(content[r]) } // fit to content
 	if r < y { y = r }
-	if r >= y + ROWS { y = r - ROWS+1  }
+	if r >= y + ROWS { y = r - ROWS + 1  }
 }
 
 func (e *Editor) onUp() {
 	if len(content) == 0 { return }
-	if r == 0 { return }
+	if r == 0 { y = 0; return }
 	r--
 	if c > len(content[r]) { c = len(content[r]) } // fit to content
 	if r < y { y = r }
-	if r > y + ROWS { y = r  }
+	if r > y + ROWS { y = r -ROWS +1  }
 }
 
 func (e *Editor) onLeft() {
