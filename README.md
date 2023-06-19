@@ -38,18 +38,26 @@ Install Go for mac os:
 brew install go 
 echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.zshrc
 ```
-And then:   
+Clone:   
 ```shell
 git clone https://github.com/vipmax/edgo && cd edgo
 go build 
 go install .
 ```
 
-`edgo` will be available as :
+### Usage:
 ```
 edgo [filename]
 edgo ~/.zshrc 
 ```
+
+### Support
+If you like the project, please support it.  
+`BITCOIN`: `12nVNdrR172b8ZU4CLUVPm3AHqrq2xHMko`  
+`ETH` : `0x801b8ecabdd0cf4f6efc3f2624748f9a647987fe`  
+`USDT` : `0x801b8ecabdd0cf4f6efc3f2624748f9a647987fe`  
+
+
 ### Lsp
 
 Following lsp features are supported:
