@@ -47,7 +47,15 @@ func GetConfig() (Config) {
 	err = yaml.Unmarshal(data, &languages)
 	if err != nil { return DefaultConfig }
 
-	//override default config
+	// override default config
+	for langName, langConf := range DefaultConfig.Langs {
+		//set default tab width and comment if not specified
+		if langConf.TabWidth == 0 { langConf.TabWidth = 2 }
+		if langConf.Comment == "" { langConf.Comment = "//" }
+		DefaultConfig.Langs[langName] = langConf
+	}
+
+	// read yaml config and override
 	for langName, langConf := range languages.Langs {
 		//set default tab width and comment if not specified
 		if langConf.TabWidth == 0 { langConf.TabWidth = 2 }

@@ -2,7 +2,7 @@
 Yet another console text editor, but with lsp support
 ![editor](screen.png)
 
-Features:
+Key bindings and features:
 - `Control + s` - save file
 - `Esc / Control + q` - quit
 - `Control + d` - duplicate line

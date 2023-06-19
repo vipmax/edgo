@@ -4,40 +4,41 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/atotto/clipboard"
+	. "github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/encoding"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	. "github.com/gdamore/tcell"
-	"github.com/gdamore/tcell/encoding"
 )
 
 var content [][]rune      // characters
-var COLUMNS, ROWS = 0, 0  //  term size
+var COLUMNS, ROWS = 0, 0  // term size
 var r, c = 0, 0           // cursor position, row and column
 var y, x = 0, 0           // offset for scrolling for row and column
 var LS = 6                // left shift for line number
-var ssx, ssy, sex, sey = -1, -1, -1, -1    // left shift for line number
-var isSelected = false
+var ssx, ssy = -1, -1     // selection start x and y
+var sex, sey = -1, -1     // selection end x and y
+var isSelected = false    // true if selection is active 
 var inputFile = ""  	  // exact user input
-var filename = "" 	    // file name to show
+var filename = ""         // file name to show
 var directory = ""        // directory
 var absoluteFilePath = "" // file name and directory
-var isFileChanged = false
-var colorize = true
+var isFileChanged = false // shows * if file is not saved
+var colorize = true       // colorize text is true by default
 var colors [][]int        // characters colors
-var highlighter = Highlighter{}
-var lsp = LspClient{}
-var lang = ""
+var lang = ""             // current file language
 var update = true
 var isOverlay = false
-var s Screen
 var SelectionColor = 8
 var OverlayColor = -1
 var AccentColor = 303
+var s Screen
+var lsp = LspClient{}
+var highlighter = Highlighter{}
+
 
 type Editor struct {
 	undo      []EditOperation
@@ -47,6 +48,7 @@ type Editor struct {
 	langConf Lang
 	tabWidth int
 }
+
 
 func (e *Editor) start() {
 	e.config = GetConfig()
@@ -75,7 +77,7 @@ func (e *Editor) start() {
 		os.Exit(130)
 	}
 
-	// async initialize lsp
+	// initialize lsp async
 	go e.init_lsp()
 
 	// main draw cycle
@@ -126,22 +128,17 @@ func (e *Editor) initScreen() Screen {
 	screen.Clear()
 
 	COLUMNS, ROWS = screen.Size()
-	ROWS -= 2  // for status line
 
 	return screen
 }
 
 func (e *Editor) drawEverything() {
-	// calculate scrolling offsets for scrolling vertically and horizontally
-	if r < y { y = r }
-	if r >= y + ROWS { y = r - ROWS }
-	if c < x { x = c }
-	if c + LS >= x + COLUMNS  { x = c - COLUMNS + 1 + LS }
+	s.Clear()
 
 	// draw line number and chars according to scrolling offsets
 	for row := 0; row <= ROWS; row++ {
 		ry := row + y  // index to get right row in characters buffer by scrolling offset y
-		e.cleanLineAfter(0, row)
+		//e.cleanLineAfter(0, row)
 		if row >= len(content) || ry >= len(content) { break }
 		e.drawLineNumber(ry, row)
 
@@ -167,10 +164,12 @@ func (e *Editor) drawEverything() {
 
 	var changes = ""; if isFileChanged { changes = "*" }
 	status := fmt.Sprintf(" %s %d %d %s%s", lang, r+1, c+1, inputFile, changes)
-	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-	e.cleanLineAfter(len(status), ROWS+1)
+	e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
-	if r < len(content) && c < len(content[r]) && content[r][c] == '\t' { s.HideCursor()} else  {
+	// if tab under cursor, hide cursor because it has already drawn
+	if r < len(content) && c < len(content[r]) && content[r][c] == '\t' {
+		s.HideCursor()
+	} else  {
 		tabs := countTabs(content[r], c) * (e.tabWidth -1)
 		s.ShowCursor(c-x+LS+tabs, r-y) // show cursor
 	}
@@ -245,6 +244,17 @@ func (e *Editor) drawLineNumber(brw int, row int) {
 	}
 }
 
+func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
+	row := y1; col := x1
+	var style = StyleDefault.Foreground(ColorGray)
+	for _, ch := range []rune(text) {
+		s.SetContent(col, row, ch, nil, style)
+		col++
+		if col >= x2 { row++; col = x1 }
+		if row > y2 { break }
+	}
+}
+
 func (e *Editor) cleanLineAfter(x, y int) {
 	for i := x; i < COLUMNS; i++ {
 		s.SetContent(i, y, ' ', nil, StyleDefault)
@@ -265,48 +275,28 @@ func (e *Editor) handleEvents() {
 		if my > ROWS  { return }
 
 		// if click with control or option, lookup for definition or references
-
 		if buttons & Button1 == 1 && ( modifiers & ModAlt != 0  || modifiers & ModCtrl != 0 )  {
 			r = my + y
 			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 
-			count := 0; realCount := 0  // searching x position
-			for _, ch := range content[r] {
-				if count >= mx + x { break }
-				if ch == '\t' {
-					count += e.tabWidth; realCount++
-				} else {
-					count++; realCount++
-				}
-			}
-			c = realCount
-
+			c = e.findCursorXPosition(mx)
 			if modifiers & ModAlt != 0 { e.onReferences() }
 			if modifiers & ModCtrl != 0 { e.onDefinition() }
-
 			return
 		}
 
-		if isSelected && buttons & Button1 == 1 {
+		if isSelected && buttons&Button1 == 1 {
 			r = my + y
 			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 
-			count := 0; realCount := 0  // searching x position
-			for _, ch := range content[r] {
-				if count >= mx + x { break }
-				if ch == '\t' {
-					count += e.tabWidth; realCount++
-				} else {
-					count++; realCount++
-				}
-			}
+			xPosition := e.findCursorXPosition(mx)
 
-			isTripleClick := isUnderSelection(realCount, r) &&
+			isTripleClick := isUnderSelection(xPosition, r) &&
 				len(getSelectedLines(content, ssx, ssy, sex, sey)) == 1
 
 			if isTripleClick {
 				r = my + y
-				c = realCount
+				c = xPosition
 				if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 				if c > len(content[r]) { c = len(content[r]) }
 				//if c < 0 { sex = len(content[r]) }
@@ -315,31 +305,23 @@ func (e *Editor) handleEvents() {
 				ssy = r; sey = r
 				return
 			} else {
-				e.cleanSelection()
+				cleanSelection()
 			}
 		}
 
 		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1)
 
-		if buttons & WheelDown != 0 { e.onDown(); return }
-		if buttons & WheelUp != 0 { e.onUp(); return }
+		if buttons & WheelDown != 0 { e.onScrollDown(); return }
+		if buttons & WheelUp != 0 { e.onScrollUp(); return }
 		if buttons & Button1 == 0 && ssx == -1 { update = false; return }
 
 		if buttons & Button1 == 1 {
 			r = my + y
 			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
 
-			count := 0; realCount := 0  // searching x position
-			for _, ch := range content[r] {
-				if count >= mx + x { break }
-				if ch == '\t' {
-					count += e.tabWidth; realCount++
-				} else {
-					count++; realCount++
-				}
-			}
+			xPosition := e.findCursorXPosition(mx)
 
-			if c == realCount && len(getSelectedLines(content, ssx, ssy, sex, sey)) == 0 {
+			if c == xPosition && len(getSelectedLines(content, ssx, ssy, sex, sey)) == 0 {
 				// double click
 				prw := findPrevWord(content[r], c)
 				nxw := findNextWord(content[r], c)
@@ -348,14 +330,10 @@ func (e *Editor) handleEvents() {
 				c = nxw
 				return
 			}
-
-			c = realCount
-
-
+			c = xPosition
 			if c < 0 { c = 0 }
-
-			if ssx < 0  { ssx, ssy = c, r }
-			if ssx >= 0  { sex, sey = c, r }
+			if ssx < 0 { ssx, ssy = c, r }
+			if ssx >= 0 { sex, sey = c, r }
 		}
 
 		if buttons & Button1 == 0 {
@@ -366,30 +344,27 @@ func (e *Editor) handleEvents() {
 
 	case *EventResize:
 		COLUMNS, ROWS = s.Size()
-		ROWS -= 2
-		s.Sync()
-		s.Clear()
 
 	case *EventKey:
 		key := ev.Key()
 		modifiers := ev.Modifiers()
 
-		if key == KeyUp   && modifiers == 3 { e.onSwapLinesUp(); return }   // control + shift + up
+		if key == KeyUp && modifiers == 3 { e.onSwapLinesUp(); return } // control + shift + up
 		if key == KeyDown && modifiers == 3 { e.onSwapLinesDown(); return } // control + shift + down
-		if key == KeyBacktab { e.onBackTab(); e.writeFile(); return	 }
-		if key == KeyTab { e.onTab(); e.writeFile(); return	 }
-		if key == KeyCtrlH { e.onHover();  return }
-		if key == KeyCtrlR { e.onReferences();  return }
-		if key == KeyCtrlP { e.onSignatureHelp();  return }
-		if key == KeyCtrlG { e.onDefinition();  return }
-		if key == KeyCtrlE { e.onErrors();  return }
-		if key == KeyCtrlC { e.onCopy(); return; }
+		if key == KeyBacktab { e.onBackTab(); e.writeFile(); return }
+		if key == KeyTab { e.onTab(); e.writeFile(); return }
+		if key == KeyCtrlH { e.onHover(); return }
+		if key == KeyCtrlR { e.onReferences(); return }
+		if key == KeyCtrlP { e.onSignatureHelp(); return }
+		if key == KeyCtrlG { e.onDefinition(); return }
+		if key == KeyCtrlE { e.onErrors(); return }
+		if key == KeyCtrlC { e.onCopy(); return }
 		if key == KeyCtrlV { e.paste(); return }
 		if key == KeyCtrlX { e.cut(); s.Clear() }
 		if key == KeyCtrlD { e.duplicate() }
 
-		if modifiers &ModShift != 0 && (
-				key == KeyRight ||
+		if modifiers & ModShift != 0 && (
+			    key == KeyRight ||
 				key == KeyLeft ||
 				key == KeyUp ||
 				key == KeyDown) {
@@ -399,21 +374,21 @@ func (e *Editor) handleEvents() {
 			if key == KeyLeft { e.onLeft() }
 			if key == KeyUp { e.onUp() }
 			if key == KeyDown { e.onDown() }
-			if ssx >= 0 { sex, sey = c, r; isSelected = true }
+			if ssx >= 0 {
+				sex, sey = c, r
+				isSelected = true
+			}
 			return
 		}
 
-		if key == KeyRune && modifiers &ModAlt != 0 {
-			if len(content) > 0 { e.handleSmartMove(ev.Rune()) }
-			return
-		}
-		if key == KeyDown && modifiers &ModAlt != 0 { e.handleSmartMoveDown(); return }
-		if key == KeyUp && modifiers &ModAlt != 0 { e.handleSmartMoveUp(); return }
+		if key == KeyRune && modifiers & ModAlt != 0 && len(content) > 0 { e.handleSmartMove(ev.Rune()); return }
+		if key == KeyDown && modifiers & ModAlt != 0 { e.handleSmartMoveDown(); return }
+		if key == KeyUp && modifiers & ModAlt != 0 { e.handleSmartMoveUp(); return }
 
 		if key == KeyRune {
-			e.addChar(ev.Rune());
-			if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear();}
-			if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear();}
+			e.addChar(ev.Rune())
+			if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear() }
+			if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear() }
 		}
 
 		if /*key == tcell.KeyEscape ||*/ key == KeyCtrlQ { s.Fini(); os.Exit(1) }
@@ -422,19 +397,31 @@ func (e *Editor) handleEvents() {
 		//if ev.Modifiers()&tcell.ModAlt != 0 && key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
 		//	e.cut(); return
 		//}
-		if key == KeyBackspace || key == KeyBackspace2 { e. onDelete(); s.Clear() }
-
-		if key == KeyDown { e.onDown(); e.cleanSelection() }
-		if key == KeyUp { e.onUp(); e.cleanSelection() }
-		if key == KeyLeft { e.onLeft(); e.cleanSelection() }
-		if key == KeyRight { e.onRight(); e.cleanSelection() }
+		if key == KeyBackspace || key == KeyBackspace2 { e.onDelete(); s.Clear() }
+		if key == KeyDown { e.onDown(); cleanSelection() }
+		if key == KeyUp { e.onUp(); cleanSelection() }
+		if key == KeyLeft { e.onLeft(); cleanSelection() }
+		if key == KeyRight { e.onRight(); cleanSelection() }
 		if key == KeyCtrlT { } // TODO: tree
 		if key == KeyCtrlF { } // TODO: find
 		if key == KeyCtrlU { e.onUndo() }
 		//if key == tcell.KeyCtrlR { e.redo() } // todo: fix it
-		if key == KeyCtrlSpace { e.onCompletion(); s.Clear(); }
+		if key == KeyCtrlSpace { e.onCompletion(); s.Clear() }
 
 	}
+}
+
+func (e *Editor) findCursorXPosition(mx int) int {
+	count := 0; realCount := 0  // searching x position
+	for _, ch := range content[r] {
+		if count >= mx+x { break }
+		if ch == '\t' {
+			count += e.tabWidth; realCount++
+		} else {
+			count++; realCount++
+		}
+	}
+	return realCount
 }
 
 func (e *Editor) readFile() string {
@@ -445,10 +432,10 @@ func (e *Editor) readFile() string {
 	var code string
 	if fileSizeMB >= 1 {
 		//colorize = false
-		code = e.readFileAndBuildContent(absoluteFilePath, 1000)
+		code = e.buildContent(absoluteFilePath, 1000)
 
 		go func() { // sync?? no need yet
-			code = e.readFileAndBuildContent(absoluteFilePath, 1000000)
+			code = e.buildContent(absoluteFilePath, 1000000)
 			code, _ = getFirstLines(code, 20000)
 			colors = highlighter.colorize(code, filename);
 			e.drawEverything();
@@ -457,7 +444,7 @@ func (e *Editor) readFile() string {
 		}()
 
 	} else {
-		code = e.readFileAndBuildContent(absoluteFilePath, 1000000)
+		code = e.buildContent(absoluteFilePath, 1000000)
 	}
 	return code
 }
@@ -484,11 +471,10 @@ func (e *Editor) init_lsp() {
 
 	lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-	e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-	e.cleanLineAfter(len(status), ROWS+1)
-	s.Show()
 	e.logger.info("lsp status", lspStatus)
+	status := fmt.Sprintf(" %s %s %d %d %s", lspStatus,  lang, r+1, c+1, inputFile)
+	e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
+	s.Show()
 
 	go func() {
 		for range diagnosticUpdateChan {
@@ -518,9 +504,8 @@ func (e *Editor) onCompletion() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-		e.cleanLineAfter(len(status), ROWS+1)
+		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
+		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		options := e.buildCompletionOptions(completion)
 		if err != nil || len(options) == 0 { return }
@@ -581,9 +566,8 @@ func (e *Editor) onHover() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp hover, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-		e.cleanLineAfter(len(status), ROWS+1)
+		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
+		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
 		options := strings.Split(hover.Result.Contents.Value, "\n")
@@ -637,9 +621,9 @@ func (e *Editor) onSignatureHelp() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp signature help, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-		e.cleanLineAfter(len(status), ROWS+1)
+		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
+		status = PadLeft(status,COLUMNS)
+		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
 			len(signatureHelpResponse.Result.Signatures) == 0 { return }
@@ -703,9 +687,8 @@ func (e *Editor) onReferences() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp references, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %d %d %s %s", lang, r+1, c+1, inputFile, lspStatus)
-		e.drawText(0, ROWS+1, COLUMNS, ROWS+1, status)
-		e.cleanLineAfter(len(status), ROWS+1)
+		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
+		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		if err != nil || len(referencesResponse.Result) == 0 { return }
 
@@ -836,7 +819,11 @@ func (e *Editor) drawCompletion(atx int, aty int, height int, width int,
 		style = style.Foreground(ColorWhite)
 
 		s.SetContent(atx-1, row+aty, ' ', nil, style)
-		for col, char := range option { s.SetContent(col+atx, row+aty, char, nil, style) }
+		for col, char := range option {
+			//if char == 8226 { char = ' '}
+			//if char == 32 { char = ' '}
+			s.SetContent(col+atx, row+aty, char, nil, style)
+		}
 		for col := len(option); col < width; col++ { // Fill the remaining space
 			s.SetContent(col+atx, row+aty, ' ', nil, style)
 		}
@@ -959,7 +946,6 @@ func (e *Editor) onErrors() {
 							s.SetContent(k+atx, row+aty+shifty, ' ', nil, style)
 						}
 						shifty++; shiftx = 0
-
 					}
 					s.SetContent(atx + shiftx, row+aty+shifty, ch, nil, style)
 					shiftx++
@@ -980,7 +966,6 @@ func (e *Editor) onErrors() {
 			switch ev := s.PollEvent().(type) { // poll and handle event
 			case *EventResize:
 				COLUMNS, ROWS = s.Size()
-				ROWS -= 2
 				s.Sync()
 				s.Clear(); e.drawEverything(); s.Show()
 
@@ -1014,7 +999,7 @@ func (e *Editor) onErrors() {
 					sex = int(diagnostic.Range.End.Character)
 					r = sey; c = sex
 					isSelected = true
-
+					e.focus()
 					s.Clear(); e.drawEverything(); s.Show()
 				}
 			}
@@ -1032,10 +1017,6 @@ func (e *Editor) getSelectedStyle(isSelected bool, style Style) Style {
 	return style.Foreground(ColorWhite)
 }
 
-func (e *Editor) cleanSelection() {
-	isSelected = false
-	ssx, ssy, sex, sey = -1, -1, -1, -1
-}
 
 func (e *Editor) getStyle(ry int, cx int) Style {
 	var style = StyleDefault
@@ -1051,7 +1032,7 @@ func (e *Editor) getStyle(ry int, cx int) Style {
 
 func (e *Editor) addChar(ch rune) {
 	if ssx != -1 && sex != -1 && isSelected  && ssx != sex { e.cut() }
-
+	e.focus()
 	e.insertCharacter(r, c, ch)
 	c++
 
@@ -1059,6 +1040,11 @@ func (e *Editor) addChar(ch rune) {
 
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
 	e.updateNeeded()
+}
+
+func (e *Editor) focus() {
+	if r > y+ROWS { y = r + ROWS }
+	if r < y { y = r }
 }
 
 func (e *Editor) insertCharacter(line, pos int, ch rune) {
@@ -1134,6 +1120,8 @@ func (e *Editor) maybeAddPair(ch rune) {
 	}
 }
 func (e *Editor) onDelete() {
+	e.focus()
+
 	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut(); return }
 
 	if c > 0 {
@@ -1153,11 +1141,24 @@ func (e *Editor) onDelete() {
 	e.updateNeeded()
 }
 
+func (e *Editor) onScrollUp() {
+	if len(content) == 0 { return }
+	if y == 0 { return }
+	y--
+}
+func (e *Editor) onScrollDown() {
+	if len(content) == 0 { return }
+	if y + ROWS >= len(content) { return }
+	y++
+}
+
 func (e *Editor) onDown() {
 	if len(content) == 0 { return }
 	if r+1 >= len(content) { return }
 	r++
 	if c > len(content[r]) { c = len(content[r]) } // fit to content
+	if r < y { y = r }
+	if r >= y + ROWS { y = r - ROWS+1  }
 }
 
 func (e *Editor) onUp() {
@@ -1165,6 +1166,8 @@ func (e *Editor) onUp() {
 	if r == 0 { return }
 	r--
 	if c > len(content[r]) { c = len(content[r]) } // fit to content
+	if r < y { y = r }
+	if r > y + ROWS { y = r  }
 }
 
 func (e *Editor) onLeft() {
@@ -1175,6 +1178,7 @@ func (e *Editor) onLeft() {
 	} else if r > 0 {
 		r -= 1
 		c = len(content[r]) // fit to content
+		if r < y { y = r }
 	}
 }
 func (e *Editor) onRight() {
@@ -1185,12 +1189,14 @@ func (e *Editor) onRight() {
 	} else if r < len(content)-1 {
 		r += 1 // to newline
 		c = 0
+		if r > y + ROWS { y ++  }
 	}
 }
 
 func (e *Editor) onEnter() {
-	var ops = EditOperation{{Enter, '\n', r, c}}
+	e.focus()
 
+	var ops = EditOperation{{Enter, '\n', r, c}}
 	tabs := countTabs(content[r], c)
 	spaces := countSpaces(content[r], c)
 
@@ -1256,10 +1262,10 @@ func (e *Editor) writeFile() {
 
 }
 
-func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
-	start := time.Now()
-	e.logger.info("read file start", filename, string(limit))
-	defer e.logger.info("read file end",   filename, string(limit), "elapsed", time.Since(start).String())
+func (e *Editor) buildContent(filename string, limit int) string {
+	//start := time.Now()
+	//e.logger.info("read file start", filename, string(limit))
+	//defer e.logger.info("read file end",   filename, string(limit), "elapsed", time.Since(start).String())
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -1288,24 +1294,6 @@ func (e *Editor) readFileAndBuildContent(filename string, limit int) string {
 	return convertToString(content)
 }
 
-
-func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
-	row := y1
-	col := x1
-	var style = StyleDefault.Foreground(ColorGray)
-	for _, ch := range []rune(text) {
-		s.SetContent(col, row, ch, nil, style)
-		col++
-		if col >= x2 {
-			row++
-			col = x1
-		}
-		if row > y2 {
-			break
-		}
-	}
-}
-
 func (e *Editor) updateColors() {
 	if !colorize { return }
 	if len(content) >= 10000 {
@@ -1317,8 +1305,16 @@ func (e *Editor) updateColors() {
 		colors = highlighter.colorize(code, filename)
 	}
 }
+func (e *Editor) updateNeeded() {
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { e.writeFile() }
+	e.updateColors()
+}
 
 func (e *Editor) onTab() {
+	e.focus()
+
 	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
 
 	if len(selectedLines) == 0 {
@@ -1343,6 +1339,8 @@ func (e *Editor) onTab() {
 }
 
 func (e *Editor) onBackTab() {
+	e.focus()
+
 	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
 
 	// deleting tabs from begining
@@ -1374,6 +1372,8 @@ func (e *Editor) onCopy() {
 }
 
 func (e *Editor) paste() {
+	e.focus()
+
 	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut() }
 
 	text, _ := clipboard.ReadAll()
@@ -1394,6 +1394,8 @@ func (e *Editor) paste() {
 }
 
 func (e *Editor) cut() {
+	e.focus()
+
 	if len(content) <= 1 {
 		content[0] = []rune{};
 		r, c = 0, 0
@@ -1449,7 +1451,7 @@ func (e *Editor) cut() {
 			r = len(content) - 1
 			c = len(content[r])
 		}
-		e.cleanSelection()
+		cleanSelection()
 		e.undo = append(e.undo, ops)
 	}
 
@@ -1458,6 +1460,8 @@ func (e *Editor) cut() {
 }
 
 func (e *Editor) duplicate() {
+	e.focus()
+
 	if len(content) == 0 { return }
 
 	if ssx == -1 && ssy == -1 || ssx == sex && ssy == sey  {
@@ -1488,13 +1492,15 @@ func (e *Editor) duplicate() {
 		if len(lines) > 1 { // multiple line
 			e.insertLines(r,c, lines)
 		}
-		e.cleanSelection()
+		cleanSelection()
 	}
 
 	e.updateNeeded()
 }
 
 func (e *Editor) onSwapLinesUp() {
+	e.focus()
+
 	if r == 0 { return }
 	var ops = EditOperation{}
 	ops = append(ops, Operation{MoveCursor, ' ', r, c})
@@ -1510,11 +1516,13 @@ func (e *Editor) onSwapLinesUp() {
 	r--
 
 	e.undo = append(e.undo, ops)
-	e.cleanSelection()
+	cleanSelection()
 	e.updateNeeded()
 }
 
 func (e *Editor) onSwapLinesDown() {
+	e.focus()
+
 	if r+1 == len(content) { return }
 
 	var ops = EditOperation{}
@@ -1532,18 +1540,13 @@ func (e *Editor) onSwapLinesDown() {
 	r++
 
 	e.undo = append(e.undo, ops)
-	e.cleanSelection()
+	cleanSelection()
 	e.updateNeeded()
 }
 
-func (e *Editor) updateNeeded() {
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { e.writeFile() }
-	e.updateColors()
-}
 
 func (e *Editor) handleSmartMove(char rune) {
+	e.focus()
 	if char == 'f' || char == 'F' {
 		nw := findNextWord(content[r], c+1)
 		c = nw
@@ -1554,8 +1557,8 @@ func (e *Editor) handleSmartMove(char rune) {
 		c = nw
 	}
 }
-
 func (e *Editor) handleSmartMoveDown() {
+	e.focus()
 	var ops = EditOperation{{Enter, '\n', r, c}}
 
 	// moving down, insert new line, add same amount of tabs
@@ -1578,6 +1581,7 @@ func (e *Editor) handleSmartMoveDown() {
 	e.updateNeeded()
 }
 func (e *Editor) handleSmartMoveUp() {
+	e.focus()
 	// add new line and shift all lines, add same amount of tabs/spaces
 	tabs := countTabs(content[r], c)
 	spaces := countSpaces(content[r], c)
@@ -1605,7 +1609,7 @@ func (e *Editor) onUndo() {
 
 	lastOperation := e.undo[len(e.undo)-1]
 	e.undo = e.undo[:len(e.undo)-1]
-
+	e.focus()
 	for i := len(lastOperation) - 1; i >= 0; i-- {
 		o := lastOperation[i]
 
@@ -1677,19 +1681,4 @@ func (e *Editor) redo() {
 
 	e.undo = append(e.undo, lastRedoOperation)
 	e.updateNeeded()
-}
-
-func isUnderSelection(x, y int) bool {
-	// Check if there is an active selection
-	if ssx == -1 || ssy == -1  || sex == -1 || sey == -1{ return false }
-
-	var startx, starty = ssx, ssy
-	var endx, endy = sex, sey
-
-	if GreaterThan(startx, starty, endx, endy) {
-		startx, endx = endx, startx
-		starty, endy = endy, starty
-	}
-
-	return GreaterEqual(x, y, startx, starty) && LessThan(x, y, endx, endy)
 }
