@@ -1,4 +1,4 @@
-theme: "idea-light"
+theme: "edgo"
 langs:
   go: { lsp: "gopls", tabwidth: 4, comment: "//" }
 #  python: { lsp: "pyright-langserver --stdio", tabwidth: 4, comment: "#" }
