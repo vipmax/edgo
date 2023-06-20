@@ -32,9 +32,6 @@ var colors [][]int        // characters colors
 var lang = ""             // current file language
 var update = true
 var isOverlay = false
-var SelectionColor = 8
-var OverlayColor = -1
-var AccentColor = 303
 var s Screen
 var lsp = LspClient{}
 var highlighter = Highlighter{}
@@ -103,7 +100,7 @@ func (e *Editor) openFile(fname string) error {
 	e.logger.info("lang is", lang)
 
 	conf, found := e.config.Langs[lang]
-	if !found { conf = UnknownLang }
+	if !found { conf = DefaultLangConfig }
 	e.langConf = conf
 	e.tabWidth = conf.TabWidth
 
@@ -148,8 +145,13 @@ func (e *Editor) drawEverything() {
 			if cx >= len(content[ry]) { break }
 			ch := content[ry][cx]
 			style := e.getStyle(ry, cx)
-			if ch == '\t'  { //draw big cursor with next symbol color
-				if ry == r && cx == c { style = StyleDefault.Background(Color(colors[ry][cx+1])) }
+			if ch == '\t'  {
+				//draw big cursor with next symbol color
+				if ry == r && cx == c {
+					color := Color(colors[ry][cx+1])
+					if color == -1 { color = Color(AccentColor)}
+					style = StyleDefault.Background(color)
+				}
 				for i := 0; i < e.tabWidth ; i++ {
 					s.SetContent(col + LS + tabsOffset, row, ' ', nil, style)
 					if i != e.tabWidth-1 { tabsOffset++ }
@@ -246,7 +248,7 @@ func (e *Editor) drawLineNumber(brw int, row int) {
 
 func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
 	row := y1; col := x1
-	var style = StyleDefault.Foreground(ColorGray)
+	var style = StyleDefault
 	for _, ch := range []rune(text) {
 		s.SetContent(col, row, ch, nil, style)
 		col++
@@ -349,6 +351,13 @@ func (e *Editor) handleEvents() {
 		key := ev.Key()
 		modifiers := ev.Modifiers()
 
+		//e.logger.info("event", strconv.Itoa(int(modifiers&ModAlt)), strconv.Itoa(int(key)), string(ev.Rune()))
+		//e.logger.logint(int(ev.Rune()))
+
+		if (ev.Rune() == '/'  &&  modifiers & ModAlt != 0 || int(ev.Rune()) == '÷') {
+			// '÷' on Mac is option + '/'
+			e.onCommentLine(); return
+		}
 		if key == KeyUp && modifiers == 3 { e.onSwapLinesUp(); return } // control + shift + up
 		if key == KeyDown && modifiers == 3 { e.onSwapLinesDown(); return } // control + shift + down
 		if key == KeyBacktab { e.onBackTab(); e.writeFile(); return }
@@ -388,7 +397,7 @@ func (e *Editor) handleEvents() {
 		if key == KeyRune {
 			e.addChar(ev.Rune())
 			if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear() }
-			if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear() }
+			//if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear() }
 		}
 
 		if /*key == tcell.KeyEscape ||*/ key == KeyCtrlQ { s.Fini(); os.Exit(1) }
@@ -514,7 +523,7 @@ func (e *Editor) onCompletion() {
 		atx := c + LS + tabs*e.tabWidth; aty := r + 1 - y // Define the window  position and dimensions
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(5, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
-		style := StyleDefault.Foreground(ColorWhite)
+		style := StyleDefault
 		// if completion on last two rows of the screen - move window up
 		if r - y  >= ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
 
@@ -707,7 +716,7 @@ func (e *Editor) onReferences() {
 			sex = referencesResponse.Result[0].Range.End.Character
 			isSelected = true
 			r = sey; c = sex
-			s.Clear(); e.drawEverything()
+			e.focus(); e.drawEverything()
 			return
 		}
 
@@ -749,7 +758,7 @@ func (e *Editor) onReferences() {
 						sex = referencesResponse.Result[selected].Range.End.Character
 						isSelected = true
 						r = sey; c = sex
-						s.Clear(); e.drawEverything();
+						e.focus(); e.drawEverything();
 					}
 				}
 			}
@@ -815,7 +824,7 @@ func (e *Editor) drawCompletion(atx int, aty int, height int, width int,
 		if isRowSelected { style = style.Background(Color(AccentColor)) } else {
 			style = StyleDefault.Background(Color(OverlayColor))
 		}
-		style = style.Foreground(ColorWhite)
+		//style = style.Foreground(ColorWhite)
 
 		s.SetContent(atx-1, row+aty, ' ', nil, style)
 		for col, char := range option {
@@ -883,6 +892,7 @@ func (e *Editor) onDefinition() {
 	sex = int(definition.Result[0].Range.End.Character)
 	r = sey; c = sex
 	isSelected = true
+	e.focus()
 }
 
 func (e *Editor) onErrors() {
@@ -1160,7 +1170,7 @@ func (e *Editor) onScrollDown() {
 
 func (e *Editor) onDown() {
 	if len(content) == 0 { return }
-	if r+1 >= len(content) { y = r - ROWS + 1; return }
+	if r+1 >= len(content) { y = r - ROWS + 1; if y < 0 { y = 0 }; return }
 	r++
 	if c > len(content[r]) { c = len(content[r]) } // fit to content
 	if r < y { y = r }
@@ -1200,7 +1210,6 @@ func (e *Editor) onRight() {
 }
 
 func (e *Editor) onEnter() {
-	e.focus()
 
 	var ops = EditOperation{{Enter, '\n', r, c}}
 	tabs := countTabs(content[r], c)
@@ -1227,7 +1236,7 @@ func (e *Editor) onEnter() {
 	content = insert(content, r, newline)
 
 	e.undo = append(e.undo, ops)
-
+	e.focus(); if r - y ==  ROWS { e.onScrollDown() }
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
 	e.updateNeeded()
 }
@@ -1428,6 +1437,10 @@ func (e *Editor) cut() {
 		if r > 0 { r-- }
 
 	} else { // cut selection
+
+		selectionString := getSelectionString(content, ssx, ssy, sex, sey)
+		clipboard.WriteAll(selectionString)
+
 		ops = append(ops, Operation{MoveCursor, ' ', r, c})
 
 		selectedIndices := getSelectedIndices(content, ssx, ssy, sex, sey)
@@ -1504,6 +1517,66 @@ func (e *Editor) duplicate() {
 	e.updateNeeded()
 }
 
+
+func (e *Editor) onCommentLine() {
+	e.focus()
+
+	found := false
+
+
+	for i, ch := range content[r] {
+		if len(e.langConf.Comment) == 1 && ch == rune(e.langConf.Comment[0]) {
+			// found 1 char comment, uncomment
+			c = i
+			e.undo = append(e.undo, EditOperation{
+				{MoveCursor, content[r][i], r, i+1},
+				{Delete, content[r][i], r, i},
+			})
+			content[r] = remove(content[r], i)
+			found = true
+		}
+		if len(e.langConf.Comment) == 2 && ch == rune(e.langConf.Comment[0]) && content[r][i+1] == rune(e.langConf.Comment[1]) {
+			// found 2 char comment, uncomment
+			c = i
+			e.undo = append(e.undo, EditOperation{
+				{MoveCursor, content[r][i], r, i+1},
+				{Delete, content[r][i], r, i},
+				{MoveCursor, content[r][i+1], r, i+1},
+				{Delete, content[r][i], r, i},
+			})
+			content[r] = remove(content[r], i)
+			content[r] = remove(content[r], i)
+			found = true
+		}
+	}
+
+	if found {
+		if c < 0 { c = 0 }
+		e.onDown()
+		e.updateNeeded()
+		return
+	}
+
+	tabs := countTabs(content[r], c)
+	spaces := countSpaces(content[r], c)
+
+	from := tabs
+	if tabs == 0 && spaces != 0 { from = spaces }
+
+	c = from
+	ops := EditOperation{}
+	for _, ch := range e.langConf.Comment {
+		content[r] = insert(content[r], c, ch)
+		ops = append(ops, Operation{Insert, ch, r, c})
+	}
+
+	e.undo = append(e.undo, ops)
+
+	if c < 0 { c = 0 }
+	e.onDown()
+	e.updateNeeded()
+}
+
 func (e *Editor) onSwapLinesUp() {
 	e.focus()
 
@@ -1564,7 +1637,7 @@ func (e *Editor) handleSmartMove(char rune) {
 	}
 }
 func (e *Editor) handleSmartMoveDown() {
-	e.focus()
+
 	var ops = EditOperation{{Enter, '\n', r, c}}
 
 	// moving down, insert new line, add same amount of tabs
@@ -1583,6 +1656,7 @@ func (e *Editor) handleSmartMoveDown() {
 		c++
 	}
 
+	e.focus(); e.onScrollDown()
 	e.undo = append(e.undo, ops)
 	e.updateNeeded()
 }

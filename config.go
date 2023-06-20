@@ -31,10 +31,11 @@ var DefaultConfig = Config { Langs:
 		"swift": 	  { Lsp: "xcrun sourcekit-lsp" },
 		"haskell": 	  { Lsp: "haskell-language-server-wrapper --lsp", Comment: "--" },
 		"zig": 	  	  { Lsp: "zls", TabWidth: 4 },
+		"yaml": 	  { Comment: "#", TabWidth: 4 },
 	},
 }
 
-var UnknownLang = Lang{ Name: "", Lsp: "", Comment: "//", TabWidth: 2 }
+var DefaultLangConfig = Lang{ Name: "", Lsp: "", Comment: "//", TabWidth: 2 }
 
 func GetConfig() (Config) {
 	conffilename, exists := os.LookupEnv("EDGO_CONFIG")

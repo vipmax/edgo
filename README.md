@@ -10,6 +10,7 @@ Key bindings and features:
 - `Control + c` - copy 
 - `Control + v` - paste
 - `Control + u` - undo
+- `Option + /` - comment line
 
 
 - `Shift + arrow` - select text

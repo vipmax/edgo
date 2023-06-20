@@ -13,55 +13,11 @@ type Highlighter struct {
 	logger Logger
 }
 
-var edgo, _ = chroma.NewStyle("edgo", chroma.StyleEntries{
-	chroma.Comment: "#a8a8a8",
-
-	chroma.Keyword: "#FF69B4",
-	chroma.KeywordNamespace: "#FF69B4",
-
-	chroma.String: "#90EE90",
-	chroma.LiteralStringDouble: "#90EE90",
-	chroma.Literal: "#90EE90",
-	chroma.StringChar: "#90EE90",
-
-	chroma.KeywordType: "#7FFFD4",
-	chroma.KeywordDeclaration: "#7FFFD4",
-	chroma.KeywordReserved: "#7FFFD4",
-	chroma.NameTag: "#7FFFD4",
-	chroma.NameFunction: "#7FFFD4",
-
-	chroma.NumberInteger: "#00BFFF",
-})
-
-var darcula, _ = chroma.NewStyle("darcula", chroma.StyleEntries{
-	chroma.Comment: "#707070",
-
-	//chroma.NameConstant: "#7A9EC2",
-
-	chroma.Keyword: "#CC8242",
-	chroma.KeywordNamespace: "#CC8242",
-
-	chroma.String: "#6A8759",
-	chroma.LiteralStringDouble: "#6A8759",
-	chroma.Literal: "#6A8759",
-	chroma.StringChar: "#6A8759",
-
-	chroma.KeywordType: "#CC8242",
-	chroma.KeywordDeclaration: "#CC8242",
-	chroma.KeywordReserved: "#CC8242",
-	//chroma.NameTag: "#FFC66D",
-	//chroma.NameFunction: "#FFC66D",
-	//
-	chroma.NumberInteger: "#7A9EC2",
-
-	//chroma.NameFunction: "#FFC66D",
-	chroma.NameFunction: "#AD9E7E",
-})
-
-
-
-var theme = edgo
-//var theme = darcula
+//var theme = IdeaLight
+//var theme = EdgoLight
+var theme = EdgoDark
+//var theme = Darcula
+//var theme = styles.Get("edgo")
 //var theme = styles.Get("dracula")
 //var theme = styles.Get("nord")
 //var theme = styles.Get("monokai")
@@ -69,6 +25,11 @@ var theme = edgo
 //var theme = styles.Get("vulcan")
 //var theme = styles.Get("witchhazel")
 //var theme = styles.Get("xcode-dark")
+
+
+var SelectionColor = 7
+var OverlayColor = -1
+var AccentColor = 303
 
 
 func detectLang(filename string) string {
@@ -94,17 +55,17 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 		os.Exit(1)
 	}
 
+	AccentColor = int(tcell.GetColor(theme.Get(chroma.Keyword).Colour.String()))
+
 	tokensIntoLines := chroma.SplitTokensIntoLines(iterator.Tokens())
 	textColors := [][]int{}
 
 	for _, tokens := range tokensIntoLines {
 		lineColors := []int{}
 		for _, token := range tokens {
-			chromeColor := theme.Get(token.Type).Colour.String()
-			tcellColor := tcell.GetColor(chromeColor)
+			chromaColor := theme.Get(token.Type).Colour.String()
+			tcellColor := tcell.GetColor(chromaColor)
 			color := int(tcellColor)
-			// sometimes it returns -1 and cursor is black, make it write
-			if color == -1 { color = 15 }
 			// copy color for each token character
 			for range token.Value { lineColors = append(lineColors, color) }
 		}

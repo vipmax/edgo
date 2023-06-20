@@ -46,6 +46,12 @@ func (this *Logger) log(message string) {
 	this.logger.Printf("%s %s", now, message)
 }
 
+func (this *Logger) logint(message int) {
+	if !this.isEnabled { return }
+	now := time.Now().Format(this.layout)
+	this.logger.Printf("%s %d", now, message)
+}
+
 func (this *Logger) info(args ...string) {
 	if !this.isEnabled { return }
 	message := strings.Join(args, " ")
