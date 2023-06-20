@@ -1,16 +1,4 @@
+theme: "idea-light"
 langs:
-  go:
-    name: "go"
-    lsp: "gopls"
-    tabwidth: 4
-  python:
-    name: "python"
-    lsp: "pylsp"
-    comment: "#"
-    tabwidth: 4
-  js:
-    name: "javascript"
-    lsp: "typescript-language-server --stdio"
-  ts:
-    name: "typescript"
-    lsp: "typescript-language-server --stdio"
+  go: { lsp: "gopls", tabwidth: 4, comment: "//" }
+#  python: { lsp: "pyright-langserver --stdio", tabwidth: 4, comment: "#" }

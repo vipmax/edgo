@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/alecthomas/chroma"
 	"github.com/alecthomas/chroma/lexers"
+	"github.com/alecthomas/chroma/styles"
 	"github.com/gdamore/tcell"
 	"os"
 	"strings"
@@ -27,9 +28,9 @@ var theme = EdgoDark
 //var theme = styles.Get("xcode-dark")
 
 
-var SelectionColor = 7
-var OverlayColor = -1
-var AccentColor = 303
+var SelectionColor = 246 // gray
+var OverlayColor = -1 // transparent
+var AccentColor = 303 // pink
 
 
 func detectLang(filename string) string {
@@ -38,6 +39,10 @@ func detectLang(filename string) string {
 	config := lexer.Config()
 	if config == nil { return "" }
 	return strings.ToLower(config.Name)
+}
+
+func (h *Highlighter) setTheme(name string) {
+	theme = styles.Get(name)
 }
 
 func (h *Highlighter) colorize(code string, filename string) [][]int {

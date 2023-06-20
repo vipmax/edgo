@@ -55,6 +55,8 @@ func (e *Editor) start() {
 	highlighter.logger = e.logger
 	lsp.logger = e.logger
 
+	highlighter.setTheme(e.config.Theme)
+
 	e.logger.info("starting edgo")
 
 	s = e.initScreen()
@@ -132,6 +134,9 @@ func (e *Editor) initScreen() Screen {
 func (e *Editor) drawEverything() {
 	s.Clear()
 
+	if c < x { x = c }
+	if c + LS >= x + COLUMNS  { x = c - COLUMNS + 1 + LS }
+
 	// draw line number and chars according to scrolling offsets
 	for row := 0; row <= ROWS; row++ {
 		ry := row + y  // index to get right row in characters buffer by scrolling offset y
@@ -165,14 +170,14 @@ func (e *Editor) drawEverything() {
 	e.drawDiagnostic()
 
 	var changes = ""; if isFileChanged { changes = "*" }
-	status := fmt.Sprintf(" %s %d %d %s%s", lang, r+1, c+1, inputFile, changes)
+	status := fmt.Sprintf(" %s %d %d %s%s ", lang, r+1, c+1, inputFile, changes)
 	e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 	// if tab under cursor, hide cursor because it has already drawn
 	if r < len(content) && c < len(content[r]) && content[r][c] == '\t' {
 		s.HideCursor()
 	} else  {
-		tabs := countTabs(content[r], c) * (e.tabWidth -1)
+		tabs := countTabsTo(content[r], c) * (e.tabWidth -1)
 		s.ShowCursor(c-x+LS+tabs, r-y) // show cursor
 	}
 
@@ -481,7 +486,7 @@ func (e *Editor) init_lsp() {
 	lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
 	e.logger.info("lsp status", lspStatus)
-	status := fmt.Sprintf(" %s %s %d %d %s", lspStatus,  lang, r+1, c+1, inputFile)
+	status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus,  lang, r+1, c+1, inputFile)
 	e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 	s.Show()
 
@@ -513,7 +518,7 @@ func (e *Editor) onCompletion() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
 		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		options := e.buildCompletionOptions(completion)
@@ -575,7 +580,7 @@ func (e *Editor) onHover() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp hover, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
 		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
@@ -630,7 +635,7 @@ func (e *Editor) onSignatureHelp() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp signature help, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
 		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
@@ -695,7 +700,7 @@ func (e *Editor) onReferences() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp references, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s", lspStatus, lang, r+1, c+1, inputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
 		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 		if err != nil || len(referencesResponse.Result) == 0 { return }
@@ -942,11 +947,10 @@ func (e *Editor) onErrors() {
 					//style = tcell.StyleDefault.Background(tcell.ColorIndianRed)
 					style = StyleDefault.Background(Color(OverlayColor))
 				}
-				style = style.Foreground(ColorWhite)
 
-				shiftx :=0
+				shiftx := 0
 				runes := []rune(option)
-				for j :=0;  j < len(option); j++ {
+				for j := 0;  j < len(runes); j++ {
 					ch := runes[j]
 					nextWord := findNextWord(runes, j)
 					if shiftx == 0 { s.SetContent(atx, row+aty+shifty, ' ', nil, style) }
@@ -1089,7 +1093,7 @@ func (e *Editor) insertLines(line, pos int, lines []string) {
 	var ops = EditOperation{}
 
 	tabs := countTabs(content[r], c) // todo: spaces also can be
-    r++
+    if len(content[r]) > 0 { r++ }
 	//ops = append(ops, Operation{Enter, '\n', r, c})
 	for _, linestr := range lines {
 		c = 0
@@ -1466,9 +1470,15 @@ func (e *Editor) cut() {
 				colors = append(colors[:yd], colors[yd+1:]...)
 			}
 		}
-		if r >= len(content) {
+
+		if len(content) == 0 {
+			content = make([][]rune, 1)
+			colors = make([][]int, 1)
+		}
+
+		if r >= len(content)  {
 			r = len(content) - 1
-			c = len(content[r])
+			if c >= len(content[r]) { c = len(content[r]) - 1 }
 		}
 		cleanSelection()
 		e.undo = append(e.undo, ops)
@@ -1522,7 +1532,6 @@ func (e *Editor) onCommentLine() {
 	e.focus()
 
 	found := false
-
 
 	for i, ch := range content[r] {
 		if len(e.langConf.Comment) == 1 && ch == rune(e.langConf.Comment[0]) {
