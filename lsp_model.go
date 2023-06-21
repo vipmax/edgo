@@ -65,6 +65,15 @@ type InitializedRequest struct {
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params,omitempty"`
 }
+type ShutdownRequest struct {
+	ID      int    `json:"id,omitempty"`
+	JSONRPC string      `json:"jsonrpc"`
+	Method  string      `json:"method"`
+}
+type ExitRequest struct {
+	JSONRPC string      `json:"jsonrpc"`
+	Method  string      `json:"method"`
+}
 
 type BaseRequest struct {
 	ID      int    `json:"id,omitempty"`

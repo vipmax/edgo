@@ -14,6 +14,9 @@ type Highlighter struct {
 	logger Logger
 }
 
+//var theme = IdeaLight	.чфьц er
+//var theme = E}
+
 //var theme = IdeaLight
 //var theme = EdgoLight
 var theme = EdgoDark
@@ -43,6 +46,8 @@ func detectLang(filename string) string {
 
 func (h *Highlighter) setTheme(name string) {
 	theme = styles.Get(name)
+	AccentColor = int(tcell.GetColor(theme.Get(chroma.Keyword).Colour.String()))
+
 }
 
 func (h *Highlighter) colorize(code string, filename string) [][]int {
@@ -59,8 +64,6 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 		h.logger.info("tokenization error: " + err.Error())
 		os.Exit(1)
 	}
-
-	AccentColor = int(tcell.GetColor(theme.Get(chroma.Keyword).Colour.String()))
 
 	tokensIntoLines := chroma.SplitTokensIntoLines(iterator.Tokens())
 	textColors := [][]int{}

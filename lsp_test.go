@@ -8,7 +8,6 @@ import (
 	"net/textproto"
 	"os"
 	"os/exec"
-	"path"
 	"strconv"
 	"testing"
 	"time"
@@ -17,12 +16,10 @@ import (
 func TestGopls(t *testing.T) {
 	dir, _ := os.Getwd()
 	file := dir + "/lsp_test.go"
-
+	
 	cmd := exec.Command("gopls")
-
 	stdin, _ := cmd.StdinPipe()
 	stdout, _ := cmd.StdoutPipe()
-
 	reader := textproto.NewReader(bufio.NewReader(stdout))
 
 	err := cmd.Start()
@@ -67,16 +64,26 @@ func TestGopls(t *testing.T) {
 	}()
 
 	go func() {
-		request := BaseRequest{
-			ID: 1, JSONRPC: "2.0", Method:	"textDocument/hover",
-			Params: Params{
-				TextDocument: TextDocument { URI:	"file://" + file },
-				Position: Position { Line: 77 - 1, Character: 11 },
-			},
-		}
-
 		time.Sleep(4*time.Second)
-		send(stdin, request)
+
+		err := cmd.Process.Signal(os.Kill )
+		if err != nil {
+			return
+		}
+		err2 := cmd.Process.Release()
+		if err2 != nil {
+			return
+		}
+		//request := BaseRequest{
+		//	ID: 1, JSONRPC: "2.0", Method:	"textDocument/hover",
+		//	Params: Params{
+		//		TextDocument: TextDocument { URI:	"file://" + file },
+		//		Position: Position { Line: 77 - 1, Character: 11 },
+		//	},
+		//}
+		//
+		//time.Sleep(4*time.Second)
+		//send(stdin, request)
 	}()
 
 	messagesChan := make(chan string)
@@ -120,169 +127,4 @@ func receive(reader *textproto.Reader) string {
 	if _, err := reader.R.Read(body); err != nil { fmt.Println(err); return "" }
 
 	return string(body)
-}
-
-
-func TestGoLangCompletion(t *testing.T) {
-	dir, _ := os.Getwd()
-	file := dir + "/lsp_test.go"
-
-	fmt.Println("starting lsp server")
-
-	lsp := LspClient{}
-	lsp.start("go")
-	lsp.init(dir)
-	lsp.didOpen(file, "go")
-
-	completion, _ := lsp.completion(file, 18-1, 8)
-	fmt.Println("completion", completion)
-
-	var options []string
-	items := completion.Result.Items
-	for _, item := range items {
-		options = append(options, item.Label)
-	}
-
-	fmt.Println("options", options)
-	fmt.Println("ending lsp server")
-}
-
-func TestPythonCompletion(t *testing.T) {
-	dir := "/Users/max/apps/python/editor/src/"
-	file := path.Join(dir, "logger.py")
-	language := "python"
-
-	fmt.Println("starting lsp server")
-
-	lsp := LspClient{}
-	lsp.start(language)
-	lsp.init(dir)
-	lsp.didOpen(file, language)
-
-	completion, _ := lsp.completion(file, 8-1, 20)
-	fmt.Println("completion", completion)
-
-	var options []string
-	items := completion.Result.Items
-	for _, item := range items {
-		options = append(options, item.Label)
-	}
-
-	fmt.Println("options", options)
-	fmt.Println("ending lsp server")
-}
-
-func TestTypescriptCompletion(t *testing.T) {
-	dir := "/Users/max/apps/ts/lsp-examples/"
-	file := path.Join(dir, "lsp-test-ts.ts")
-	language := "typescript"
-
-	fmt.Println("starting lsp server for ", file)
-
-	lsp := LspClient{}
-	lsp.start(language)
-	lsp.init(dir)
-	lsp.didOpen(file,language)
-
-	completion, _ := lsp.completion(file, 31-1, 5)
-	fmt.Println("completion", completion)
-
-	var options []string
-	items := completion.Result.Items
-	for _, item := range items {
-		options = append(options, item.Label)
-	}
-
-	fmt.Println("options", options)
-	fmt.Println("ending lsp server")
-}
-
-func TestRustCompletion(t *testing.T) {
-	dir := "/Users/max/apps/rust/lsp-examples/"
-	file := path.Join(dir, "lsp-test-ts.ts")
-	language := "typescript"
-
-	fmt.Println("starting lsp server for ", file)
-
-	lsp := LspClient{}
-	lsp.start(language)
-	lsp.init(dir)
-	lsp.didOpen(file,language)
-
-	completion, _ := lsp.completion(file,	31-1, 5)
-	fmt.Println("completion", completion)
-
-	var options []string
-	items := completion.Result.Items
-	for _, item := range items {
-		options = append(options, item.Label)
-	}
-
-	fmt.Println("options", options)
-	fmt.Println("ending lsp server")
-}
-
-func TestScalaCompletion(t *testing.T) {
-	dir := "/Users/max/apps/scala/chrome4s"
-	file := path.Join(dir, "/src/main/scala/chrome4s/Main.scala")
-	language := "scala"
-
-	fmt.Println("starting lsp server for ", file)
-
-	lsp := LspClient{}
-	lsp.start(language)
-	lsp.init(dir)
-	lsp.didOpen(file,language)
-
-	time.Sleep(3*time.Second)
-	completion, _ := lsp.completion(file, 17-1, 8)
-	fmt.Println("completion", completion)
-
-	var options []string
-	items := completion.Result.Items
-	for _, item := range items {
-		options = append(options, item.Label)
-	}
-
-	fmt.Println("options", options)
-	fmt.Println("ending lsp server")
-}
-
-
-func TestGoLangHover(t *testing.T) {
-	dir, _ := os.Getwd()
-	file := dir + "/lsp_test.go"
-	language := "go"
-
-	fmt.Println("starting lsp server")
-
-	lsp := LspClient{}
-	lsp.start(language)
-	lsp.init(dir)
-	lsp.didOpen(file,language)
-
-	hover, _ := lsp.hover(file,18-1, 13)
-	fmt.Println("hover range: ", hover.Result.Range)
-	fmt.Println("hover content:\n", hover.Result.Contents.Value)
-
-	fmt.Println("ending lsp server")
-}
-
-
-func TestGoLangSignatureHelp(t *testing.T) {
-	dir, _ := os.Getwd()
-	file := dir + "/lsp_test.go"
-	language := "go"
-
-	fmt.Println("starting lsp server")
-
-	lsp := LspClient{}
-	lsp.start(language)
-	lsp.init(dir)
-	lsp.didOpen(file,language)
-
-	response, _ := lsp.signatureHelp(file,14-1, 36)
-	fmt.Println("signatureHelp: ", response)
-
-	fmt.Println("ending lsp server")
 }

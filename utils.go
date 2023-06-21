@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -244,3 +245,39 @@ func getFirstLines(s string, lineNum int) (string, error) {
 	return builder.String(), nil
 }
 
+
+func isIgnored(dir string, ignoreDirs []string) bool {
+	for _, ignore := range ignoreDirs {
+		if dir == ignore {
+			return true
+		}
+	}
+	return false
+}
+
+func getFiles(path string, ignoreDirs []string) ([]string, error) {
+	var files []string
+	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			dir := filepath.Base(path)
+			if isIgnored(dir, ignoreDirs) {
+				return filepath.SkipDir
+			}
+		} else {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files, err
+}
+
+const Phi = 1.61803398875 // The Golden Ratio
+
+func goldenRatioPartition(totalSize int) (a int, b int) {
+	b = int(float64(totalSize) / (Phi + 1))
+	a = totalSize - b
+	return
+}

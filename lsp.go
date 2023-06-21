@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/goccy/go-json"
 	"io"
-	"net/textproto"
 	"os"
 	"os/exec"
 	"strconv"
@@ -16,21 +15,32 @@ import (
 
 // LspClient represents a client for communicating with a Language Server Protocol (LSP) server.
 type LspClient struct {
+	//stopped        bool
 	process        *exec.Cmd      // The underlying process running the LSP server.
-	stdin          io.WriteCloser // The standard input pipe for sending data to the LSP server.
-	stdout         io.ReadCloser
-	reader 		   *textproto.Reader
+	lang2stdin     map[string]io.WriteCloser
+	lang2stdout    map[string]io.ReadCloser
+	lang2isReady   map[string]bool
+
+	//stdin          io.WriteCloser // The standard input pipe for sending data to the LSP server.
+	//stdout         io.ReadCloser
 	responsesMap   map[int]string
 	someMapMutex   sync.RWMutex
-	isReady   	   bool
+	//isReady   	   bool
 	id        	   int
 	file2diagnostic map[string]DiagnosticParams
 	logger Logger
 }
 
 func (this *LspClient) start(language string, lspCmd []string) bool {
-	this.isReady = false
+	//this.isReady = false
+	//this.stopped = true
 	this.someMapMutex = sync.RWMutex{}
+
+	if this.lang2stdin == nil { this.lang2stdin = make(map[string]io.WriteCloser) }
+	if this.lang2stdout == nil { this.lang2stdout = make(map[string]io.ReadCloser) }
+	if this.lang2isReady == nil { this.lang2isReady = make(map[string]bool) }
+
+	this.lang2isReady[language] = false
 
 	_, lsperr := exec.LookPath(lspCmd[0])
 	if lsperr != nil { this.logger.info("lsp not found:", lspCmd[0]); return false }
@@ -39,21 +49,32 @@ func (this *LspClient) start(language string, lspCmd []string) bool {
 
 	var stdin, err = this.process.StdinPipe()
 	if err != nil { this.logger.info(err.Error()); return false  }
-	this.stdin = stdin
+	this.lang2stdin[language] = stdin
+	//this.stdin = stdin
 
 	stdout, err := this.process.StdoutPipe()
 	if err != nil { this.logger.info(err.Error()); return false }
-	this.stdout = stdout
-
-	this.reader = textproto.NewReader(bufio.NewReader(stdout))
+	this.lang2stdout[language] = stdout
+	//this.stdout = stdout
 
 	err = this.process.Start()
 	if err != nil { this.logger.info(err.Error()); return false  }
 
+	//this.stopped = false
 	this.responsesMap = make(map[int]string)
 	this.file2diagnostic = make(map[string]DiagnosticParams)
 
 	return true
+}
+
+func (this *LspClient) stop()  {
+	// doesnt work
+	if this.process == nil { return }
+
+	//this.shutdown()
+	this.exit()
+	//this.stopped = true
+	this.logger.info("successfully stopped lsp")
 }
 
 func (this *LspClient) send(o interface{})  {
@@ -62,40 +83,26 @@ func (this *LspClient) send(o interface{})  {
 	this.logger.info("->", string(m))
 
 	message := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(m), m)
-	_, err = this.stdin.Write([]byte(message))
+	stdin := this.lang2stdin[lang]
+	_, err = stdin.Write([]byte(message))
 	if err != nil {
 		this.logger.error(err.Error())
 	}
 }
 
-func (this *LspClient) receive() string {
 
-	headers, err := this.reader.ReadMIMEHeader()
-	if err != nil { /*panic(err)*/ return "" }
-
-	length, err := strconv.Atoi(headers.Get("Content-Length"))
-	if err != nil { /*panic(err)*/ return "" }
-
-	body := make([]byte, length)
-	if _, err := this.reader.R.Read(body); err != nil { /*panic(err)*/ return "" }
-
-	message := string(body)
-	this.logger.info("<-", message)
-
-	return message
-}
-
-
-func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string) {
+func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string, language string) {
 	for {
 		//message := this.receive()
-		_, message := this.read_stdout()
+		_, message := this.read_stdout(language)
 		this.logger.info("<-", message)
 
 		if strings.Contains(message,"publishDiagnostics") {
 			var dr DiagnosticResponse
 			errp := json.Unmarshal([]byte(message), &dr)
-			if errp != nil { this.logger.error(errp.Error()); continue }
+			if errp != nil {
+				this.logger.error(errp.Error()); continue
+			}
 			this.file2diagnostic[dr.Params.Uri] = dr.Params
 			diagnosticUpdateChannel <- "update"
 			continue
@@ -103,7 +110,9 @@ func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string) {
 
 		responseJSON := make(map[string]interface{})
 		err := json.Unmarshal([]byte(message), &responseJSON)
-		if err != nil { this.logger.error(err.Error()); continue }
+		if err != nil {
+			this.logger.error(err.Error()); continue
+		}
 
 		if value, found := responseJSON["id"]; found {
 			if id, ok := value.(float64); ok {
@@ -137,7 +146,7 @@ func (this *LspClient) init(dir string) {
 
 	if response == "" {
 		this.logger.info("cant get initialize response from lsp server")
-		this.isReady = false
+		this.lang2isReady[lang] = false
 		return
 	}
 
@@ -146,16 +155,35 @@ func (this *LspClient) init(dir string) {
 	}
 	this.send(initializedRequest)
 	this.logger.info("lsp initialized ")
-	this.isReady = true
+	//this.isReady = true
+	this.lang2isReady[lang] = true
+}
+
+func (this *LspClient) shutdown() {
+	this.id++
+	id := this.id
+	shutdownRequest := ShutdownRequest{
+		ID: id, JSONRPC: "2.0", Method:  "shutdown",
+	}
+	this.send(shutdownRequest)
+	//response := this.waitForResponse(id, 30000)
+	//this.logger.info("shutdown ", response)
+}
+func (this *LspClient) exit() {
+	shutdownRequest := ExitRequest{
+		JSONRPC: "2.0", Method:  "exit",
+	}
+	this.send(shutdownRequest)
+	this.logger.info("exit")
 }
 
 func (this *LspClient) waitForResponse(id, ms int) string {
 	start := time.Now()
 	for {
 		if time.Since(start) >= time.Millisecond * time.Duration(ms) { return "" }
-		this.someMapMutex.Lock()
+		this.someMapMutex.RLock()
 		value, ok := this.responsesMap[id]
-		this.someMapMutex.Unlock()
+		this.someMapMutex.RUnlock()
 		if ok {
 			this.someMapMutex.Lock()
 			delete(this.responsesMap, id)
@@ -353,12 +381,13 @@ func (this *LspClient) completion(file string, line int, character int) (Complet
 	return completionResponse, err
 }
 
-func (this *LspClient) read_stdout() (map[string]interface{}, string) {
+func (this *LspClient) read_stdout(language string) (map[string]interface{}, string) {
 	//start := time.Now()
 
 	const LEN_HEADER = "Content-Length: "
+	stdout := this.lang2stdout[language]
+	reader := bufio.NewReader(stdout)
 
-	reader := bufio.NewReader(this.stdout)
 	var messageSize int
 	var responseMustBeNext bool
 
@@ -376,13 +405,17 @@ func (this *LspClient) read_stdout() (map[string]interface{}, string) {
 
 			responseJSON := make(map[string]interface{})
 			err = json.Unmarshal(buf, &responseJSON)
-			if err != nil { this.logger.error(err.Error()); continue }
+			if err != nil {
+				this.logger.error(err.Error()); continue
+			}
 
 			method, found := responseJSON["method"];
 			if found && method.(string) == "textDocument/publishDiagnostics" {
 				var dr DiagnosticResponse
 				err := json.Unmarshal(buf, &dr)
-				if err != nil {  this.logger.error(err.Error()); continue }
+				if err != nil {
+					this.logger.error("[432 lsp]", err.Error()); continue
+				}
 
 				return responseJSON, line
 			}
@@ -395,7 +428,16 @@ func (this *LspClient) read_stdout() (map[string]interface{}, string) {
 
 		} else {
 			line, err = reader.ReadString('\n') // it stuck sometimes
-			if err != nil { this.logger.error(err.Error()); continue }
+			//if  err != nil && err.Error() == "EOF" {
+			//	this.logger.error("[445 lsp] ", err.Error());
+			//	break
+			//}
+			if err != nil {
+				//if err.Error() == "read |0: file already closed" {
+				//	break
+				//}
+				this.logger.error("[445 lsp]", err.Error()); continue
+			}
 			//fmt.Println("line", line)
 		}
 
@@ -415,4 +457,9 @@ func (this *LspClient) read_stdout() (map[string]interface{}, string) {
 		}
 	}
 
+}
+
+func (this *LspClient) langIsReady(language string) bool {
+	ready, found := this.lang2isReady[language]
+	if !found { return false } else { return ready }
 }

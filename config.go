@@ -12,6 +12,7 @@ type Lang struct {
 	TabWidth int    `yaml:"tabwidth"`
 }
 
+
 type Config struct {
 	Langs map[string]Lang `yaml:"lang"`
 	Theme string          `yaml:"theme"`
@@ -20,7 +21,6 @@ type Config struct {
 var DefaultConfig = Config { Langs:
 	map[string]Lang{
 		"go":         { Lsp: "gopls", TabWidth: 4 },
-		//"python":     { Lsp: "pyright-langserver --stdio", Comment: "#", TabWidth: 4 },
 		"python":     { Lsp: "pylsp", Comment: "#", TabWidth: 4 },
 		"typescript": { Lsp: "typescript-language-server --stdio" },
 		"javascript": { Lsp: "typescript-language-server --stdio" },
@@ -49,7 +49,7 @@ func GetConfig() Config {
 		DefaultConfig.Langs[langName] = langConf
 	}
 
-	DefaultConfig.Theme = "edgo-light"
+	DefaultConfig.Theme = "edgo"
 
 	conffilename, exists := os.LookupEnv("EDGO_CONFIG")
 	if !exists { conffilename = "config.yaml" }

@@ -1,6 +1,21 @@
 package main
 
+var logger = Logger{}
+var editor = Editor{}
+var lsp = LspClient{}
+var highlighter = Highlighter{}
+
 func main() {
-	editor := Editor{}
+
+	config := GetConfig()
+	logger.start()
+
+	editor.logger = logger
+	highlighter.logger = logger
+	lsp.logger = logger
+
+	editor.config = config
+	highlighter.setTheme(config.Theme)
+
 	editor.start()
 }

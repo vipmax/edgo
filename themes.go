@@ -3,6 +3,7 @@ package main
 import "github.com/alecthomas/chroma"
 import "github.com/alecthomas/chroma/styles"
 
+
 var EdgoDark = styles.Register(chroma.MustNewStyle("edgo", chroma.StyleEntries{
 	chroma.Comment: "#a8a8a8",
 	chroma.Keyword: "#FF69B4",
@@ -72,12 +73,8 @@ var IdeaLight = styles.Register(chroma.MustNewStyle("idea-light", chroma.StyleEn
 	chroma.KeywordType: "#8B588A",
 	chroma.KeywordDeclaration: "#1232AC",
 	chroma.KeywordReserved: "#8B588A",
-	chroma.NameTag: "#FFC66D",
 	chroma.NumberInteger: "#284FE2",
 	chroma.NameFunction: "#286077",
 	chroma.NameFunctionMagic: "#A320AC",
 	chroma.NameBuiltinPseudo: "#8B588A",
 }))
-
-
-

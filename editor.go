@@ -33,9 +33,12 @@ var lang = ""             // current file language
 var update = true
 var isOverlay = false
 var s Screen
-var lsp = LspClient{}
-var highlighter = Highlighter{}
 
+var filesPanelWidth = 0
+var files = []string{}
+var isFileSelection = false
+var fileScrollingOffset = 0
+var fileSelected = -1;
 
 type Editor struct {
 	undo      []EditOperation
@@ -48,15 +51,6 @@ type Editor struct {
 
 
 func (e *Editor) start() {
-	e.config = GetConfig()
-
-	e.logger = Logger{ }
-	e.logger.start()
-	highlighter.logger = e.logger
-	lsp.logger = e.logger
-
-	highlighter.setTheme(e.config.Theme)
-
 	e.logger.info("starting edgo")
 
 	s = e.initScreen()
@@ -70,18 +64,24 @@ func (e *Editor) start() {
 			fmt.Println(err)
 			os.Exit(130)
 		}
+
+		// initialize lsp async
+		if inputFile != "" && lang != "" {
+			go e.init_lsp(lang)
+		}
 	} else {
-		fmt.Println("filename not found. usage: edgo [filename]")
+		e.onFiles()
+
+		//fmt.Println("filename not found. usage: edgo [filename]")
 		// in the future it will open current directory
-		os.Exit(130)
+		//os.Exit(130)
 	}
 
-	// initialize lsp async
-	go e.init_lsp()
+
 
 	// main draw cycle
 	for {
-		if update {
+		if update && filename != "" {
 			e.drawEverything()
 			s.Show()
 		}
@@ -93,24 +93,39 @@ func (e *Editor) openFile(fname string) error {
 
 	absoluteDir, err := filepath.Abs(path.Dir(fname))
 	if err != nil { return err }
-	directory = absoluteDir; filename = filepath.Base(fname)
+	directory = absoluteDir;
+	filename = filepath.Base(fname)
 	absoluteFilePath = path.Join(directory, filename)
 
 	e.logger.info("open", directory, filename)
 
-	lang = detectLang(filename)
-	e.logger.info("lang is", lang)
+	newLang := detectLang(filename)
+	e.logger.info("new lang is", lang)
+
+	if newLang != "" {
+		if newLang != lang {
+			//lsp.stop()
+			lang = newLang
+			_, found := lsp.lang2stdin[lang]
+			if !found { go e.init_lsp(lang) }
+
+		}
+	}
 
 	conf, found := e.config.Langs[lang]
 	if !found { conf = DefaultLangConfig }
 	e.langConf = conf
 	e.tabWidth = conf.TabWidth
 
-	code := e.readFile()
+	code := e.readFile(absoluteFilePath)
 	colors = highlighter.colorize(code, filename)
 
 	e.undo = []EditOperation{}
 	e.redoStack = []EditOperation{}
+
+	r = 0; c = 0
+	y = 0; x = 0
+	cleanSelection()
 
 	return nil
 }
@@ -134,8 +149,14 @@ func (e *Editor) initScreen() Screen {
 func (e *Editor) drawEverything() {
 	s.Clear()
 
+	if filesPanelWidth != 0 { e.drawFiles() }
+	
+	
+	//tabs := countTabsTo(content[r], c)
+	//correction := tabs*(e.tabWidth)
+
 	if c < x { x = c }
-	if c + LS >= x + COLUMNS  { x = c - COLUMNS + 1 + LS }
+	if c + LS + filesPanelWidth >= x + COLUMNS  { x = c - COLUMNS + 1 + LS + filesPanelWidth }
 
 	// draw line number and chars according to scrolling offsets
 	for row := 0; row <= ROWS; row++ {
@@ -158,11 +179,11 @@ func (e *Editor) drawEverything() {
 					style = StyleDefault.Background(color)
 				}
 				for i := 0; i < e.tabWidth ; i++ {
-					s.SetContent(col + LS + tabsOffset, row, ' ', nil, style)
+					s.SetContent(col + LS + tabsOffset + filesPanelWidth, row, ' ', nil, style)
 					if i != e.tabWidth-1 { tabsOffset++ }
 				}
 			} else {
-				s.SetContent(col + LS + tabsOffset, row, ch, nil, style)
+				s.SetContent(col + LS + tabsOffset + filesPanelWidth, row, ch, nil, style)
 			}
 		}
 	}
@@ -170,7 +191,7 @@ func (e *Editor) drawEverything() {
 	e.drawDiagnostic()
 
 	var changes = ""; if isFileChanged { changes = "*" }
-	status := fmt.Sprintf(" %s %d %d %s%s ", lang, r+1, c+1, inputFile, changes)
+	status := fmt.Sprintf(" %s %d %d %s%s ", lang, r+1, c+1, filename, changes)
 	e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 
 	// if tab under cursor, hide cursor because it has already drawn
@@ -178,7 +199,7 @@ func (e *Editor) drawEverything() {
 		s.HideCursor()
 	} else  {
 		tabs := countTabsTo(content[r], c) * (e.tabWidth -1)
-		s.ShowCursor(c-x+LS+tabs, r-y) // show cursor
+		s.ShowCursor(c-x+LS+tabs + filesPanelWidth, r-y) // show cursor
 	}
 
 }
@@ -214,7 +235,7 @@ func (e *Editor) drawDiagnostic() {
 			tabs := countTabs(content[dline], len(content[dline]))
 			var shifty = 0
 			errorMessage := "error: " + diagnostic.Message
-			errorMessage = PadLeft(errorMessage, COLUMNS - len(content[dline]) - tabs*e.tabWidth - 5 - LS)
+			errorMessage = PadLeft(errorMessage, COLUMNS - len(content[dline]) - tabs*e.tabWidth - 5 - LS - filesPanelWidth)
 
 			// iterate over message characters and draw it
 			for i, m := range errorMessage {
@@ -222,7 +243,7 @@ func (e *Editor) drawDiagnostic() {
 				if ypos < 0 || ypos >= len(content) { break }
 
 				tabs = countTabs(content[dline], len(content[dline]))
-				xpos := i + LS + len(content[dline+shifty]) + tabs*e.tabWidth + 5
+				xpos := i + LS + filesPanelWidth + len(content[dline+shifty]) + tabs*e.tabWidth + 5
 
 				//for { // draw ch on the next line if not fit to screen
 				//	if xpos >= COLUMNS {
@@ -234,7 +255,7 @@ func (e *Editor) drawDiagnostic() {
 				//	} else { break }
 				//}
 
-				s.SetContent( xpos,  ypos, m, nil,  style)
+				s.SetContent(xpos,  ypos, m, nil,  style)
 			}
 		}
 
@@ -243,11 +264,10 @@ func (e *Editor) drawDiagnostic() {
 
 func (e *Editor) drawLineNumber(brw int, row int) {
 	var style = StyleDefault.Foreground(ColorDimGray)
-	if brw == r { style = StyleDefault
-	}
+	if brw == r { style = StyleDefault}
 	lineNumber := centerNumber(brw + 1, LS)
 	for index, char := range lineNumber {
-		s.SetContent(index, row, char, nil, style)
+		s.SetContent(index + filesPanelWidth, row, char, nil, style)
 	}
 }
 
@@ -276,7 +296,15 @@ func (e *Editor) handleEvents() {
 		mx, my := ev.Position()
 		buttons := ev.Buttons()
 		modifiers := ev.Modifiers()
-		mx -= LS
+
+		if mx < filesPanelWidth {
+			e.onFiles()
+			return
+		}
+
+		if filename == "" { return }
+
+		mx -= LS + filesPanelWidth
 
 		if mx < 0  { return }
 		if my > ROWS  { return }
@@ -416,7 +444,7 @@ func (e *Editor) handleEvents() {
 		if key == KeyUp { e.onUp(); cleanSelection() }
 		if key == KeyLeft { e.onLeft(); cleanSelection() }
 		if key == KeyRight { e.onRight(); cleanSelection() }
-		if key == KeyCtrlT { } // TODO: tree
+		if key == KeyCtrlT { e.onFiles() }
 		if key == KeyCtrlF { } // TODO: find
 		if key == KeyCtrlU { e.onUndo() }
 		//if key == tcell.KeyCtrlR { e.redo() } // todo: fix it
@@ -438,18 +466,18 @@ func (e *Editor) findCursorXPosition(mx int) int {
 	return realCount
 }
 
-func (e *Editor) readFile() string {
+func (e *Editor) readFile(fileToRead string) string {
 	/// if file is big, read only first 1000 lines and read rest async
-	fileSize := getFileSize(absoluteFilePath)
+	fileSize := getFileSize(fileToRead)
 	fileSizeMB := fileSize / (1024 * 1024) // Convert size to megabytes
 
 	var code string
 	if fileSizeMB >= 1 {
 		//colorize = false
-		code = e.buildContent(absoluteFilePath, 1000)
+		code = e.buildContent(fileToRead, 1000)
 
 		go func() { // sync?? no need yet
-			code = e.buildContent(absoluteFilePath, 1000000)
+			code = e.buildContent(fileToRead, 1000000)
 			code, _ = getFirstLines(code, 20000)
 			colors = highlighter.colorize(code, filename);
 			e.drawEverything();
@@ -458,13 +486,13 @@ func (e *Editor) readFile() string {
 		}()
 
 	} else {
-		code = e.buildContent(absoluteFilePath, 1000000)
+		code = e.buildContent(fileToRead, 1000000)
 	}
 	return code
 }
 
-func (e *Editor) init_lsp() {
-	start := time.Now()
+func (e *Editor) init_lsp(lang string) {
+	//start := time.Now()
 
 	// Getting the lsp command with args for a language:
 	conf, ok := e.config.Langs[strings.ToLower(lang)]
@@ -474,25 +502,25 @@ func (e *Editor) init_lsp() {
 	if !started { return }
 
 	var diagnosticUpdateChan = make(chan string)
-	go lsp.receiveLoop(diagnosticUpdateChan)
+	go lsp.receiveLoop(diagnosticUpdateChan, lang)
 
 	currentDir, _ := os.Getwd()
 
 	lsp.init(currentDir)
 	lsp.didOpen(absoluteFilePath, lang)
 
-	e.drawEverything()
-
-	lspStatus := "lsp started, elapsed " + time.Since(start).String()
-	if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	e.logger.info("lsp status", lspStatus)
-	status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus,  lang, r+1, c+1, inputFile)
-	e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
-	s.Show()
+	//e.drawEverything()
+	//
+	//lspStatus := "lsp started, elapsed " + time.Since(start).String()
+	//if !lsp.isReady { lspStatus = "lsp is not ready yet" }
+	//e.logger.info("lsp status", lspStatus)
+	//status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus,  lang, r+1, c+1, inputFile)
+	//e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
+	//s.Show()
 
 	go func() {
 		for range diagnosticUpdateChan {
-			if isOverlay { continue}
+			if isOverlay { continue }
 			e.drawEverything()
 			s.Show()
 		}
@@ -504,7 +532,7 @@ func markOverlayFalse() {
 }
 
 func (e *Editor) onCompletion() {
-	if !lsp.isReady { return }
+	if !lsp.langIsReady(lang) { return }
     isOverlay = true
 	defer markOverlayFalse()
 
@@ -524,8 +552,8 @@ func (e *Editor) onCompletion() {
 		options := e.buildCompletionOptions(completion)
 		if err != nil || len(options) == 0 { return }
 
-		tabs := countTabs(content[r], c)
-		atx := c + LS + tabs*e.tabWidth; aty := r + 1 - y // Define the window  position and dimensions
+		tabs := countTabsTo(content[r], c)
+		atx := (c-tabs) + LS + tabs*(e.tabWidth) + filesPanelWidth; aty := r + 1 - y // Define the window  position and dimensions
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(5, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
 		style := StyleDefault
@@ -565,7 +593,7 @@ func (e *Editor) onCompletion() {
 }
 
 func (e *Editor) onHover() {
-	if !lsp.isReady { return }
+	if !lsp.langIsReady(lang) { return }
 
 	isOverlay = true
 	defer markOverlayFalse()
@@ -587,10 +615,10 @@ func (e *Editor) onHover() {
 		options := strings.Split(hover.Result.Contents.Value, "\n")
 		if len(options) == 0 { return }
 
-		tabs := countTabs(content[r], c)
+		tabs := countTabsTo(content[r], c)
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
+		atx := (c-tabs) + LS + tabs*(e.tabWidth) + filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
@@ -620,7 +648,7 @@ func (e *Editor) onHover() {
 }
 
 func (e *Editor) onSignatureHelp() {
-	if !lsp.isReady { return }
+	if !lsp.langIsReady(lang) { return }
 
 	isOverlay = true
 	defer markOverlayFalse()
@@ -652,10 +680,10 @@ func (e *Editor) onSignatureHelp() {
 
 		if len(options) == 0 { return }
 
-		tabs := countTabs(content[r], c)
+		tabs := countTabsTo(content[r], c)
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
+		atx := (c-tabs) + LS + tabs*(e.tabWidth) + filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
@@ -685,7 +713,7 @@ func (e *Editor) onSignatureHelp() {
 }
 
 func (e *Editor) onReferences() {
-	if !lsp.isReady { return }
+	if !lsp.langIsReady(lang) { return }
 
 	isOverlay = true
 	defer markOverlayFalse()
@@ -725,10 +753,10 @@ func (e *Editor) onReferences() {
 			return
 		}
 
-		tabs := countTabs(content[r], c)
+		tabs := countTabsTo(content[r], c)
 		width := max(30, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := c + LS + tabs*e.tabWidth; aty := r - height - y // Define the window  position and dimensions
+		atx := (c-tabs) + LS + tabs*(e.tabWidth) + filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 		if len(options) > r - y { aty = r + 1 }
 
@@ -901,7 +929,7 @@ func (e *Editor) onDefinition() {
 }
 
 func (e *Editor) onErrors() {
-	if !lsp.isReady { return }
+	if !lsp.langIsReady(lang) { return }
 
 	maybeDiagnostics, found := lsp.file2diagnostic["file://" + absoluteFilePath]
 
@@ -927,7 +955,7 @@ func (e *Editor) onErrors() {
 
 		width := max(50, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options) + 1) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := 0 + LS; aty := 0 // Define the window  position and dimensions
+		atx := 0 + LS + filesPanelWidth; aty := 0 // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
@@ -1026,6 +1054,175 @@ func (e *Editor) onErrors() {
 		}
 	}
 
+}
+
+func (e *Editor) onFiles() {
+	isFileSelection = true
+
+
+	if filesPanelWidth == 0 {
+		ignoreDirs := []string{".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build"}
+
+		filesTree, err := getFiles("./", ignoreDirs)
+		if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
+		files = filesTree
+		if len(files) == 0 { return }
+
+		filesPanelWidth = 28
+		//filesPanelWidth = maxString(files)
+		//filesPanelWidth = min(filesPanelWidth, 40)
+
+	}
+
+	if filename != "" { e.drawEverything() }
+
+	var end = false
+
+	// loop until escape or enter pressed
+	for !end {
+
+		var selectionEnd = false;
+
+		for !selectionEnd {
+			if fileSelected != -1 && fileSelected < fileScrollingOffset {
+				fileScrollingOffset = fileSelected
+				//if fileSelected == -1 { fileScrollingOffset = 0 }
+			}  // calculate offsets for scrolling completion
+			if fileSelected >= fileScrollingOffset + ROWS {
+				fileScrollingOffset = fileSelected - ROWS + 1
+			}
+
+
+			e.drawFiles()
+
+			s.Show()
+
+			switch ev := s.PollEvent().(type) { // poll and handle event
+			case *EventMouse:
+				mx, my := ev.Position()
+				buttons := ev.Buttons()
+				modifiers := ev.Modifiers()
+
+				if mx > filesPanelWidth {
+					selectionEnd = true; end = true
+				} else {
+					if buttons & WheelDown != 0  && modifiers & ModCtrl != 0 && filesPanelWidth < COLUMNS  {
+						filesPanelWidth++
+						if filename != "" { e.drawEverything(); s.Show() }
+						continue
+					}
+					if buttons & WheelUp != 0  && modifiers & ModCtrl != 0  && filesPanelWidth > 0 {
+						filesPanelWidth--
+						if filename != "" { e.drawEverything(); s.Show() }
+						continue
+					}
+
+					if buttons & WheelDown != 0 &&  len(files) > ROWS {
+						if len(files) > ROWS  && fileScrollingOffset <  len(files) - ROWS {
+							fileScrollingOffset++
+						}
+					}
+					if buttons & WheelUp != 0 && fileScrollingOffset > 0 {
+						fileScrollingOffset--
+					}
+
+					if my < len(files) { fileSelected = my + fileScrollingOffset }
+					if buttons & Button1 == 1 {
+						fileSelected = my + fileScrollingOffset
+						selectionEnd = true; end = true
+						selectedFile := files[fileSelected]
+						inputFile = selectedFile
+						e.openFile(selectedFile)
+					}
+				}
+
+			case *EventResize:
+				COLUMNS, ROWS = s.Size()
+				if filename != "" { e.drawEverything(); s.Show() }
+
+			case *EventKey:
+				key := ev.Key()
+
+
+				if key == KeyEscape {
+					selectionEnd = true; end = true
+					filesPanelWidth = 0
+				}
+				if key == KeyDown {
+					fileSelected = min(len(files)-1, fileSelected+1)
+				}
+				if key == KeyUp { fileSelected = max(0, fileSelected-1) }
+
+				//if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyRight  {
+					filesPanelWidth++
+					if filename != "" { e.drawEverything(); s.Show() }
+				}
+				if key == KeyLeft && filesPanelWidth > 0  {
+					filesPanelWidth--
+					if filename != "" { e.drawEverything(); s.Show() }
+				}
+				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				if key == KeyCtrlT {
+					selectionEnd = true; end = true
+					filesPanelWidth = 0
+				}
+				if key == KeyEnter {
+					selectionEnd = true; end = true
+					selectedFile := files[fileSelected]
+					inputFile = selectedFile
+					e.openFile(selectedFile)
+				}
+			}
+		}
+	}
+
+	isFileSelection = false
+}
+
+
+func (e *Editor) drawFiles() {
+	for fileIndex := 0; fileIndex < len(files); fileIndex++ {
+
+		style := StyleDefault
+		for col := 0; col < filesPanelWidth + 1; col++ { // clean
+			s.SetContent(col, fileIndex, ' ', nil, style)
+		}
+		s.SetContent(filesPanelWidth-1, fileIndex, '│', nil, style)
+
+		if fileIndex >= len(files) || fileIndex >= ROWS { break }
+		if fileIndex + max(fileScrollingOffset,0) >= len(files) { break }
+		file := files[fileIndex + max(fileScrollingOffset,0)]
+
+
+		isSelectedFile := isFileSelection && fileSelected != -1 && fileIndex+fileScrollingOffset == fileSelected
+		if isSelectedFile {
+			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
+		}
+		if inputFile != "" && inputFile == file {
+			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
+		}
+
+		for j, ch := range file {
+			if j+1 > filesPanelWidth-3 { break }
+			s.SetContent(j + 1, fileIndex, ch, nil, style)
+		}
+
+		//if len(file)+2 < filesPanelWidth {
+		//	for col := len(file)+2; col < filesPanelWidth; col++ { // Fill the remaining space
+		//		s.SetContent(col, fileIndex, ' ', nil, style)
+		//	}
+		//}
+	}
+
+	for row := 0; row < ROWS; row++ {
+		if row >= len(files) {
+			for col := 0; col < filesPanelWidth + 1; col++ { // clean
+				s.SetContent(col, row, ' ', nil, StyleDefault)
+			}
+		}
+		s.SetContent(filesPanelWidth-1, row, '│', nil, StyleDefault.Foreground(Color(AccentColor)))
+	}
 }
 
 func (e *Editor) getSelectedStyle(isSelected bool, style Style) Style {
@@ -1273,7 +1470,7 @@ func (e *Editor) writeFile() {
 
 	isFileChanged = false
 
-	if lsp.isReady {
+	if lang != "" && lsp.langIsReady(lang) {
 		go lsp.didOpen(absoluteFilePath, lang) // todo remove it in future
 		//go lsp.didChange(absoluteFilePath)
 		//go lsp.didSave(absoluteFilePath)
@@ -1296,6 +1493,9 @@ func (e *Editor) buildContent(filename string, limit int) string {
 
 	scanner := bufio.NewScanner(file)
 
+	content = make([][]rune, 0)
+	colors = make([][]int, 0)
+
 	for scanner.Scan() {
 		var line = scanner.Text()
 		var lineChars = []rune{}
@@ -1315,6 +1515,7 @@ func (e *Editor) buildContent(filename string, limit int) string {
 
 func (e *Editor) updateColors() {
 	if !colorize { return }
+	if lang == "" { return }
 	if len(content) >= 10000 {
 		line := string(content[r])
 		linecolors := highlighter.colorize(line, filename)
@@ -1327,7 +1528,7 @@ func (e *Editor) updateColors() {
 func (e *Editor) updateNeeded() {
 	update = true
 	isFileChanged = true
-	if len(content) <= 10000 { e.writeFile() }
+	if len(content) <= 10000 { go e.writeFile() }
 	e.updateColors()
 }
 
@@ -1433,8 +1634,10 @@ func (e *Editor) cut() {
 			ops = append(ops, Operation{DeleteLine, '\n', 0, 0})
 			c = 0
 		} else {
-			ops = append(ops, Operation{DeleteLine, '\n', r-1, len(content[r-1])})
-			c = len(content[r-1])
+			newc := 0
+			if c > len(content[r-1]) { newc = len(content[r-1])} else { newc = c }
+			ops = append(ops, Operation{DeleteLine, '\n', r-1, newc})
+			c = newc
 		}
 
 		content = append(content[:r], content[r+1:]...)
@@ -1534,6 +1737,7 @@ func (e *Editor) onCommentLine() {
 	found := false
 
 	for i, ch := range content[r] {
+		if len(content[r]) == 0 { break }
 		if len(e.langConf.Comment) == 1 && ch == rune(e.langConf.Comment[0]) {
 			// found 1 char comment, uncomment
 			c = i
