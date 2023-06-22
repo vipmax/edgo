@@ -1232,6 +1232,8 @@ func (e *Editor) onFiles() {
 					if my < len(files) { fileSelected = my + fileScrollingOffset }
 					if buttons & Button1 == 1 {
 						fileSelected = my + fileScrollingOffset
+						if fileSelected < 0  { continue }
+						if fileSelected >= len(files) { continue }
 						selectionEnd = true; end = true
 						selectedFile := files[fileSelected]
 						inputFile = selectedFile
