@@ -37,7 +37,9 @@ var filesPanelWidth = 0
 var files = []string{}
 var isFileSelection = false
 var fileScrollingOffset = 0
-var fileSelected = -1;
+var fileSelected = -1
+var searchPattern = []rune{}
+
 
 type Editor struct {
 	undo      []EditOperation
@@ -69,10 +71,6 @@ func (e *Editor) start() {
 		}
 	} else {
 		e.onFiles()
-
-		//fmt.Println("filename not found. usage: edgo [filename]")
-		// in the future it will open current directory
-		//os.Exit(130)
 	}
 
 
@@ -1054,43 +1052,43 @@ func (e *Editor) onErrors() {
 
 }
 
+
 func (e *Editor) onSearch() {
 	var end = false
-	var pattern = []rune{}
-	var patternx = 0
-	var startline = 0
-	var isChanged = false
+	var patternx = len(searchPattern)
+	var startline = y
+	var isChanged = true
 	var isDownSearch = true
 	var prefix = []rune("search:")
 
 	// loop until escape or enter pressed
 	for !end {
 
-		e.drawSearch(prefix, pattern, patternx)
+		e.drawSearch(prefix, searchPattern, patternx)
 		s.Show()
 
 		if isChanged {
 			var sy, sx = -1, -1
 			if isDownSearch {
-				sy, sx = searchDown(content, string(pattern), startline)
+				sy, sx = searchDown(content, string(searchPattern), startline)
 			} else {
-				sy, sx = searchUp(content, string(pattern), startline)
+				sy, sx = searchUp(content, string(searchPattern), startline)
 			}
 
 
 			if sx != -1 && sy != -1 {
 				r = sy; c = sx; e.focus()
 				startline = sy;
-				ssx = sx; ssy = sy; sex = sx + len(pattern); sey = sy; isSelected = true
+				ssx = sx; ssy = sy; sex = sx + len(searchPattern); sey = sy; isSelected = true
 				e.drawEverything()
-				e.drawSearch(prefix, pattern, patternx)
+				e.drawSearch(prefix, searchPattern, patternx)
 				s.ShowCursor(len(prefix)+ patternx+LS+filesPanelWidth, ROWS-1)
 				s.Show()
 			}else {
 				cleanSelection()
 				if isDownSearch { startline = 0 } else  { startline = len(content)}
 				e.drawEverything()
-				e.drawSearch(prefix, pattern, patternx)
+				e.drawSearch(prefix, searchPattern, patternx)
 				s.ShowCursor(len(prefix)+ patternx+LS+filesPanelWidth, ROWS-1)
 				s.Show()
 			}
@@ -1107,17 +1105,17 @@ func (e *Editor) onSearch() {
 			key := ev.Key()
 
 			if key == KeyRune {
-				pattern = insert(pattern, patternx, ev.Rune())
+				searchPattern = insert(searchPattern, patternx, ev.Rune())
 				patternx++
 				isChanged = true
 			}
-			if key == KeyBackspace2 && patternx > 0 && len(pattern) > 0 {
+			if key == KeyBackspace2 && patternx > 0 && len(searchPattern) > 0 {
 				patternx--
-				pattern = remove(pattern, patternx)
+				searchPattern = remove(searchPattern, patternx)
 				isChanged = true
 			}
 			if key == KeyLeft && patternx > 0 { patternx-- }
-			if key == KeyRight && patternx < len(pattern) { patternx++ }
+			if key == KeyRight && patternx < len(searchPattern) { patternx++ }
 			if key == KeyDown  {
 				isDownSearch = true
 				if startline < len(content) {
