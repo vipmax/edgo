@@ -6,12 +6,9 @@ var lsp = LspClient{}
 var highlighter = Highlighter{}
 
 func main() {
-
-	config := GetConfig()
 	logger.start()
-
+	config := GetConfig()
 	editor.config = config
 	highlighter.setTheme(config.Theme)
-
 	editor.start()
 }

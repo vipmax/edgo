@@ -162,7 +162,8 @@ func (e *Editor) drawEverything() {
 			if ch == '\t'  {
 				//draw big cursor with next symbol color
 				if ry == r && cx == c {
-					color := Color(colors[ry][cx+1])
+					var color = Color(AccentColor)
+					if cx+1 < len(colors[ry]) { color = Color(colors[ry][cx+1]) }
 					if color == -1 { color = Color(AccentColor)}
 					style = StyleDefault.Background(color)
 				}
@@ -770,16 +771,18 @@ func (e *Editor) onReferences() {
 					selectionEnd = true
 					if referencesResponse.Result[selected].URI != "file://"+ absoluteFilePath {  // if another file
 						// do nothing
-					} else {
-						r = referencesResponse.Result[selected].Range.Start.Line
-						c = referencesResponse.Result[selected].Range.Start.Character
-						ssx = c; ssy = r;
-						sey = referencesResponse.Result[selected].Range.End.Line
-						sex = referencesResponse.Result[selected].Range.End.Character
-						isSelected = true
-						r = sey; c = sex
-						e.focus(); e.drawEverything();
+						inputFile = strings.Split(referencesResponse.Result[selected].URI, "file://")[1]
+						e.openFile(inputFile)
 					}
+
+					r = referencesResponse.Result[selected].Range.Start.Line
+					c = referencesResponse.Result[selected].Range.Start.Character
+					ssx = c; ssy = r;
+					sey = referencesResponse.Result[selected].Range.End.Line
+					sex = referencesResponse.Result[selected].Range.End.Character
+					isSelected = true
+					r = sey; c = sex
+					e.focus(); e.drawEverything();
 				}
 			}
 		}
@@ -896,13 +899,19 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 func (e *Editor) onDefinition() {
 	definition, err := lsp.definition(absoluteFilePath, r, c )
 
-	if err != nil || len(definition.Result) == 0 ||
-		definition.Result[0].URI != "file://" + absoluteFilePath || // same file
-		int(definition.Result[0].Range.Start.Line) > len(content) ||  // not out of content
-		int(definition.Result[0].Range.Start.Character) > len(content[int(definition.Result[0].Range.Start.Line)]) {
+	if err != nil || len(definition.Result) == 0{
 		return
 	}
 
+	if definition.Result[0].URI != "file://" + absoluteFilePath {
+		inputFile = strings.Split(definition.Result[0].URI, "file://")[1]
+		e.openFile(inputFile)
+	}
+
+	if int(definition.Result[0].Range.Start.Line) > len(content) ||  // not out of content
+		int(definition.Result[0].Range.Start.Character) > len(content[int(definition.Result[0].Range.Start.Line)]) {
+		return
+	}
 
 	r = int(definition.Result[0].Range.Start.Line)
 	c = int(definition.Result[0].Range.Start.Character)
