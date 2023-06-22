@@ -47,10 +47,11 @@ func detectLang(filename string) string {
 func (h *Highlighter) setTheme(name string) {
 	theme = styles.Get(name)
 	AccentColor = int(tcell.GetColor(theme.Get(chroma.Keyword).Colour.String()))
-
 }
 
 func (h *Highlighter) colorize(code string, filename string) [][]int {
+	if code == "" { return [][]int{nil} }
+
 	start := time.Now()
 
 	// get lexer depending on filename

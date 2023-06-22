@@ -93,11 +93,9 @@ func (e *Editor) openFile(fname string) error {
 
 	if newLang != "" {
 		if newLang != lang {
-			//lsp.stop()
 			lang = newLang
 			_, found := lsp.lang2stdin[lang]
 			if !found { go e.init_lsp(lang) }
-
 		}
 	}
 
@@ -136,6 +134,7 @@ func (e *Editor) initScreen() Screen {
 }
 
 func (e *Editor) drawEverything() {
+	if len(content) == 0 { return }
 	s.Clear()
 
 	if filesPanelWidth != 0 { e.drawFiles() }
@@ -574,7 +573,7 @@ func (e *Editor) onCompletion() {
 					if key == KeyEnter {
 						selectionEnd = true; completionEnd = true
 						e.completionApply(completion, selected)
-						e.updateColors(); s.Show(); e.writeFile()
+						s.Show()
 					}
 			}
 		}
@@ -695,7 +694,6 @@ func (e *Editor) onSignatureHelp() {
 				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
 				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
 				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
-
 			}
 		}
 	}
@@ -850,8 +848,6 @@ func (e *Editor) drawCompletion(atx int, aty int, height int, width int,
 
 		s.SetContent(atx-1, row+aty, ' ', nil, style)
 		for col, char := range option {
-			//if char == 8226 { char = ' '}
-			//if char == 32 { char = ' '}
 			s.SetContent(col+atx, row+aty, char, nil, style)
 		}
 		for col := len(option); col < width; col++ { // Fill the remaining space
@@ -888,12 +884,13 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 		content[r] = append(content[r][:c], content[r][int(end) :]...)
 	}
 
-	// add newText to chars
-	for _, char := range newText {
-		e.insertCharacter(r,c,char)
-		c++
-	}
+	// add newText
+	for _, char := range newText { e.insertCharacter(r,c,char); c++ }
+	e.updateColorsAtLine(r)
 
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onDefinition() {
@@ -1068,7 +1065,6 @@ func (e *Editor) onSearch() {
 				sy, sx = searchUp(content, string(searchPattern), startline)
 			}
 
-
 			if sx != -1 && sy != -1 {
 				r = sy; c = sx; e.focus()
 				startline = sy;
@@ -1086,8 +1082,6 @@ func (e *Editor) onSearch() {
 				s.Show()
 			}
 		}
-
-
 
 		switch ev := s.PollEvent().(type) { // poll and handle event
 		case *EventResize:
@@ -1358,7 +1352,7 @@ func (e *Editor) addChar(ch rune) {
 	update = true
 	isFileChanged = true
 	if len(content) <= 10000 { go e.writeFile() }
-	e.updateColorsLine()
+	e.updateColorsAtLine(r)
 }
 
 func (e *Editor) focus() {
@@ -1438,27 +1432,6 @@ func (e *Editor) maybeAddPair(ch rune) {
 		}
 	}
 }
-func (e *Editor) onDelete() {
-	e.focus()
-
-	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut(); return }
-
-	if c > 0 {
-		c--
-		e.deleteCharacter(r,c)
-
-	} else if r > 0 { // delete line
-		e.undo = append(e.undo, EditOperation{{DeleteLine, ' ', r-1, len(content[r-1])}})
-		l := content[r][c:]
-		content = remove(content, r)
-		r--
-		c = len(content[r])
-		content[r] = append(content[r], l...)
-	}
-
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	e.updateNeeded()
-}
 
 func (e *Editor) onScrollUp() {
 	if len(content) == 0 { return }
@@ -1521,6 +1494,7 @@ func (e *Editor) onEnter() {
 	after := content[r][c:]
 	before := content[r][:c]
 	content[r] = before
+	e.updateColorsAtLine(r)
 	r++
 	c = 0
 
@@ -1538,10 +1512,47 @@ func (e *Editor) onEnter() {
 	newline := append(begining, after...)
 	content = insert(content, r, newline)
 
+	if colorize && lang != "" {
+		colors = insert(colors, r, []int{})
+		e.updateColorsAtLine(r)
+	}
+
 	e.undo = append(e.undo, ops)
 	e.focus(); if r - y ==  ROWS { e.onScrollDown() }
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	e.updateColorsFull()  // todo if file is big, full colors update is slow, optimize it
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
+}
+
+func (e *Editor) onDelete() {
+
+	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut(); return }
+
+	if c > 0 {
+		c--
+		e.deleteCharacter(r,c)
+		e.updateColorsAtLine(r)
+	} else if r > 0 { // delete line
+		e.undo = append(e.undo, EditOperation{{DeleteLine, ' ', r-1, len(content[r-1])}})
+		l := content[r][c:]
+		content = remove(content, r)
+		if colorize && lang != "" {
+			colors = remove(colors, r)
+			e.updateColorsAtLine(r)
+		}
+
+		r--
+		c = len(content[r])
+		content[r] = append(content[r], l...)
+		e.updateColorsAtLine(r)
+	}
+
+	e.focus()
+	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 
 
@@ -1607,7 +1618,7 @@ func (e *Editor) buildContent(filename string, limit int) string {
 	}
 
 	// if no content, consider it like one line for next editing
-	if content == nil {
+	if content == nil || len(content) == 0 {
 		content = make([][]rune, 1)
 		colors = make([][]int, 1)
 	}
@@ -1627,6 +1638,7 @@ func (e *Editor) updateColors() {
 		colors = highlighter.colorize(code, filename)
 	}
 }
+
 func (e *Editor) updateColorsFull() {
 	if !colorize { return }
 	if lang == "" { return }
@@ -1635,14 +1647,18 @@ func (e *Editor) updateColorsFull() {
 	colors = highlighter.colorize(code, filename)
 }
 
-func (e *Editor) updateColorsLine() {
+func (e *Editor) updateColorsAtLine(at int) {
 	if !colorize { return }
 	if lang == "" { return }
-	line := string(content[r])
+	if at >= len(colors) { return }
+
+	line := string(content[at])
+	if line == "" { colors[at] = []int{}; return }
 	linecolors := highlighter.colorize(line, filename)
-	colors[r] = linecolors[0]
+	colors[at] = linecolors[0]
 }
 
+// todo, get rid of this function, cause updateColors is slow for big files
 func (e *Editor) updateNeeded() {
 	update = true
 	isFileChanged = true
@@ -1657,7 +1673,8 @@ func (e *Editor) onTab() {
 
 	if len(selectedLines) == 0 {
 		ch := '\t'
-		e.insertCharacter(r, c, ch);
+		e.insertCharacter(r, c, ch)
+		e.updateColorsAtLine(r)
 		c++
 	} else  {
 		var ops = EditOperation{}
@@ -1665,6 +1682,7 @@ func (e *Editor) onTab() {
 		for _, linenumber := range selectedLines {
 			r = linenumber
 			content[r] = insert(content[r], 0, '\t')
+			e.updateColorsAtLine(r)
 			ops = append(ops, Operation{Insert, '\t', r, 0})
 			c = len(content[r])
 		}
@@ -1673,7 +1691,9 @@ func (e *Editor) onTab() {
 	}
 
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	e.updateNeeded()
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onBackTab() {
@@ -1681,27 +1701,29 @@ func (e *Editor) onBackTab() {
 
 	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
 
-	// deleting tabs from begining
+	// deleting tabs from beginning
 	if len(selectedLines) == 0 {
 		if content[r][0] == '\t'  {
 			e.deleteCharacter(r,0)
-			//content[r] = content[r][1:] // delete first
+			colors[r] = remove(colors[r], 0)
 			c--
 		}
 	} else {
 		ssx = 0
 		for _, linenumber := range selectedLines {
 			r = linenumber
-			if content[r][0] == '\t'  {
+			if len(content[r]) > 0 && content[r][0] == '\t'  {
 				e.deleteCharacter(r,0)
-				//content[r] = content[r][1:] // delete first
+				colors[r] = remove(colors[r], 0)
 				c = len(content[r])
 			}
 		}
 	}
 
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	e.updateNeeded()
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onCopy() {
@@ -1758,8 +1780,16 @@ func (e *Editor) cut() {
 			c = newc
 		}
 
-		content = append(content[:r], content[r+1:]...)
+		content = remove(content, r)
+		if colorize && lang != "" {
+			colors = remove(colors, r)
+			e.updateColorsAtLine(r)
+		}
 		if r > 0 { r-- }
+
+		update = true
+		isFileChanged = true
+		if len(content) <= 10000 { go e.writeFile() }
 
 	} else { // cut selection
 
@@ -1802,11 +1832,10 @@ func (e *Editor) cut() {
 			if c >= len(content[r]) { c = len(content[r]) - 1 }
 		}
 		cleanSelection()
-		e.undo = append(e.undo, ops)
+		e.updateNeeded()
 	}
 
 	e.undo = append(e.undo, ops)
-	e.updateNeeded()
 }
 
 func (e *Editor) duplicate() {
@@ -1826,7 +1855,15 @@ func (e *Editor) duplicate() {
 		}
 		r++
 		content = insert(content, r, duplicatedSlice)
+		if colorize && lang != "" {
+			colors = insert(colors, r, []int{})
+			e.updateColorsAtLine(r)
+		}
 		e.undo = append(e.undo, ops)
+		update = true
+		isFileChanged = true
+		if len(content) <= 10000 { go e.writeFile() }
+
 	} else {
 		selection := getSelectionString(content, ssx,ssy,sex,sey)
 		if len(selection) == 0 { return }
@@ -1843,9 +1880,10 @@ func (e *Editor) duplicate() {
 			e.insertLines(r,c, lines)
 		}
 		cleanSelection()
+		e.updateNeeded()
 	}
 
-	e.updateNeeded()
+
 }
 
 
@@ -1864,7 +1902,9 @@ func (e *Editor) onCommentLine() {
 				{Delete, content[r][i], r, i},
 			})
 			content[r] = remove(content[r], i)
+			e.updateColorsAtLine(r)
 			found = true
+			break
 		}
 		if len(e.langConf.Comment) == 2 && ch == rune(e.langConf.Comment[0]) && content[r][i+1] == rune(e.langConf.Comment[1]) {
 			// found 2 char comment, uncomment
@@ -1877,14 +1917,18 @@ func (e *Editor) onCommentLine() {
 			})
 			content[r] = remove(content[r], i)
 			content[r] = remove(content[r], i)
+			e.updateColorsAtLine(r)
 			found = true
+			break
 		}
 	}
 
 	if found {
 		if c < 0 { c = 0 }
 		e.onDown()
-		e.updateNeeded()
+		update = true
+		isFileChanged = true
+		if len(content) <= 10000 { go e.writeFile() }
 		return
 	}
 
@@ -1901,11 +1945,14 @@ func (e *Editor) onCommentLine() {
 		ops = append(ops, Operation{Insert, ch, r, c})
 	}
 
-	e.undo = append(e.undo, ops)
+	e.updateColorsAtLine(r)
 
+	e.undo = append(e.undo, ops)
 	if c < 0 { c = 0 }
 	e.onDown()
-	e.updateNeeded()
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onSwapLinesUp() {
@@ -1916,6 +1963,7 @@ func (e *Editor) onSwapLinesUp() {
 	ops = append(ops, Operation{MoveCursor, ' ', r, c})
 
 	line1 := content[r]; line2 := content[r-1]
+	line1c := colors[r]; line2c := colors[r-1]
 
 	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], r, i}) }
 	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], r-1, i}) }
@@ -1923,11 +1971,14 @@ func (e *Editor) onSwapLinesUp() {
 	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, r, i}) }
 
 	content[r] = line2; content[r-1] = line1 // swap
+	colors[r] = line2c; colors[r-1] = line1c // swap colors
 	r--
 
 	e.undo = append(e.undo, ops)
 	cleanSelection()
-	e.updateNeeded()
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onSwapLinesDown() {
@@ -1938,8 +1989,8 @@ func (e *Editor) onSwapLinesDown() {
 	var ops = EditOperation{}
 	ops = append(ops, Operation{MoveCursor, ' ', r, c})
 
-	line1 := content[r]
-	line2 := content[r+1]
+	line1 := content[r]; line2 := content[r+1]
+	line1c := colors[r]; line2c := colors[r+1]
 
 	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], r, i}) }
 	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], r+1, i}) }
@@ -1947,11 +1998,14 @@ func (e *Editor) onSwapLinesDown() {
 	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, r, i}) }
 
 	content[r] = line2; content[r+1] = line1 // swap
+	colors[r] = line2c; colors[r+1] = line1c // swap
 	r++
 
 	e.undo = append(e.undo, ops)
 	cleanSelection()
-	e.updateNeeded()
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 
 
@@ -1987,9 +2041,16 @@ func (e *Editor) handleSmartMoveDown() {
 		c++
 	}
 
+	if colorize && lang != "" {
+		colors = insert(colors, r, []int{})
+		e.updateColorsAtLine(r)
+	}
+
 	e.focus(); e.onScrollDown()
 	e.undo = append(e.undo, ops)
-	e.updateNeeded()
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 func (e *Editor) handleSmartMoveUp() {
 	e.focus()
@@ -2011,8 +2072,15 @@ func (e *Editor) handleSmartMoveUp() {
 		c++
 	}
 
+	if colorize && lang != "" {
+		colors = insert(colors, r, []int{})
+		e.updateColorsAtLine(r)
+	}
+
 	e.undo = append(e.undo, ops)
-	e.updateNeeded()
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onUndo() {
