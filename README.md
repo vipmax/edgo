@@ -11,6 +11,7 @@ Key bindings and features:
 - `Control + c` - copy 
 - `Control + v` - paste
 - `Control + u` - undo
+- `Control + f` - find
 - `Control + t` - files selection tree
 - `Option + /` - comment line
 

@@ -11,7 +11,7 @@ import (
 )
 
 type Highlighter struct {
-	logger Logger
+
 }
 
 //var theme = IdeaLight	.чфьц er
@@ -51,7 +51,6 @@ func (h *Highlighter) setTheme(name string) {
 }
 
 func (h *Highlighter) colorize(code string, filename string) [][]int {
-	h.logger.info("colorize start")
 	start := time.Now()
 
 	// get lexer depending on filename
@@ -61,7 +60,7 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 	// get iterator for tokenizing the code
 	iterator, err := lexer.Tokenise(nil, code)
 	if err != nil {
-		h.logger.info("tokenization error: " + err.Error())
+		logger.info("tokenization error: " + err.Error())
 		os.Exit(1)
 	}
 
@@ -80,6 +79,6 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 		textColors = append(textColors, lineColors)
 	}
 
-	h.logger.info("colorize end, elapsed: " + time.Since(start).String())
+	logger.info("colorize end, elapsed: " + time.Since(start).String())
 	return textColors
 }

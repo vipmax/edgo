@@ -30,10 +30,9 @@ var isFileChanged = false // shows * if file is not saved
 var colorize = true       // colorize text is true by default
 var colors [][]int        // characters colors
 var lang = ""             // current file language
-var update = true
+var update = true     
 var isOverlay = false
 var s Screen
-
 var filesPanelWidth = 0
 var files = []string{}
 var isFileSelection = false
@@ -43,7 +42,6 @@ var fileSelected = -1;
 type Editor struct {
 	undo      []EditOperation
 	redoStack []EditOperation
-	logger Logger
 	config Config
 	langConf Lang
 	tabWidth int
@@ -51,7 +49,7 @@ type Editor struct {
 
 
 func (e *Editor) start() {
-	e.logger.info("starting edgo")
+	logger.info("starting edgo")
 
 	s = e.initScreen()
 
@@ -97,10 +95,10 @@ func (e *Editor) openFile(fname string) error {
 	filename = filepath.Base(fname)
 	absoluteFilePath = path.Join(directory, filename)
 
-	e.logger.info("open", directory, filename)
+	logger.info("open", directory, filename)
 
 	newLang := detectLang(filename)
-	e.logger.info("new lang is", lang)
+	logger.info("new lang is", newLang)
 
 	if newLang != "" {
 		if newLang != lang {
@@ -384,8 +382,8 @@ func (e *Editor) handleEvents() {
 		key := ev.Key()
 		modifiers := ev.Modifiers()
 
-		//e.logger.info("event", strconv.Itoa(int(modifiers&ModAlt)), strconv.Itoa(int(key)), string(ev.Rune()))
-		//e.logger.logint(int(ev.Rune()))
+		//logger.info("event", strconv.Itoa(int(modifiers&ModAlt)), strconv.Itoa(int(key)), string(ev.Rune()))
+		//logger.logint(int(ev.Rune()))
 
 		if (ev.Rune() == '/'  &&  modifiers & ModAlt != 0 || int(ev.Rune()) == '÷') {
 			// '÷' on Mac is option + '/'
@@ -439,13 +437,13 @@ func (e *Editor) handleEvents() {
 		//if ev.Modifiers()&tcell.ModAlt != 0 && key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
 		//	e.cut(); return
 		//}
-		if key == KeyBackspace || key == KeyBackspace2 { e.onDelete(); s.Clear() }
+		if key == KeyBackspace || key == KeyBackspace2 { e.onDelete() }
 		if key == KeyDown { e.onDown(); cleanSelection() }
 		if key == KeyUp { e.onUp(); cleanSelection() }
 		if key == KeyLeft { e.onLeft(); cleanSelection() }
 		if key == KeyRight { e.onRight(); cleanSelection() }
 		if key == KeyCtrlT { e.onFiles() }
-		if key == KeyCtrlF { } // TODO: find
+		if key == KeyCtrlF { e.onSearch() } // TODO: find
 		if key == KeyCtrlU { e.onUndo() }
 		//if key == tcell.KeyCtrlR { e.redo() } // todo: fix it
 		if key == KeyCtrlSpace { e.onCompletion(); s.Clear() }
@@ -513,7 +511,7 @@ func (e *Editor) init_lsp(lang string) {
 	//
 	//lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	//if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	//e.logger.info("lsp status", lspStatus)
+	//logger.info("lsp status", lspStatus)
 	//status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus,  lang, r+1, c+1, inputFile)
 	//e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 	//s.Show()
@@ -532,7 +530,7 @@ func markOverlayFalse() {
 }
 
 func (e *Editor) onCompletion() {
-	if !lsp.langIsReady(lang) { return }
+	if !lsp.IsLangReady(lang) { return }
     isOverlay = true
 	defer markOverlayFalse()
 
@@ -593,7 +591,7 @@ func (e *Editor) onCompletion() {
 }
 
 func (e *Editor) onHover() {
-	if !lsp.langIsReady(lang) { return }
+	if !lsp.IsLangReady(lang) { return }
 
 	isOverlay = true
 	defer markOverlayFalse()
@@ -648,7 +646,7 @@ func (e *Editor) onHover() {
 }
 
 func (e *Editor) onSignatureHelp() {
-	if !lsp.langIsReady(lang) { return }
+	if !lsp.IsLangReady(lang) { return }
 
 	isOverlay = true
 	defer markOverlayFalse()
@@ -713,7 +711,7 @@ func (e *Editor) onSignatureHelp() {
 }
 
 func (e *Editor) onReferences() {
-	if !lsp.langIsReady(lang) { return }
+	if !lsp.IsLangReady(lang) { return }
 
 	isOverlay = true
 	defer markOverlayFalse()
@@ -929,7 +927,7 @@ func (e *Editor) onDefinition() {
 }
 
 func (e *Editor) onErrors() {
-	if !lsp.langIsReady(lang) { return }
+	if !lsp.IsLangReady(lang) { return }
 
 	maybeDiagnostics, found := lsp.file2diagnostic["file://" + absoluteFilePath]
 
@@ -1054,6 +1052,113 @@ func (e *Editor) onErrors() {
 		}
 	}
 
+}
+
+func (e *Editor) onSearch() {
+	var end = false
+	var pattern = []rune{}
+	var patternx = 0
+	var startline = 0
+	var isChanged = false
+	var isDownSearch = true
+	var prefix = []rune("search:")
+
+	// loop until escape or enter pressed
+	for !end {
+
+		e.drawSearch(prefix, pattern, patternx)
+		s.Show()
+
+		if isChanged {
+			var sy, sx = -1, -1
+			if isDownSearch {
+				sy, sx = searchDown(content, string(pattern), startline)
+			} else {
+				sy, sx = searchUp(content, string(pattern), startline)
+			}
+
+
+			if sx != -1 && sy != -1 {
+				r = sy; c = sx; e.focus()
+				startline = sy;
+				ssx = sx; ssy = sy; sex = sx + len(pattern); sey = sy; isSelected = true
+				e.drawEverything()
+				e.drawSearch(prefix, pattern, patternx)
+				s.ShowCursor(len(prefix)+ patternx+LS+filesPanelWidth, ROWS-1)
+				s.Show()
+			}else {
+				cleanSelection()
+				if isDownSearch { startline = 0 } else  { startline = len(content)}
+				e.drawEverything()
+				e.drawSearch(prefix, pattern, patternx)
+				s.ShowCursor(len(prefix)+ patternx+LS+filesPanelWidth, ROWS-1)
+				s.Show()
+			}
+		}
+
+
+
+		switch ev := s.PollEvent().(type) { // poll and handle event
+		case *EventResize:
+			COLUMNS, ROWS = s.Size()
+
+		case *EventKey:
+			isChanged = false
+			key := ev.Key()
+
+			if key == KeyRune {
+				pattern = insert(pattern, patternx, ev.Rune())
+				patternx++
+				isChanged = true
+			}
+			if key == KeyBackspace2 && patternx > 0 && len(pattern) > 0 {
+				patternx--
+				pattern = remove(pattern, patternx)
+				isChanged = true
+			}
+			if key == KeyLeft && patternx > 0 { patternx-- }
+			if key == KeyRight && patternx < len(pattern) { patternx++ }
+			if key == KeyDown  {
+				isDownSearch = true
+				if startline < len(content) {
+					startline++
+					isChanged = true
+				} else {
+					startline = 0
+					isChanged = true
+				}
+			}
+			if key == KeyUp {
+				isDownSearch = false
+				isChanged = true
+				if startline == 0 { startline = len(content) } else { startline-- }
+			}
+			if key == KeyESC || key == KeyEnter || key == KeyCtrlF { end = true }
+		}
+	}
+}
+
+func (e *Editor) drawSearch(prefix []rune, pattern []rune, patternx int) {
+	for i := 0; i < len(prefix); i++ {
+		s.SetContent(i+LS+filesPanelWidth, ROWS-1, prefix[i], nil, StyleDefault)
+		//s.Show()
+	}
+
+	s.SetContent(len(prefix)+LS+filesPanelWidth, ROWS-1, ' ', nil, StyleDefault)
+	//s.Show()
+
+	for i := 0; i < len(pattern); i++ {
+		s.SetContent(len(prefix)+ i + LS + filesPanelWidth, ROWS-1, pattern[i], nil, StyleDefault)
+		//s.Show()
+	}
+
+	s.ShowCursor(len(prefix)+patternx+LS+filesPanelWidth, ROWS-1)
+	//s.Show()
+
+	for i := len(prefix) + len(pattern) + LS + filesPanelWidth; i < COLUMNS; i++ {
+		s.SetContent(i, ROWS-1, ' ', nil, StyleDefault)
+		//s.Show()
+	}
 }
 
 func (e *Editor) onFiles() {
@@ -1256,7 +1361,11 @@ func (e *Editor) addChar(ch rune) {
 	e.maybeAddPair(ch)
 
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	e.updateNeeded()
+
+	update = true
+	isFileChanged = true
+	if len(content) <= 10000 { go e.writeFile() }
+	e.updateColorsLine()
 }
 
 func (e *Editor) focus() {
@@ -1439,7 +1548,7 @@ func (e *Editor) onEnter() {
 	e.undo = append(e.undo, ops)
 	e.focus(); if r - y ==  ROWS { e.onScrollDown() }
 	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	e.updateNeeded()
+	e.updateColorsFull()  // todo if file is big, full colors update is slow, optimize it
 }
 
 
@@ -1470,7 +1579,7 @@ func (e *Editor) writeFile() {
 
 	isFileChanged = false
 
-	if lang != "" && lsp.langIsReady(lang) {
+	if lang != "" && lsp.IsLangReady(lang) {
 		go lsp.didOpen(absoluteFilePath, lang) // todo remove it in future
 		//go lsp.didChange(absoluteFilePath)
 		//go lsp.didSave(absoluteFilePath)
@@ -1480,8 +1589,8 @@ func (e *Editor) writeFile() {
 
 func (e *Editor) buildContent(filename string, limit int) string {
 	//start := time.Now()
-	//e.logger.info("read file start", filename, string(limit))
-	//defer e.logger.info("read file end",   filename, string(limit), "elapsed", time.Since(start).String())
+	//logger.info("read file start", filename, string(limit))
+	//defer logger.info("read file end",   filename, string(limit), "elapsed", time.Since(start).String())
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -1525,6 +1634,22 @@ func (e *Editor) updateColors() {
 		colors = highlighter.colorize(code, filename)
 	}
 }
+func (e *Editor) updateColorsFull() {
+	if !colorize { return }
+	if lang == "" { return }
+
+	code := convertToString(content)
+	colors = highlighter.colorize(code, filename)
+}
+
+func (e *Editor) updateColorsLine() {
+	if !colorize { return }
+	if lang == "" { return }
+	line := string(content[r])
+	linecolors := highlighter.colorize(line, filename)
+	colors[r] = linecolors[0]
+}
+
 func (e *Editor) updateNeeded() {
 	update = true
 	isFileChanged = true

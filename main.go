@@ -10,10 +10,6 @@ func main() {
 	config := GetConfig()
 	logger.start()
 
-	editor.logger = logger
-	highlighter.logger = logger
-	lsp.logger = logger
-
 	editor.config = config
 	highlighter.setTheme(config.Theme)
 
