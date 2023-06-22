@@ -56,7 +56,9 @@ func (e *Editor) start() {
 	s = e.initScreen()
 
 	// reading file from cmd args
-	if len(os.Args) > 1 {
+	if len(os.Args) == 0 {
+		e.onFiles()
+	} else {
 		filename = os.Args[1]
 		inputFile = filename
 		err := e.openFile(filename)
@@ -64,16 +66,7 @@ func (e *Editor) start() {
 			fmt.Println(err)
 			os.Exit(130)
 		}
-
-		// initialize lsp async
-		if inputFile != "" && lang != "" {
-			go e.init_lsp(lang)
-		}
-	} else {
-		e.onFiles()
 	}
-
-
 
 	// main draw cycle
 	for {
