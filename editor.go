@@ -56,7 +56,7 @@ func (e *Editor) start() {
 	s = e.initScreen()
 
 	// reading file from cmd args
-	if len(os.Args) == 0 {
+	if len(os.Args) == 1 {
 		e.onFiles()
 	} else {
 		filename = os.Args[1]
