@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -245,12 +246,19 @@ func getFirstLines(s string, lineNum int) (string, error) {
 	return builder.String(), nil
 }
 
-
-func isIgnored(dir string, ignoreDirs []string) bool {
-	for _, ignore := range ignoreDirs {
-		if dir == ignore {
-			return true
-		}
+//func isIgnored(dir string, ignoreDirs []string) bool {
+//	for _, ignore := range ignoreDirs {
+//		if dir == ignore {
+//			return true
+//		}
+//	}
+//	return false
+//}
+func isIgnored(path string, ignorePatterns []string) bool {
+	for _, pattern := range ignorePatterns {
+		match, err := filepath.Match(pattern, filepath.Base(path))
+		if err != nil { log.Println("Invalid pattern:", pattern); continue }
+		if match { return true }
 	}
 	return false
 }
@@ -267,7 +275,10 @@ func getFiles(path string, ignoreDirs []string) ([]string, error) {
 				return filepath.SkipDir
 			}
 		} else {
-			files = append(files, path)
+			if !isIgnored(path, ignoreDirs) {
+				files = append(files, path)
+			}
+
 		}
 		return nil
 	})

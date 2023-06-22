@@ -391,6 +391,8 @@ func (e *Editor) handleEvents() {
 		if key == KeyCtrlE { e.onErrors(); return }
 		if key == KeyCtrlC { e.onCopy(); return }
 		if key == KeyCtrlV { e.paste(); return }
+		if key == KeyEscape{ cleanSelection(); return }
+		if key == KeyCtrlA { e.onSelectAll(); return }
 		if key == KeyCtrlX { e.cut(); s.Clear() }
 		if key == KeyCtrlD { e.duplicate() }
 
@@ -1160,7 +1162,10 @@ func (e *Editor) onFiles() {
 
 
 	if filesPanelWidth == 0 {
-		ignoreDirs := []string{".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build"}
+		ignoreDirs := []string{
+			".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
+			".DS_Store",
+		}
 
 		filesTree, err := getFiles("./", ignoreDirs)
 		if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
@@ -1738,6 +1743,16 @@ func (e *Editor) onBackTab() {
 func (e *Editor) onCopy() {
 	selectionString := getSelectionString(content, ssx, ssy, sex, sey)
 	clipboard.WriteAll(selectionString)
+}
+
+func (e *Editor) onSelectAll() {
+	if len(content) == 0 { return }
+	ssx = 0; ssy = 0
+	sey = len(content)
+	lastElement := len(content[len(content)-1])
+	sex = lastElement
+	sey = len(content)
+	isSelected = true
 }
 
 func (e *Editor) paste() {
