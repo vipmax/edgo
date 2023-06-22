@@ -10,7 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strings"
+	"strings" 
 	"time"
 )
 
@@ -1538,7 +1538,7 @@ func (e *Editor) onDelete() {
 		l := content[r][c:]
 		content = remove(content, r)
 		if colorize && lang != "" {
-			colors = remove(colors, r)
+			if r < len(colors) { colors = remove(colors, r) }
 			e.updateColorsAtLine(r)
 		}
 
