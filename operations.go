@@ -18,3 +18,9 @@ type Operation struct {
 }
 
 type EditOperation []Operation
+
+type FileInfo struct {
+	filename string
+	fullfilename string
+	openCount int
+}

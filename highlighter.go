@@ -14,8 +14,8 @@ type Highlighter struct {
 
 }
 
-//var theme = IdeaLight	.чфьц er
-//var theme = E}
+//var theme = IdeaLight	
+//var theme = Edgo
 
 //var theme = IdeaLight
 //var theme = EdgoLight

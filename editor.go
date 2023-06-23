@@ -10,7 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strings" 
+	"strings"
 	"time"
 )
 
@@ -34,12 +34,16 @@ var update = true
 var isOverlay = false
 var s Screen
 var filesPanelWidth = 0
-var files = []string{}
+var files = []FileInfo{}
 var isFileSelection = false
 var fileScrollingOffset = 0
 var fileSelected = -1
 var searchPattern = []rune{}
 
+var filesInfo = []FileInfo{}
+var isFilesSearch = false
+
+var tabsPanelHeight = 2
 
 type Editor struct {
 	undo      []EditOperation
@@ -110,11 +114,54 @@ func (e *Editor) openFile(fname string) error {
 	e.undo = []EditOperation{}
 	e.redoStack = []EditOperation{}
 
-	r = 0; c = 0
-	y = 0; x = 0
+	e.updateFilesOpenStats(fname)
+
+	r = 0; c = 0; y = 0; x = 0
 	cleanSelection()
 
 	return nil
+}
+
+func (e *Editor) updateFilesOpenStats(file string) {
+	if files == nil || len(files) == 0 { return }
+
+	for i := 0; i < len(files); i++ {
+		ti := files[i]
+		if file == ti.fullfilename {
+			ti.openCount += 1
+			files[i] = ti
+			break
+		}
+	}
+
+	sort.SliceStable(files, func(i, j int) bool {
+		return files[i].openCount > files[j].openCount
+	})
+}
+
+func (e *Editor) addTab() {
+	if filesInfo == nil || len(filesInfo) == 0 {
+		filesInfo = append(filesInfo, FileInfo{filename, absoluteFilePath, 1})
+	} else {
+		var tabExists = false
+
+		for i := 0; i < len(filesInfo); i++ {
+			ti := filesInfo[i]
+			if absoluteFilePath == ti.fullfilename {
+				ti.openCount += 1
+				filesInfo[i] = ti
+				tabExists = true
+			}
+		}
+
+		if !tabExists {
+			filesInfo = append(filesInfo, FileInfo{filename, absoluteFilePath, 1})
+		}
+
+		sort.SliceStable(filesInfo, func(i, j int) bool {
+			return filesInfo[i].openCount < filesInfo[j].openCount
+		})
+	}
 }
 
 func (e *Editor) initScreen() Screen {
@@ -129,6 +176,7 @@ func (e *Editor) initScreen() Screen {
 	screen.Clear()
 
 	COLUMNS, ROWS = screen.Size()
+	//ROWS -= 1
 
 	return screen
 }
@@ -137,8 +185,8 @@ func (e *Editor) drawEverything() {
 	if len(content) == 0 { return }
 	s.Clear()
 
-	if filesPanelWidth != 0 { e.drawFiles() }
-	
+	if filesPanelWidth != 0 { e.drawFiles("", files, 0) }
+
 	
 	//tabs := countTabsTo(content[r], c)
 	//correction := tabs*(e.tabWidth)
@@ -147,7 +195,7 @@ func (e *Editor) drawEverything() {
 	if c + LS + filesPanelWidth >= x + COLUMNS  { x = c - COLUMNS + 1 + LS + filesPanelWidth }
 
 	// draw line number and chars according to scrolling offsets
-	for row := 0; row <= ROWS; row++ {
+	for row := 0; row < ROWS; row++ {
 		ry := row + y  // index to get right row in characters buffer by scrolling offset y
 		//e.cleanLineAfter(0, row)
 		if row >= len(content) || ry >= len(content) { break }
@@ -172,16 +220,17 @@ func (e *Editor) drawEverything() {
 					if i != e.tabWidth-1 { tabsOffset++ }
 				}
 			} else {
-				s.SetContent(col + LS + tabsOffset + filesPanelWidth, row, ch, nil, style)
+				s.SetContent(col + LS + tabsOffset + filesPanelWidth, row , ch, nil, style)
 			}
 		}
 	}
 
 	e.drawDiagnostic()
+	//e.drawTabs()
 
 	var changes = ""; if isFileChanged { changes = "*" }
 	status := fmt.Sprintf(" %s %d %d %s%s ", lang, r+1, c+1, filename, changes)
-	e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
+	e.drawStatus(status)
 
 	// if tab under cursor, hide cursor because it has already drawn
 	if r < len(content) && c < len(content[r]) && content[r][c] == '\t' {
@@ -260,14 +309,17 @@ func (e *Editor) drawLineNumber(brw int, row int) {
 	}
 }
 
-func (e *Editor) drawText(x1, y1, x2, y2 int, text string) {
-	row := y1; col := x1
+func (e *Editor) drawStatus(text string) {
 	var style = StyleDefault
+	e.drawText(ROWS-1, COLUMNS - len(text), text, style)
+}
+
+func (e *Editor) drawText(row, col int, text string, style Style) {
+	s.SetContent(col-1, row, ' ', nil, style)
 	for _, ch := range []rune(text) {
+		if col > COLUMNS { break }
 		s.SetContent(col, row, ch, nil, style)
 		col++
-		if col >= x2 { row++; col = x1 }
-		if row > y2 { break }
 	}
 }
 
@@ -368,15 +420,18 @@ func (e *Editor) handleEvents() {
 
 	case *EventResize:
 		COLUMNS, ROWS = s.Size()
+		//ROWS -= 1
 
 	case *EventKey:
 		key := ev.Key()
 		modifiers := ev.Modifiers()
 
+		if filename == "" && key != KeyCtrlQ  { return }
+
 		//logger.info("event", strconv.Itoa(int(modifiers&ModAlt)), strconv.Itoa(int(key)), string(ev.Rune()))
 		//logger.logint(int(ev.Rune()))
 
-		if (ev.Rune() == '/'  &&  modifiers & ModAlt != 0 || int(ev.Rune()) == '÷') {
+		if ev.Rune() == '/'  &&  modifiers & ModAlt != 0 || int(ev.Rune()) == '÷' {
 			// '÷' on Mac is option + '/'
 			e.onCommentLine(); return
 		}
@@ -538,7 +593,7 @@ func (e *Editor) onCompletion() {
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
 		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
-		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
+		e.drawStatus(status)
 
 		options := e.buildCompletionOptions(completion)
 		if err != nil || len(options) == 0 { return }
@@ -600,7 +655,7 @@ func (e *Editor) onHover() {
 
 		lspStatus := "lsp hover, elapsed " + elapsed.String()
 		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
-		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
+		e.drawStatus(status)
 
 		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
 		options := strings.Split(hover.Result.Contents.Value, "\n")
@@ -655,7 +710,7 @@ func (e *Editor) onSignatureHelp() {
 
 		lspStatus := "lsp signature help, elapsed " + elapsed.String()
 		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
-		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
+		e.drawStatus(status)
 
 		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
 			len(signatureHelpResponse.Result.Signatures) == 0 { return }
@@ -719,7 +774,7 @@ func (e *Editor) onReferences() {
 
 		lspStatus := "lsp references, elapsed " + elapsed.String()
 		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
-		e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
+		e.drawStatus(status)
 
 		if err != nil || len(referencesResponse.Result) == 0 { return }
 
@@ -1004,6 +1059,7 @@ func (e *Editor) onErrors() {
 			switch ev := s.PollEvent().(type) { // poll and handle event
 			case *EventResize:
 				COLUMNS, ROWS = s.Size()
+				//ROWS -= 1
 				s.Sync()
 				s.Clear(); e.drawEverything(); s.Show()
 
@@ -1097,6 +1153,7 @@ func (e *Editor) onSearch() {
 		switch ev := s.PollEvent().(type) { // poll and handle event
 		case *EventResize:
 			COLUMNS, ROWS = s.Size()
+			//ROWS -= 1
 
 		case *EventKey:
 			isChanged = false
@@ -1157,30 +1214,61 @@ func (e *Editor) drawSearch(prefix []rune, pattern []rune, patternx int) {
 	}
 }
 
+
+func (e *Editor) readUpdateFiles() {
+	ignoreDirs := []string{
+		".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
+		".DS_Store",
+	}
+
+	filesTree, err := getFiles("./", ignoreDirs)
+	if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
+
+	if filesTree != nil {
+		if files == nil && len(files) == 0 {
+			files = make([]FileInfo, len(filesTree))
+			for i, f := range filesTree {
+				abs, _ := filepath.Abs(f)
+				files[i] = FileInfo{f, abs, 0}
+			}
+		} else {
+			originalFiles := make([]string, len(files))
+			for i, f := range files {
+				originalFiles[i] = f.filename
+			}
+			newFiles, deletedFiles := findNewAndDeletedFiles(originalFiles, filesTree)
+			for _, f := range newFiles {
+				abs, _ := filepath.Abs(f)
+				files = append(files, FileInfo{f, abs, 0})
+			}
+
+			// Remove deleted files from originalFiles
+			for i := 0; i < len(files); i++ {
+				if contains(deletedFiles, files[i].filename) {
+					files = remove(files, i)
+					i-- // Adjust index after removal
+				}
+			}
+		}
+	}
+}
+
+
 func (e *Editor) onFiles() {
 	isFileSelection = true
 
-
 	if filesPanelWidth == 0 {
-		ignoreDirs := []string{
-			".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
-			".DS_Store",
-		}
-
-		filesTree, err := getFiles("./", ignoreDirs)
-		if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
-		files = filesTree
+		e.readUpdateFiles()
 		if len(files) == 0 { return }
-
 		filesPanelWidth = 28
-		//filesPanelWidth = maxString(files)
-		//filesPanelWidth = min(filesPanelWidth, 40)
-
 	}
 
 	if filename != "" { e.drawEverything() }
 
 	var end = false
+	var filterPattern = []rune{}
+	var patternx = 0
+	var isChanged = true
 
 	// loop until escape or enter pressed
 	for !end {
@@ -1196,9 +1284,30 @@ func (e *Editor) onFiles() {
 				fileScrollingOffset = fileSelected - ROWS + 1
 			}
 
+			filteredFiles := files
+			if isFilesSearch && len(filterPattern) > 0 {
+				pattern := string(filterPattern)
+				filteredFiles = []FileInfo{}
 
-			e.drawFiles()
+				for _, f := range files {
+					var foundMatch = false
+					foundMatch = strings.HasPrefix(f.filename, pattern)
+					if foundMatch { filteredFiles = append(filteredFiles, f) } else {
+						matches, err := filepath.Match(pattern, f.filename)
+						if err != nil { continue }
+						if matches { filteredFiles = append(filteredFiles, f) }
+					}
+				}
+				//if len(filteredFiles) > 0 { fileSelected = 0 }
 
+				if isChanged { e.drawFiles(string(filterPattern), filteredFiles, patternx) }
+			} else {
+				if isChanged { e.drawFiles(string(filterPattern), files, patternx) }
+			}
+
+
+			//e.drawFiles(string(searchPattern))
+			//e.drawTabs()
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
@@ -1208,7 +1317,7 @@ func (e *Editor) onFiles() {
 				modifiers := ev.Modifiers()
 
 				if mx > filesPanelWidth {
-					selectionEnd = true; end = true
+					selectionEnd = true; end = true; isFilesSearch = false;
 				} else {
 					if buttons & WheelDown != 0  && modifiers & ModCtrl != 0 && filesPanelWidth < COLUMNS  {
 						filesPanelWidth++
@@ -1221,8 +1330,8 @@ func (e *Editor) onFiles() {
 						continue
 					}
 
-					if buttons & WheelDown != 0 &&  len(files) > ROWS {
-						if len(files) > ROWS  && fileScrollingOffset <  len(files) - ROWS {
+					if buttons & WheelDown != 0 &&  len(filteredFiles) > ROWS {
+						if len(filteredFiles) > ROWS  && fileScrollingOffset <  len(filteredFiles) - ROWS {
 							fileScrollingOffset++
 						}
 					}
@@ -1230,15 +1339,17 @@ func (e *Editor) onFiles() {
 						fileScrollingOffset--
 					}
 
-					if my < len(files) { fileSelected = my + fileScrollingOffset }
+					if my < len(filteredFiles) { fileSelected = my + fileScrollingOffset }
 					if buttons & Button1 == 1 {
+						e.readUpdateFiles()
 						fileSelected = my + fileScrollingOffset
 						if fileSelected < 0  { continue }
-						if fileSelected >= len(files) { continue }
+						if fileSelected >= len(filteredFiles) { continue }
 						selectionEnd = true; end = true
-						selectedFile := files[fileSelected]
-						inputFile = selectedFile
-						e.openFile(selectedFile)
+						selectedFile := filteredFiles[fileSelected]
+						inputFile = selectedFile.fullfilename
+						e.openFile(inputFile)
+						isFilesSearch = false
 					}
 				}
 
@@ -1249,35 +1360,52 @@ func (e *Editor) onFiles() {
 			case *EventKey:
 				key := ev.Key()
 
-
-				if key == KeyEscape {
+				if key == KeyCtrlF{
+					isFilesSearch = !isFilesSearch
+				}
+				if key == KeyEscape && !isFilesSearch{
 					selectionEnd = true; end = true
 					filesPanelWidth = 0
 				}
+				if key == KeyEscape  && isFilesSearch {  isFilesSearch = false}
+
 				if key == KeyDown {
-					fileSelected = min(len(files)-1, fileSelected+1)
+					fileSelected = min(len(filteredFiles)-1, fileSelected+1)
 				}
 				if key == KeyUp { fileSelected = max(0, fileSelected-1) }
 
-				//if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyRight  {
+				if key == KeyRune {
+					filterPattern = insert(filterPattern, patternx, ev.Rune())
+					patternx++
+					isChanged = true
+					fileSelected = 0
+				}
+				if key == KeyBackspace2 && patternx > 0 && len(filterPattern) > 0 {
+					patternx--
+					filterPattern = remove(filterPattern, patternx)
+					isChanged = true
+				}
+				if key == KeyLeft && isFilesSearch && patternx > 0 {patternx--; isChanged = true }
+				if key == KeyRight && isFilesSearch && patternx < len(filterPattern) { patternx++; isChanged = true }
+				if key == KeyRight && !isFilesSearch  {
 					filesPanelWidth++
 					if filename != "" { e.drawEverything(); s.Show() }
 				}
-				if key == KeyLeft && filesPanelWidth > 0  {
+				if key == KeyLeft && !isFilesSearch  && filesPanelWidth > 0  {
 					filesPanelWidth--
 					if filename != "" { e.drawEverything(); s.Show() }
 				}
-				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
 				if key == KeyCtrlT {
 					selectionEnd = true; end = true
+					isFilesSearch = false
 					filesPanelWidth = 0
 				}
-				if key == KeyEnter {
+				if key == KeyEnter && fileSelected < len(filteredFiles) {
 					selectionEnd = true; end = true
-					selectedFile := files[fileSelected]
-					inputFile = selectedFile
-					e.openFile(selectedFile)
+					isFilesSearch = false
+					selectedFile := filteredFiles[fileSelected]
+					inputFile = selectedFile.fullfilename
+					e.openFile(inputFile)
 				}
 			}
 		}
@@ -1287,14 +1415,21 @@ func (e *Editor) onFiles() {
 }
 
 
-func (e *Editor) drawFiles() {
+func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
+
+	for row := 0; row < ROWS; row++ {
+		for col := 0; col < filesPanelWidth + 1; col++ { // clean
+			s.SetContent(col, row, ' ', nil, StyleDefault)
+		}
+	}
+
+	var offsety = 0
+
 	for fileIndex := 0; fileIndex < len(files); fileIndex++ {
 
 		style := StyleDefault
-		for col := 0; col < filesPanelWidth + 1; col++ { // clean
-			s.SetContent(col, fileIndex, ' ', nil, style)
-		}
-		s.SetContent(filesPanelWidth-1, fileIndex, '│', nil, style)
+
+		s.SetContent(filesPanelWidth-1, offsety, '│', nil, style)
 
 		if fileIndex >= len(files) || fileIndex >= ROWS { break }
 		if fileIndex + max(fileScrollingOffset,0) >= len(files) { break }
@@ -1303,31 +1438,75 @@ func (e *Editor) drawFiles() {
 
 		isSelectedFile := isFileSelection && fileSelected != -1 && fileIndex+fileScrollingOffset == fileSelected
 		if isSelectedFile {
-			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
+			style = style.Foreground(Color(AccentColor))
 		}
-		if inputFile != "" && inputFile == file {
+		if inputFile != "" && inputFile == file.fullfilename {
 			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
 		}
 
-		for j, ch := range file {
+		for j, ch := range file.filename {
 			if j+1 > filesPanelWidth-3 { break }
-			s.SetContent(j + 1, fileIndex, ch, nil, style)
+			s.SetContent(j + 1, offsety, ch, nil, style)
 		}
 
-		//if len(file)+2 < filesPanelWidth {
-		//	for col := len(file)+2; col < filesPanelWidth; col++ { // Fill the remaining space
-		//		s.SetContent(col, fileIndex, ' ', nil, style)
-		//	}
-		//}
+		offsety++
 	}
 
-	for row := 0; row < ROWS; row++ {
+	for row := 0; row <= ROWS; row++ {
 		if row >= len(files) {
 			for col := 0; col < filesPanelWidth + 1; col++ { // clean
 				s.SetContent(col, row, ' ', nil, StyleDefault)
 			}
 		}
 		s.SetContent(filesPanelWidth-1, row, '│', nil, StyleDefault.Foreground(Color(AccentColor)))
+	}
+
+	s.HideCursor()
+
+	if isFilesSearch {
+		pref := " search:"
+		s.ShowCursor(len(pref) + patternx, ROWS-1)
+		for i, ch := range pref { // draw prefix
+			s.SetContent(i, ROWS-1, ch, nil, StyleDefault)
+		}
+
+		for i, ch := range pattern { // draw pattern
+			s.SetContent(i+len(pref), ROWS-1, ch, nil, StyleDefault)
+		}
+		for col := len(pref) + len(pattern); col < filesPanelWidth - 1; col++ { // clean
+			s.SetContent(col, ROWS-1, ' ', nil, StyleDefault)
+			s.Show()
+		}
+	}
+
+}
+func (e *Editor) drawTabs() {
+	COLUMNS, ROWS = s.Size()
+
+	if len(filesInfo) == 0 { return }
+	if filesPanelWidth == 0 { return }
+	if filesPanelWidth == 0 { return }
+
+	ROWS -= 1
+	at := ROWS
+	fromx := 1
+	styleDefault := StyleDefault
+
+	for i := fromx; i < COLUMNS; i++ {
+		s.SetContent(0, at, ' ', nil, styleDefault)
+	}
+
+	xpos := 0
+	for _, info := range filesInfo {
+		if xpos > COLUMNS { break }
+		for _, ch := range info.filename {
+			s.SetContent(xpos + fromx, at, ch, nil, styleDefault)
+			xpos++
+		}
+
+		s.SetContent(xpos + fromx, at, ' ', nil, styleDefault)
+		xpos++
+		s.SetContent(xpos + fromx, at, ' ', nil, styleDefault)
 	}
 }
 
@@ -2185,3 +2364,4 @@ func (e *Editor) redo() {
 	e.undo = append(e.undo, lastRedoOperation)
 	e.updateNeeded()
 }
+
