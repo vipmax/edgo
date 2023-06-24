@@ -380,6 +380,52 @@ func (this *LspClient) completion(file string, line int, character int) (Complet
 	return completionResponse, err
 }
 
+func (this *LspClient) prepareRename(file string, line int, character int) (PrepareRenameResponse, error) {
+	this.id++
+	id := this.id
+
+	request := PrepareRenameRequest {
+		ID: id, Jsonrpc: "2.0", Method:  "textDocument/prepareRename",
+		Params: Params{
+			TextDocument: TextDocument { URI:  "file://" + file },
+			Position: Position { Line: line, Character: character },
+		},
+	}
+
+	this.send(request)
+
+	jsonData := this.waitForResponse(id,1000)
+	if jsonData == "" { logger.error("cant get rename response from lsp server") }
+
+	var response PrepareRenameResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	return response, err
+}
+func (this *LspClient) rename(file string, newname string, line int, character int) (RenameResponse, error) {
+	this.id++
+	id := this.id
+
+	request := RenameRequest{
+		ID: id,  Jsonrpc: "2.0", Method:  "textDocument/rename",
+		Params: RenameParams {
+			NewName: newname,
+			Position: Position { Line: line, Character: character },
+			TextDocument: TextDocument { URI:  "file://" + file },
+		},
+	}
+
+	this.send(request)
+
+	jsonData := this.waitForResponse(id,1000)
+	if jsonData == "" { logger.error("cant get rename response from lsp server") }
+
+	var response RenameResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	return response, err
+}
+
 func (this *LspClient) readStdout(language string) (map[string]interface{}, string) {
 	//start := time.Now()
 

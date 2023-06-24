@@ -361,3 +361,57 @@ type Span struct {
 	Start Position `json:"start"`
 	End   Position `json:"end"`
 }
+
+
+
+type PrepareRenameRequest struct {
+	ID int `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  Params `json:"params"`
+}
+
+
+type PrepareRenameResponse struct {
+	ID int `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Result  struct {
+		Range Range `json:"range"`
+		Placeholder string `json:"placeholder"`
+	} `json:"result"`
+}
+
+
+type RenameParams struct {
+	NewName string `json:"newName"`
+	Position Position `json:"position"`
+	TextDocument TextDocument `json:"textDocument"`
+}
+
+type RenameRequest struct {
+	ID int `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  RenameParams `json:"params"`
+}
+
+type RenameResponse struct {
+	Jsonrpc string `json:"jsonrpc"`
+	Result  Result `json:"result"`
+	ID      int    `json:"id"`
+}
+
+type Result struct {
+	DocumentChanges []DocumentChange `json:"documentChanges"`
+}
+
+type DocumentChange struct {
+	TextDocument TextDocument `json:"textDocument"`
+	Edits        []Edit        `json:"edits"`
+}
+
+
+type Edit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
+}

@@ -292,19 +292,17 @@ func goldenRatioPartition(totalSize int) (a int, b int) {
 	a = totalSize - b
 	return
 }
+
 func findNewAndDeletedFiles(originalFiles []string, newFiles []string) ([]string, []string) {
-	originalFilesMap := make(map[string]bool)
-	newFilesMap := make(map[string]bool)
+     
+	originalFilesMap := make(map[string]bool, len(originalFiles))
+	newFilesMap := make(map[string]bool, len(newFiles))
 
 	// Add original files to map
-	for _, file := range originalFiles {
-		originalFilesMap[file] = true
-	}
+	for _, file := range originalFiles { originalFilesMap[file] = true }
 
 	// Add new files to map
-	for _, file := range newFiles {
-		newFilesMap[file] = true
-	}
+	for _, file := range newFiles { newFilesMap[file] = true }
 
 	// Check for new files
 	var newlyCreated []string
