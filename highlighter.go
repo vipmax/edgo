@@ -54,7 +54,7 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 
 	start := time.Now()
 
-	// get lexer depending on filename
+	// get lexer depending on Filename
 	lexer := lexers.Match(filename)
 	if lexer == nil { lexer = lexers.Fallback }
 
