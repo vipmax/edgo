@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/atotto/clipboard"
 	. "github.com/gdamore/tcell"
@@ -12,49 +11,51 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 var content [][]rune      // characters
-var COLUMNS, ROWS = 0, 0  // term size
-var r, c = 0, 0           // cursor position, row and column
-var y, x = 0, 0           // offset for scrolling for row and column
-var LS = 6                // left shift for line number
-
-var ssx, ssy = -1, -1     // selection start x and y
-var sex, sey = -1, -1     // selection end x and y
-var isSelected = false    // true if selection is active 
-var inputFile = ""  	  // exact user input
-var filename = ""         // file name to show
-var directory = ""        // directory
-var absoluteFilePath = "" // file name and directory
-var isFileChanged = false // shows * if file is not saved
-var colorize = true       // colorize text is true by default
 var colors [][]int        // characters colors
-var lang = ""             // current file language
-var update = true     
-var isOverlay = false
-var s Screen
-var filesPanelWidth = 0
-var files = []FileInfo{}
-var isFileSelection = false
-var fileScrollingOffset = 0
-var fileSelected = -1
-var searchPattern = []rune{}
+var r = 0                 // cursor position, row and column
+var c = 0                 // cursor position, row and column
+var y = 0                 // row offset for scrolling
+var x = 0                 // column offset for scrolling
+var s Screen              // screen
 
-var filesInfo = []FileInfo{}
-var isFilesSearch = false
 
-var tabsPanelHeight = 2
-
-type Editor struct {
-	undo      []EditOperation
-	redoStack []EditOperation
+type Editor struct {	
+	COLUMNS int
+	ROWS int
+	LS int
+	
 	config Config
 	langConf Lang
 	tabWidth int
-}
+	selection Selection
+		
+	undo      []EditOperation
+	redoStack []EditOperation
+	
+	inputFile string 
+	filename string 
+	absoluteFilePath string
+	isContentChanged bool
+	isColorize bool
+	lang string
+	update bool
+	isOverlay bool
+	
+	filesPanelWidth int
+	files []FileInfo
+	isFileSelection bool
+	fileScrollingOffset int
+	fileSelected int
+	searchPattern []rune
 
+	filesInfo []FileInfo
+	isFilesSearch bool
+
+	isWindowMove bool
+}
 
 func (e *Editor) start() {
 	logger.info("starting edgo")
@@ -65,9 +66,9 @@ func (e *Editor) start() {
 	if len(os.Args) == 1 {
 		e.onFiles()
 	} else {
-		filename = os.Args[1]
-		inputFile = filename
-		err := e.openFile(filename)
+		e.filename = os.Args[1]
+		e.inputFile = e.filename
+		err := e.openFile(e.filename)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(130)
@@ -76,7 +77,7 @@ func (e *Editor) start() {
 
 	// main draw cycle
 	for {
-		if update && filename != "" {
+		if e.update && e.filename != "" {
 			e.drawEverything()
 			s.Show()
 		}
@@ -84,34 +85,219 @@ func (e *Editor) start() {
 	}
 }
 
+func (e *Editor) handleEvents() {
+	e.update = true
+	ev := s.PollEvent()      // Poll event
+	switch ev := ev.(type) { // Process event
+	case *EventResize:
+		e.COLUMNS, e.ROWS = s.Size()
+
+	case *EventMouse:
+		mx, my := ev.Position()
+		buttons := ev.Buttons()
+		modifiers := ev.Modifiers()
+
+		e.handleMouse(mx, my, buttons, modifiers)
+
+	case *EventKey:
+		key := ev.Key()
+		modifiers := ev.Modifiers()
+
+		e.handleKeyboard(key, ev, modifiers)
+	}
+}
+
+func (e *Editor) handleMouse(mx int, my int, buttons ButtonMask, modifiers ModMask) {
+	if !e.isWindowMove && buttons&Button1 == 1 &&
+		math.Abs(float64(e.filesPanelWidth-mx)) <= 2 &&
+		len(e.selection.getSelectedLines(content)) == 0 {
+
+		e.filesPanelWidth = mx - 1
+		e.isWindowMove = true
+		return
+	}
+
+	if e.isWindowMove && buttons&Button1 == 1 { e.filesPanelWidth = mx; return }
+	if e.isWindowMove && buttons&Button1 == 0 { e.isWindowMove = false; return }
+	if mx < e.filesPanelWidth - 2 && buttons&Button1 == 0 { e.onFiles(); return }
+
+	if e.filename == "" { return }
+
+	mx -= e.LS + e.filesPanelWidth
+
+	if mx < 0 { return }
+	if my > e.ROWS { return }
+
+	// if click with control or option, lookup for definition or references
+	if buttons&Button1 == 1 && (modifiers&ModAlt != 0 || modifiers&ModCtrl != 0) {
+		r = my + y
+		if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+
+		c = e.findCursorXPosition(mx)
+		if modifiers&ModAlt != 0 { e.onReferences() }
+		if modifiers&ModCtrl != 0 { e.onDefinition() }
+		return
+	}
+
+	if e.selection.isSelected && buttons&Button1 == 1 {
+		r = my + y
+		if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+
+		xPosition := e.findCursorXPosition(mx)
+
+		isTripleClick := e.selection.isUnderSelection(xPosition, r) &&
+			len(e.selection.getSelectedLines(content)) == 1
+
+		if isTripleClick {
+			r = my + y
+			c = xPosition
+			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+			if c > len(content[r]) { c = len(content[r]) }
+			//if c < 0 { sex = len(content[r]) }
+
+			e.selection.ssx = 0
+			e.selection.sex = len(content[r])
+			e.selection.ssy = r
+			e.selection.sey = r
+
+			return
+		} else {
+			e.selection.cleanSelection()
+		}
+	}
+
+	if buttons&WheelDown != 0 { e.onScrollDown(); return }
+	if buttons&WheelUp != 0 { e.onScrollUp(); return }
+	if buttons&Button1 == 0 && e.selection.ssx == -1 { e.update = false; return }
+
+	if buttons&Button1 == 1 {
+		r = my + y
+		if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+
+		xPosition := e.findCursorXPosition(mx)
+
+		if c == xPosition && len(e.selection.getSelectedLines(content)) == 0 {
+			// double click
+			prw := findPrevWord(content[r], c)
+			nxw := findNextWord(content[r], c)
+			e.selection.ssx, e.selection.ssy = prw, r
+			e.selection.sex, e.selection.sey = nxw, r
+			c = nxw
+			return
+		}
+		c = xPosition
+		if c < 0 { c = 0 }
+		if e.selection.ssx < 0 { e.selection.ssx, e.selection.ssy = c, r }
+		if e.selection.ssx >= 0 { e.selection.sex, e.selection.sey = c, r }
+	}
+
+	if buttons&Button1 == 0 {
+		if e.selection.ssx != -1 && e.selection.sex != -1 {
+			e.selection.isSelected = true
+		}
+	}
+	return
+}
+func (e *Editor) handleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
+	if e.filename == "" && key != KeyCtrlQ { return }
+
+	if ev.Rune() == '/' && modifiers&ModAlt != 0 || int(ev.Rune()) == '÷' {
+		// '÷' on Mac is option + '/'
+		e.onCommentLine(); return
+	}
+	if key == KeyUp && modifiers == 3 { e.onSwapLinesUp(); return } // control + shift + up
+	if key == KeyDown && modifiers == 3 { e.onSwapLinesDown(); return } // control + shift + down
+	if key == KeyBacktab { e.onBackTab(); return }
+	if key == KeyTab { e.onTab(); return }
+	if key == KeyCtrlH { e.onHover(); return }
+	if key == KeyCtrlR { e.onReferences(); return }
+	if key == KeyCtrlW { e.onCodeAction(); return }
+	if key == KeyCtrlP { e.onSignatureHelp(); return }
+	if key == KeyCtrlG { e.onDefinition(); return }
+	if key == KeyCtrlE { e.onErrors(); return }
+	if key == KeyCtrlC { e.onCopy(); return }
+	if key == KeyCtrlV { e.onPaste(); return }
+	if key == KeyEscape { e.selection.cleanSelection(); return }
+	if key == KeyCtrlA { e.onSelectAll(); return }
+	if key == KeyCtrlX { e.cut() }
+	if key == KeyCtrlD { e.duplicate() }
+
+	if modifiers & ModShift != 0 && (
+		key == KeyRight ||
+			key == KeyLeft ||
+			key == KeyUp ||
+			key == KeyDown) {
+
+		if e.selection.ssx < 0 { e.selection.ssx, e.selection.ssy = c, r }
+		if key == KeyRight { e.onRight() }
+		if key == KeyLeft { e.onLeft() }
+		if key == KeyUp { e.onUp() }
+		if key == KeyDown { e.onDown() }
+		if e.selection.ssx >= 0 {
+			e.selection.sex, e.selection.sey = c, r
+			e.selection.isSelected = true
+		}
+		return
+	}
+
+	if key == KeyRune && modifiers & ModAlt != 0 && len(content) > 0 { e.handleSmartMove(ev.Rune()); return }
+	if key == KeyDown && modifiers & ModAlt != 0 { e.handleSmartMoveDown(); return }
+	if key == KeyUp && modifiers & ModAlt != 0 { e.handleSmartMoveUp(); return }
+
+	if key == KeyRune {
+		e.addChar(ev.Rune())
+		if ev.Rune() == '.' {
+			e.drawEverything(); s.Show()
+			e.onCompletion()
+		}
+		//if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear() }
+	}
+
+	if /*key == tcell.KeyEscape ||*/ key == KeyCtrlQ { s.Fini(); os.Exit(1) }
+	if key == KeyCtrlS { e.writeFile() }
+	if key == KeyEnter { e.onEnter() }
+	if key == KeyBackspace || key == KeyBackspace2 { e.onDelete() }
+	if key == KeyDown { e.onDown(); e.selection.cleanSelection() }
+	if key == KeyUp { e.onUp(); e.selection.cleanSelection() }
+	if key == KeyLeft { e.onLeft(); e.selection.cleanSelection() }
+	if key == KeyRight { e.onRight(); e.selection.cleanSelection() }
+	if key == KeyCtrlT { e.onFiles() }
+	if key == KeyCtrlF { e.onSearch() }
+	if key == KeyF18 { e.onRename() }
+	if key == KeyCtrlU { e.onUndo() }
+	//if key == tcell.KeyCtrlR { e.redo() } // todo: fix it
+	if key == KeyCtrlSpace { e.onCompletion() }
+
+}
 func (e *Editor) openFile(fname string) error {
 
 	absoluteDir, err := filepath.Abs(path.Dir(fname))
 	if err != nil { return err }
-	directory = absoluteDir;
-	filename = filepath.Base(fname)
-	absoluteFilePath = path.Join(directory, filename)
+	//directory := absoluteDir;
+	e.filename = filepath.Base(fname)
+	e.absoluteFilePath = path.Join(absoluteDir, e.filename)
 
-	logger.info("open", directory, filename)
+	logger.info("open", e.absoluteFilePath)
 
-	newLang := detectLang(filename)
+	newLang := detectLang(e.filename)
 	logger.info("new lang is", newLang)
 
 	if newLang != "" {
-		if newLang != lang {
-			lang = newLang
-			_, found := lsp.lang2stdin[lang]
-			if !found { go e.init_lsp(lang) }
+		if newLang != e.lang {
+			e.lang = newLang
+			lsp.lang = newLang
+			_, found := lsp.lang2stdin[e.lang]
+			if !found { go e.init_lsp(e.lang) }
 		}
 	}
 
-	conf, found := e.config.Langs[lang]
+	conf, found := e.config.Langs[e.lang]
 	if !found { conf = DefaultLangConfig }
 	e.langConf = conf
 	e.tabWidth = conf.TabWidth
 
-	code := e.readFile(absoluteFilePath)
-	colors = highlighter.colorize(code, filename)
+	code := e.readFile(e.absoluteFilePath)
+	colors = highlighter.colorize(code, e.filename)
 
 	e.undo = []EditOperation{}
 	e.redoStack = []EditOperation{}
@@ -119,51 +305,9 @@ func (e *Editor) openFile(fname string) error {
 	e.updateFilesOpenStats(fname)
 
 	r = 0; c = 0; y = 0; x = 0
-	cleanSelection()
+	e.selection = Selection{ -1,-1,-1,-1,false }
 
 	return nil
-}
-
-func (e *Editor) updateFilesOpenStats(file string) {
-	if files == nil || len(files) == 0 { return }
-
-	for i := 0; i < len(files); i++ {
-		ti := files[i]
-		if file == ti.fullfilename {
-			ti.openCount += 1
-			files[i] = ti
-			break
-		}
-	}
-
-	sort.SliceStable(files, func(i, j int) bool {
-		return files[i].openCount > files[j].openCount
-	})
-}
-
-func (e *Editor) addTab() {
-	if filesInfo == nil || len(filesInfo) == 0 {
-		filesInfo = append(filesInfo, FileInfo{filename, absoluteFilePath, 1})
-	} else {
-		var tabExists = false
-
-		for i := 0; i < len(filesInfo); i++ {
-			ti := filesInfo[i]
-			if absoluteFilePath == ti.fullfilename {
-				ti.openCount += 1
-				filesInfo[i] = ti
-				tabExists = true
-			}
-		}
-
-		if !tabExists {
-			filesInfo = append(filesInfo, FileInfo{filename, absoluteFilePath, 1})
-		}
-
-		sort.SliceStable(filesInfo, func(i, j int) bool {
-			return filesInfo[i].openCount < filesInfo[j].openCount
-		})
-	}
 }
 
 func (e *Editor) initScreen() Screen {
@@ -177,8 +321,13 @@ func (e *Editor) initScreen() Screen {
 	screen.EnableMouse()
 	screen.Clear()
 
-	COLUMNS, ROWS = screen.Size()
+	e.COLUMNS, e.ROWS = screen.Size()
 	//ROWS -= 1
+	
+	e.LS = 6
+	e.update = true
+	e.isColorize = true
+	e.fileSelected = -1
 
 	return screen
 }
@@ -187,24 +336,24 @@ func (e *Editor) drawEverything() {
 	if len(content) == 0 { return }
 	s.Clear()
 
-	if filesPanelWidth != 0 { e.drawFiles("", files, 0) }
+	if e.filesPanelWidth != 0 { e.drawFiles("", e.files, 0) }
 
 	
 	//tabs := countTabsTo(content[r], c)
 	//correction := tabs*(e.tabWidth)
 
 	if c < x { x = c }
-	if c + LS + filesPanelWidth >= x + COLUMNS  { x = c - COLUMNS + 1 + LS + filesPanelWidth }
+	if c + e.LS + e.filesPanelWidth >= x + e.COLUMNS  { x = c - e.COLUMNS + 1 + e.LS + e.filesPanelWidth }
 
 	// draw line number and chars according to scrolling offsets
-	for row := 0; row < ROWS; row++ {
+	for row := 0; row < e.ROWS; row++ {
 		ry := row + y  // index to get right row in characters buffer by scrolling offset y
 		//e.cleanLineAfter(0, row)
 		if row >= len(content) || ry >= len(content) { break }
 		e.drawLineNumber(ry, row)
 
 		tabsOffset := 0
-		for col := 0; col <= COLUMNS; col++ {
+		for col := 0; col <= e.COLUMNS; col++ {
 			cx := col + x // index to get right column in characters buffer by scrolling offset x
 			if cx >= len(content[ry]) { break }
 			ch := content[ry][cx]
@@ -218,11 +367,11 @@ func (e *Editor) drawEverything() {
 					style = StyleDefault.Background(color)
 				}
 				for i := 0; i < e.tabWidth ; i++ {
-					s.SetContent(col + LS + tabsOffset + filesPanelWidth, row, ' ', nil, style)
+					s.SetContent(col + e.LS + tabsOffset + e.filesPanelWidth, row, ' ', nil, style)
 					if i != e.tabWidth-1 { tabsOffset++ }
 				}
 			} else {
-				s.SetContent(col + LS + tabsOffset + filesPanelWidth, row , ch, nil, style)
+				s.SetContent(col + e.LS + tabsOffset + e.filesPanelWidth, row , ch, nil, style)
 			}
 		}
 	}
@@ -230,8 +379,8 @@ func (e *Editor) drawEverything() {
 	e.drawDiagnostic()
 	//e.drawTabs()
 
-	var changes = ""; if isFileChanged { changes = "*" }
-	status := fmt.Sprintf(" %s %d %d %s%s ", lang, r+1, c+1, filename, changes)
+	var changes = ""; if e.isContentChanged { changes = "*" }
+	status := fmt.Sprintf(" %s %d %d %s%s ", e.lang, r+1, c+1, e.filename, changes)
 	e.drawStatus(status)
 
 	// if tab under cursor, hide cursor because it has already drawn
@@ -239,14 +388,26 @@ func (e *Editor) drawEverything() {
 		s.HideCursor()
 	} else  {
 		tabs := countTabsTo(content[r], c) * (e.tabWidth -1)
-		s.ShowCursor(c-x+LS+tabs + filesPanelWidth, r-y) // show cursor
+		s.ShowCursor(c - x + e.LS +tabs + e.filesPanelWidth, r - y) // show cursor
 	}
 
 }
 
+func (e *Editor) getStyle(ry int, cx int) Style {
+	var style = StyleDefault
+	if !e.isColorize { return style }
+	if ry >= len(colors) || cx >= len(colors[ry])  { return style }
+	color := colors[ry][cx]
+	if color > 0 { style = StyleDefault.Foreground(Color(color)) }
+	if e.selection.isUnderSelection(cx, ry) {
+		style = style.Background(Color(SelectionColor))
+	}
+	return style
+}
+
 func (e *Editor) drawDiagnostic() {
 	//lsp.someMapMutex2.Lock()
-	maybeDiagnostic, found := lsp.file2diagnostic["file://" + absoluteFilePath]
+	maybeDiagnostic, found := lsp.file2diagnostic["file://" + e.absoluteFilePath]
 	//lsp.someMapMutex2.Unlock()
 
 	if found {
@@ -257,7 +418,7 @@ func (e *Editor) drawDiagnostic() {
 		for _, diagnostic := range maybeDiagnostic.Diagnostics {
 			dline := int(diagnostic.Range.Start.Line)
 			if dline >= len(content) { continue } // sometimes it out of content
-			if dline - y > ROWS { continue } // sometimes it out of content
+			if dline - y > e.ROWS { continue } // sometimes it out of content
 
 			// iterate over error range and, todo::fix
 			//for i := dline; i <= int(diagnostic.Range.End.Line); i++ {
@@ -275,7 +436,7 @@ func (e *Editor) drawDiagnostic() {
 			tabs := countTabs(content[dline], len(content[dline]))
 			var shifty = 0
 			errorMessage := "error: " + diagnostic.Message
-			errorMessage = PadLeft(errorMessage, COLUMNS - len(content[dline]) - tabs*e.tabWidth - 5 - LS - filesPanelWidth)
+			errorMessage = PadLeft(errorMessage, e.COLUMNS - len(content[dline]) - tabs*e.tabWidth - 5 - e.LS - e.filesPanelWidth)
 
 			// iterate over message characters and draw it
 			for i, m := range errorMessage {
@@ -283,7 +444,7 @@ func (e *Editor) drawDiagnostic() {
 				if ypos < 0 || ypos >= len(content) { break }
 
 				tabs = countTabs(content[dline], len(content[dline]))
-				xpos := i + LS + filesPanelWidth + len(content[dline+shifty]) + tabs*e.tabWidth + 5
+				xpos := i + e.LS + e.filesPanelWidth + len(content[dline+shifty]) + tabs*e.tabWidth + 5
 
 				//for { // draw ch on the next line if not fit to screen
 				//	if xpos >= COLUMNS {
@@ -305,222 +466,23 @@ func (e *Editor) drawDiagnostic() {
 func (e *Editor) drawLineNumber(brw int, row int) {
 	var style = StyleDefault.Foreground(ColorDimGray)
 	if brw == r { style = StyleDefault}
-	lineNumber := centerNumber(brw + 1, LS)
+	lineNumber := centerNumber(brw + 1, e.LS)
 	for index, char := range lineNumber {
-		s.SetContent(index + filesPanelWidth, row, char, nil, style)
+		s.SetContent(index + e.filesPanelWidth, row, char, nil, style)
 	}
 }
 
 func (e *Editor) drawStatus(text string) {
 	var style = StyleDefault
-	e.drawText(ROWS-1, COLUMNS - len(text), text, style)
+	e.drawText(e.ROWS-1, e.COLUMNS - len(text), text, style)
 }
 
 func (e *Editor) drawText(row, col int, text string, style Style) {
 	s.SetContent(col-1, row, ' ', nil, style)
 	for _, ch := range []rune(text) {
-		if col > COLUMNS { break }
+		if col > e.COLUMNS { break }
 		s.SetContent(col, row, ch, nil, style)
 		col++
-	}
-}
-
-func (e *Editor) cleanLineAfter(x, y int) {
-	for i := x; i < COLUMNS; i++ {
-		s.SetContent(i, y, ' ', nil, StyleDefault)
-	}
-}
-
-var isMovingWindow = false
-func (e *Editor) handleEvents() {
-	update = true
-	ev := s.PollEvent()      // Poll event
-	switch ev := ev.(type) { // Process event
-	case *EventMouse:
-		mx, my := ev.Position()
-		buttons := ev.Buttons()
-		modifiers := ev.Modifiers()
-
-		if !isMovingWindow && buttons & Button1 == 1 &&
-			math.Abs(float64(filesPanelWidth  - mx)) <= 2 &&
-			len(getSelectedLines(content, ssx, ssy, sex, sey)) == 0  {
-
-			filesPanelWidth = mx - 1
-			isMovingWindow = true
-			return
-		}
-
-		if isMovingWindow && buttons & Button1 == 1  {
-			filesPanelWidth = mx
-			return
-		}
-
-		if isMovingWindow && buttons & Button1 == 0  {
-			isMovingWindow = false
-			return
-		}
-
-
-		if mx < filesPanelWidth - 2  && buttons & Button1 == 0 {
-			e.onFiles()
-			return
-		}
-
-		if filename == "" { return }
-
-		mx -= LS + filesPanelWidth
-
-		if mx < 0  { return }
-		if my > ROWS  { return }
-
-		// if click with control or option, lookup for definition or references
-		if buttons & Button1 == 1 && ( modifiers & ModAlt != 0  || modifiers & ModCtrl != 0 )  {
-			r = my + y
-			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
-
-			c = e.findCursorXPosition(mx)
-			if modifiers & ModAlt != 0 { e.onReferences() }
-			if modifiers & ModCtrl != 0 { e.onDefinition() }
-			return
-		}
-
-		if isSelected && buttons&Button1 == 1 {
-			r = my + y
-			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
-
-			xPosition := e.findCursorXPosition(mx)
-
-			isTripleClick := isUnderSelection(xPosition, r) &&
-				len(getSelectedLines(content, ssx, ssy, sex, sey)) == 1
-
-			if isTripleClick {
-				r = my + y
-				c = xPosition
-				if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
-				if c > len(content[r]) { c = len(content[r]) }
-				//if c < 0 { sex = len(content[r]) }
-
-				ssx = 0; sex = len(content[r])
-				ssy = r; sey = r
-				return
-			} else {
-				cleanSelection()
-			}
-		}
-
-		//fmt.Printf("Left button: %v\n", buttons&tcell.Button1)
-
-		if buttons & WheelDown != 0 { e.onScrollDown(); return }
-		if buttons & WheelUp != 0 { e.onScrollUp(); return }
-		if buttons & Button1 == 0 && ssx == -1 { update = false; return }
-
-		if buttons & Button1 == 1 {
-			r = my + y
-			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
-
-			xPosition := e.findCursorXPosition(mx)
-
-			if c == xPosition && len(getSelectedLines(content, ssx, ssy, sex, sey)) == 0 {
-				// double click
-				prw := findPrevWord(content[r], c)
-				nxw := findNextWord(content[r], c)
-				ssx, ssy = prw, r
-				sex, sey = nxw, r
-				c = nxw
-				return
-			}
-			c = xPosition
-			if c < 0 { c = 0 }
-			if ssx < 0 { ssx, ssy = c, r }
-			if ssx >= 0 { sex, sey = c, r }
-		}
-
-		if buttons & Button1 == 0 {
-			if ssx != -1 && sex != -1 {
-				isSelected = true
-			}
-		}
-
-	case *EventResize:
-		COLUMNS, ROWS = s.Size()
-		//ROWS -= 1
-
-	case *EventKey:
-		key := ev.Key()
-		modifiers := ev.Modifiers()
-
-		if filename == "" && key != KeyCtrlQ  { return }
-
-		//logger.info("event", strconv.Itoa(int(modifiers&ModAlt)), strconv.Itoa(int(key)), string(ev.Rune()))
-		//logger.logint(int(ev.Rune()))
-
-		if ev.Rune() == '/'  &&  modifiers & ModAlt != 0 || int(ev.Rune()) == '÷' {
-			// '÷' on Mac is option + '/'
-			e.onCommentLine(); return
-		}
-		if key == KeyUp && modifiers == 3 { e.onSwapLinesUp(); return } // control + shift + up
-		if key == KeyDown && modifiers == 3 { e.onSwapLinesDown(); return } // control + shift + down
-		if key == KeyBacktab { e.onBackTab(); e.writeFile(); return }
-		if key == KeyTab { e.onTab(); e.writeFile(); return }
-		if key == KeyCtrlH { e.onHover(); return }
-		if key == KeyCtrlR { e.onReferences(); return }
-		if key == KeyCtrlW { e.onCodeAction(); return }
-		if key == KeyCtrlP { e.onSignatureHelp(); return }
-		if key == KeyCtrlG { e.onDefinition(); return }
-		if key == KeyCtrlE { e.onErrors(); return }
-		if key == KeyCtrlC { e.onCopy(); return }
-		if key == KeyCtrlV { e.paste(); return }
-		if key == KeyEscape{ cleanSelection(); return }
-		if key == KeyCtrlA { e.onSelectAll(); return }
-		if key == KeyCtrlX { e.cut(); s.Clear() }
-		if key == KeyCtrlD { e.duplicate() }
-
-		if modifiers & ModShift != 0 && (
-			    key == KeyRight ||
-				key == KeyLeft ||
-				key == KeyUp ||
-				key == KeyDown) {
-
-			if ssx < 0 { ssx, ssy = c, r }
-			if key == KeyRight { e.onRight() }
-			if key == KeyLeft { e.onLeft() }
-			if key == KeyUp { e.onUp() }
-			if key == KeyDown { e.onDown() }
-			if ssx >= 0 {
-				sex, sey = c, r
-				isSelected = true
-			}
-			return
-		}
-
-		if key == KeyRune && modifiers & ModAlt != 0 && len(content) > 0 { e.handleSmartMove(ev.Rune()); return }
-		if key == KeyDown && modifiers & ModAlt != 0 { e.handleSmartMoveDown(); return }
-		if key == KeyUp && modifiers & ModAlt != 0 { e.handleSmartMoveUp(); return }
-
-		if key == KeyRune {
-			e.addChar(ev.Rune())
-			if ev.Rune() == '.' { e.drawEverything(); s.Show(); e.onCompletion(); s.Clear() }
-			//if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear() }
-		}
-
-		if /*key == tcell.KeyEscape ||*/ key == KeyCtrlQ { s.Fini(); os.Exit(1) }
-		if key == KeyCtrlS { e.writeFile() }
-		if key == KeyEnter { e.onEnter(); s.Clear() }
-		//if ev.Modifiers()&tcell.ModAlt != 0 && key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
-		//	e.cut(); return
-		//}
-		if key == KeyBackspace || key == KeyBackspace2 { e.onDelete() }
-		if key == KeyDown { e.onDown(); cleanSelection() }
-		if key == KeyUp { e.onUp(); cleanSelection() }
-		if key == KeyLeft { e.onLeft(); cleanSelection() }
-		if key == KeyRight { e.onRight(); cleanSelection() }
-		if key == KeyCtrlT { e.onFiles() }
-		if key == KeyCtrlF { e.onSearch() }
-		if key == KeyF18 { e.onRename(); return }
-		if key == KeyCtrlU { e.onUndo() }
-		//if key == tcell.KeyCtrlR { e.redo() } // todo: fix it
-		if key == KeyCtrlSpace { e.onCompletion(); s.Clear() }
-
 	}
 }
 
@@ -535,31 +497,6 @@ func (e *Editor) findCursorXPosition(mx int) int {
 		}
 	}
 	return realCount
-}
-
-func (e *Editor) readFile(fileToRead string) string {
-	/// if file is big, read only first 1000 lines and read rest async
-	fileSize := getFileSize(fileToRead)
-	fileSizeMB := fileSize / (1024 * 1024) // Convert size to megabytes
-
-	var code string
-	if fileSizeMB >= 1 {
-		//colorize = false
-		code = e.buildContent(fileToRead, 1000)
-
-		go func() { // sync?? no need yet
-			code = e.buildContent(fileToRead, 1000000)
-			code, _ = getFirstLines(code, 20000)
-			colors = highlighter.colorize(code, filename);
-			e.drawEverything();
-			s.Show()
-
-		}()
-
-	} else {
-		code = e.buildContent(fileToRead, 1000000)
-	}
-	return code
 }
 
 func (e *Editor) init_lsp(lang string) {
@@ -578,7 +515,7 @@ func (e *Editor) init_lsp(lang string) {
 	currentDir, _ := os.Getwd()
 
 	lsp.init(currentDir)
-	lsp.didOpen(absoluteFilePath, lang)
+	lsp.didOpen(e.absoluteFilePath, lang)
 
 	//e.drawEverything()
 	//
@@ -591,428 +528,22 @@ func (e *Editor) init_lsp(lang string) {
 
 	go func() {
 		for range diagnosticUpdateChan {
-			if isOverlay { continue }
+			if e.isOverlay { continue }
 			e.drawEverything()
 			s.Show()
 		}
 	}()
 }
 
-func markOverlayFalse() {
-	isOverlay = false
-}
-
-func (e *Editor) onCompletion() {
-	if !lsp.IsLangReady(lang) { return }
-    isOverlay = true
-	defer markOverlayFalse()
-
-	var completionEnd = false
-
-	// loop until escape or enter pressed
-	for !completionEnd {
-
-		start := time.Now()
-		completion, err := lsp.completion(absoluteFilePath, r, c)
-		elapsed := time.Since(start)
-
-		lspStatus := "lsp completion, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
-		e.drawStatus(status)
-
-		options := e.buildCompletionOptions(completion)
-		if err != nil || len(options) == 0 { return }
-
-		tabs := countTabsTo(content[r], c)
-		atx := (c-tabs) + LS + tabs*(e.tabWidth) + filesPanelWidth; aty := r + 1 - y // Define the window  position and dimensions
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(5, len(options), ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
-		style := StyleDefault
-		// if completion on last two rows of the screen - move window up
-		if r - y  >= ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
-
-		var selectionEnd = false; var selected = 0; var selectedOffset = 0
-
-
-		for !selectionEnd {
-			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
-			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
-
-			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
-
-			switch ev := s.PollEvent().(type) { // poll and handle event
-				case *EventKey:
-					key := ev.Key()
-					if key == KeyEscape || key == KeyCtrlSpace { selectionEnd = true; completionEnd = true }
-					if key == KeyDown { selected = min(len(options)-1, selected+1); s.Clear(); e.drawEverything() }
-					if key == KeyUp { selected = max(0, selected-1); s.Clear(); e.drawEverything(); }
-					if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-					if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-					if key == KeyRune { e.addChar(ev.Rune()); s.Clear(); e.drawEverything(); selectionEnd = true  }
-					if key == KeyBackspace || key == KeyBackspace2 {
-						e.onDelete(); s.Clear(); e.drawEverything(); selectionEnd = true
-					}
-					if key == KeyEnter {
-						selectionEnd = true; completionEnd = true
-						e.completionApply(completion, selected)
-						s.Show()
-					}
-			}
-		}
-	}
-}
-
-func (e *Editor) onHover() {
-	if !lsp.IsLangReady(lang) { return }
-
-	isOverlay = true
-	defer markOverlayFalse()
-
-	var hoverEnd = false
-
-	// loop until escape or enter pressed
-	for !hoverEnd {
-
-		start := time.Now()
-		hover, err := lsp.hover(absoluteFilePath, r, c)
-		elapsed := time.Since(start)
-
-		lspStatus := "lsp hover, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
-		e.drawStatus(status)
-
-		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
-		options := strings.Split(hover.Result.Contents.Value, "\n")
-		if len(options) == 0 { return }
-
-		tabs := countTabsTo(content[r], c)
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := (c-tabs) + LS + tabs*(e.tabWidth) + filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
-		style := StyleDefault.Foreground(ColorWhite)
-		if len(options) > r - y { aty = r + 1 }
-
-		var selectionEnd = false; var selected = 0; var selectedOffset = 0
-
-		for !selectionEnd {
-			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
-			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
-
-			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
-
-			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *EventKey:
-				key := ev.Key()
-				if key == KeyEscape || key == KeyEnter ||
-					key == KeyBackspace || key == KeyBackspace2 {
-					s.Clear(); selectionEnd = true; hoverEnd = true
-				}
-				if key == KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == KeyUp { selected = max(0, selected-1) }
-				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-			}
-		}
-	}
-}
-
-func (e *Editor) onSignatureHelp() {
-	if !lsp.IsLangReady(lang) { return }
-
-	isOverlay = true
-	defer markOverlayFalse()
-
-	var end = false
-
-	// loop until escape or enter pressed
-	for !end {
-
-		start := time.Now()
-		signatureHelpResponse, err := lsp.signatureHelp(absoluteFilePath, r, c)
-		elapsed := time.Since(start)
-
-		lspStatus := "lsp signature help, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
-		e.drawStatus(status)
-
-		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
-			len(signatureHelpResponse.Result.Signatures) == 0 { return }
-
-		var options = []string{}
-		for _, signature := range signatureHelpResponse.Result.Signatures {
-			var text = []string {}
-			for _, parameter := range signature.Parameters {
-				text =  append(text, parameter.Label)
-			}
-			options = append(options, strings.Join(text, ", "))
-		}
-
-		if len(options) == 0 { return }
-
-		tabs := countTabsTo(content[r], c)
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := (c-tabs) + LS + tabs*(e.tabWidth) + filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
-		style := StyleDefault.Foreground(ColorWhite)
-		if len(options) > r - y { aty = r + 1 }
-
-		var selectionEnd = false; var selected = 0; var selectedOffset = 0
-
-		for !selectionEnd {
-			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
-			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
-
-			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
-
-			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *EventKey:
-				key := ev.Key()
-				if key == KeyEscape || key == KeyEnter ||
-					key == KeyBackspace || key == KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
-				if key == KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == KeyUp { selected = max(0, selected-1) }
-				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
-			}
-		}
-	}
-}
-
-func (e *Editor) onReferences() {
-	if !lsp.IsLangReady(lang) { return }
-
-	isOverlay = true
-	defer markOverlayFalse()
-
-	var end = false
-
-	// loop until escape or enter pressed
-	for !end {
-
-		start := time.Now()
-		referencesResponse, err := lsp.references(absoluteFilePath, r, c)
-		elapsed := time.Since(start)
-
-		lspStatus := "lsp references, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, lang, r+1, c+1, inputFile)
-		e.drawStatus(status)
-
-		if err != nil || len(referencesResponse.Result) == 0 { return }
-
-		var options = []string{}
-		for _, ref := range referencesResponse.Result {
-			text := fmt.Sprintf(" %s %d %d ", ref.URI, ref.Range.Start.Line + 1, ref.Range.Start.Character + 1)
-			options = append(options, text)
-		}
-
-		if len(options) == 0 { return }
-		if len(options) == 1 {
-			// if only one option, no need to draw options
-			referencesResult := referencesResponse.Result[0]
-			e.applyReferences(referencesResult)
-			return
-		}
-
-		tabs := countTabsTo(content[r], c)
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := (c-tabs) + LS + tabs*(e.tabWidth) + filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
-		style := StyleDefault.Foreground(ColorWhite)
-		if len(options) > r - y { aty = r + 1 }
-
-		var selectionEnd = false; var selected = 0; var selectedOffset = 0
-
-		for !selectionEnd {
-			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
-			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
-
-			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
-
-			switch ev := s.PollEvent().(type) { // poll and handle event
-			case *EventKey:
-				key := ev.Key()
-				if key == KeyEscape || key == KeyEnter ||
-					key == KeyBackspace || key == KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
-				if key == KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == KeyUp { selected = max(0, selected-1) }
-				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
-				if key == KeyEnter {
-					selectionEnd = true
-					referencesResult := referencesResponse.Result[selected]
-					e.applyReferences(referencesResult)
-				}
-			}
-		}
-	}
-}
-
-func (e *Editor) applyReferences(referencesResult ReferencesRange) {
-	if referencesResult.URI != "file://"+ absoluteFilePath {  // if another file
-		inputFile = strings.Split(referencesResult.URI, "file://")[1]
-		e.openFile(inputFile)
-	}
-
-	r = referencesResult.Range.Start.Line
-	c = referencesResult.Range.Start.Character
-	ssx = c; ssy = r;
-	sey = referencesResult.Range.End.Line
-	sex = referencesResult.Range.End.Character
-	isSelected = true
-	r = sey; c = sex
-	e.focus();
-	e.drawEverything()
-}
-
-func (e *Editor) buildCompletionOptions(completion CompletionResponse) []string {
-	var options []string
-	var maxOptlen = 5
-
-	prev := findPrevWord(content[r], c)
-	filterword := string(content[r][prev:c])
-
-	sortItemsByMatchCount(&completion.Result, filterword)
-
-	for _, item := range completion.Result.Items {
-		if len(item.Label) > maxOptlen { maxOptlen = len(item.Label) }
-	}
-	for _, item := range completion.Result.Items {
-		options = append(options, formatText(item.Label, item.Detail, maxOptlen))
-	}
-
-	if options == nil { options = []string{} }
-	return options
-}
-
-func sortItemsByMatchCount(cr *CompletionResult, matchStr string) {
-	sort.Slice(cr.Items, func(i, j int) bool {
-		return scoreMatches(cr.Items[i].Label, matchStr) > scoreMatches(cr.Items[j].Label, matchStr)
-	})
-}
-
-// scoreMatches applies a scoring system based on different matching scenarios.
-func scoreMatches(src, matchStr string) int {
-	score := 0
-
-	// If the match is at the beginning, we give it a high score.
-	if strings.HasPrefix(src, matchStr) { score += 1000 }
-
-	// Each occurrence of matchStr in src adds a smaller score.
-	score += strings.Count(src, matchStr) * 10
-
-	// Subtracting the square of the length of the string to give shorter strings a bigger boost.
-	//score -= len(src) * len(src) * len(src)
-
-
-	// If match is close to the start of the string but not at the beginning, add some score.
-	initialIndex := strings.Index(src, matchStr)
-	if initialIndex > 0 && initialIndex < 5 { score += 500 }
-
-	return score
-}
-
-func (e *Editor) drawCompletion(atx int, aty int, height int, width int,
-	options []string, selected int, selectedOffset int, style Style) {
-
-	for row := 0; row < aty+height; row++ {
-		if row >= len(options) || row >= height { break }
-		var option = options[row+selectedOffset]
-
-		isRowSelected := selected == row+selectedOffset
-		if isRowSelected { style = style.Background(Color(AccentColor)) } else {
-			style = StyleDefault.Background(Color(OverlayColor))
-		}
-		//style = style.Foreground(ColorWhite)
-
-		s.SetContent(atx-1, row+aty, ' ', nil, style)
-		for col, char := range option {
-			s.SetContent(col+atx, row+aty, char, nil, style)
-		}
-		for col := len(option); col < width; col++ { // Fill the remaining space
-			s.SetContent(col+atx, row+aty, ' ', nil, style)
-		}
-	}
-}
-
-func (e *Editor) completionApply(completion CompletionResponse, selected int) {
-	// parse completion
-	item := completion.Result.Items[selected]
-	from := item.TextEdit.Range.Start.Character
-	end := item.TextEdit.Range.End.Character
-	newText := item.TextEdit.NewText
-
-	if item.TextEdit.Range.Start.Character != 0 && item.TextEdit.Range.End.Character != 0 {
-		// text edit supported by lsp server
-		// move cursor to beginning
-		c = int(from)
-		// remove chars between from and end
-		content[r] = append(content[r][:c], content[r][int(end):]...)
-		newText = item.TextEdit.NewText
-	}
-
-	if from == 0 && end == 0 {
-		// text edit not supported by lsp
-		prev := findPrevWord(content[r], c)
-		next := findNextWord(content[r], c)
-		from = float64(prev)
-		newText = item.InsertText
-		if len(newText) == 0 { newText = item.Label }
-		end = float64(next)
-		c = prev
-		content[r] = append(content[r][:c], content[r][int(end) :]...)
-	}
-
-	// add newText
-	for _, char := range newText { e.insertCharacter(r,c,char); c++ }
-	e.updateColorsAtLine(r)
-
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-func (e *Editor) onDefinition() {
-	definition, err := lsp.definition(absoluteFilePath, r, c )
-
-	if err != nil || len(definition.Result) == 0{
-		return
-	}
-
-	if definition.Result[0].URI != "file://" + absoluteFilePath {
-		inputFile = strings.Split(definition.Result[0].URI, "file://")[1]
-		e.openFile(inputFile)
-	}
-
-	if int(definition.Result[0].Range.Start.Line) > len(content) ||  // not out of content
-		int(definition.Result[0].Range.Start.Character) > len(content[int(definition.Result[0].Range.Start.Line)]) {
-		return
-	}
-
-	r = int(definition.Result[0].Range.Start.Line)
-	c = int(definition.Result[0].Range.Start.Character)
-	ssx = c; ssy = r;
-	sey = int(definition.Result[0].Range.End.Line)
-	sex = int(definition.Result[0].Range.End.Character)
-	r = sey; c = sex
-	isSelected = true
-	e.focus()
-}
-
 func (e *Editor) onErrors() {
-	if !lsp.IsLangReady(lang) { return }
+	if !lsp.IsLangReady(e.lang) { return }
 
-	maybeDiagnostics, found := lsp.file2diagnostic["file://" + absoluteFilePath]
+	maybeDiagnostics, found := lsp.file2diagnostic["file://" + e.absoluteFilePath]
 
 	if !found || len(maybeDiagnostics.Diagnostics) == 0 { return }
 
-	isOverlay = true
-	defer markOverlayFalse()
+	e.isOverlay = true
+	defer e.overlayFalse()
 
 	var end = false
 
@@ -1031,7 +562,7 @@ func (e *Editor) onErrors() {
 
 		width := max(50, maxString(options)) // width depends on max option len or 30 at min
 		height := minMany(10, len(options) + 1) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := 0 + LS + filesPanelWidth; aty := 0 // Define the window  position and dimensions
+		atx := 0 + e.LS + e.filesPanelWidth; aty := 0 // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
@@ -1040,49 +571,13 @@ func (e *Editor) onErrors() {
 			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
-			//draw errors
-			var shifty = 0
-			for row := 0; row < aty+height; row++ {
-				if row >= len(options) || row >= height { break }
-				var option = options[row+selectedOffset]
-
-				isRowSelected := selected == row+selectedOffset
-				if isRowSelected { style = style.Background(Color(AccentColor)) } else {
-					//style = tcell.StyleDefault.Background(tcell.ColorIndianRed)
-					style = StyleDefault.Background(Color(OverlayColor))
-				}
-
-				shiftx := 0
-				runes := []rune(option)
-				for j := 0;  j < len(runes); j++ {
-					ch := runes[j]
-					nextWord := findNextWord(runes, j)
-					if shiftx == 0 { s.SetContent(atx, row+aty+shifty, ' ', nil, style) }
-					if shiftx+atx + (nextWord - j) >= COLUMNS {
-						for k := shiftx; k <= COLUMNS; k++ { // Fill the remaining space
-							s.SetContent(k+atx, row+aty+shifty, ' ', nil, style)
-						}
-						shifty++; shiftx = 0
-					}
-					s.SetContent(atx + shiftx, row+aty+shifty, ch, nil, style)
-					shiftx++
-				}
-
-				for col := shiftx; col < COLUMNS; col++ { // Fill the remaining space
-					s.SetContent(col+atx, row+aty+shifty, ' ', nil, style)
-				}
-			}
-
-			for col := 0; col < width; col++ { // Fill empty line below
-				s.SetContent(col+atx, height + aty + shifty-1, ' ', nil,
-					StyleDefault.Background(Color(OverlayColor)))
-			}
+			shifty := e.drawErrors(atx, width, aty, height, options, selectedOffset, selected, style)
 
 			s.Show()
 
 			switch ev := s.PollEvent().(type) { // poll and handle event
 			case *EventResize:
-				COLUMNS, ROWS = s.Size()
+				e.COLUMNS, e.ROWS = s.Size()
 				//ROWS -= 1
 				s.Sync()
 				s.Clear(); e.drawEverything(); s.Show()
@@ -1116,12 +611,12 @@ func (e *Editor) onErrors() {
 					r = int(diagnostic.Range.Start.Line)
 					c = int(diagnostic.Range.Start.Character)
 
-					ssx = c; ssy = r;
-					sey = int(diagnostic.Range.End.Line)
-					sex = int(diagnostic.Range.End.Character)
-					r = sey; c = sex
-					isSelected = true
-					e.focus();
+					e.selection.ssx = c; e.selection.ssy = r;
+					e.selection.sey = int(diagnostic.Range.End.Line)
+					e.selection.sex = int(diagnostic.Range.End.Character)
+					r = e.selection.sey; c = e.selection.sex
+					e.selection.isSelected = true
+					e.focus()
 					// add space for errors panel
 					if r - y  < shifty + height { y -= shifty + height + 1}
 					if y < 0 { y = 0 }
@@ -1133,9 +628,60 @@ func (e *Editor) onErrors() {
 
 }
 
+func (e *Editor) drawErrors(atx int, width int, aty int, height int, options []string,
+	selectedOffset int, selected int, style Style) int {
+
+	var shifty = 0
+	for row := 0; row < aty+height; row++ {
+		if row >= len(options) || row >= height {
+			break
+		}
+		var option = options[row+selectedOffset]
+
+		isRowSelected := selected == row+selectedOffset
+		if isRowSelected {
+			style = style.Background(Color(AccentColor))
+		} else {
+			//style = tcell.StyleDefault.Background(tcell.ColorIndianRed)
+			style = StyleDefault.Background(Color(OverlayColor))
+		}
+
+		shiftx := 0
+		runes := []rune(option)
+		for j := 0; j < len(runes); j++ {
+			ch := runes[j]
+			nextWord := findNextWord(runes, j)
+			if shiftx == 0 {
+				s.SetContent(atx, row+aty+shifty, ' ', nil, style)
+			}
+			if shiftx+atx+(nextWord-j) >= e.COLUMNS {
+				for k := shiftx; k <= e.COLUMNS; k++ { // Fill the remaining space
+					s.SetContent(k+atx, row+aty+shifty, ' ', nil, style)
+				}
+				shifty++
+				shiftx = 0
+			}
+			s.SetContent(atx+shiftx, row+aty+shifty, ch, nil, style)
+			shiftx++
+		}
+
+		for col := shiftx; col < e.COLUMNS; col++ { // Fill the remaining space
+			s.SetContent(col+atx, row+aty+shifty, ' ', nil, style)
+		}
+	}
+
+	for col := 0; col < width; col++ { // Fill empty line below
+		s.SetContent(col+atx, height+aty+shifty-1, ' ', nil,
+			StyleDefault.Background(Color(OverlayColor)))
+	}
+
+	return shifty
+}
+
 func (e *Editor) onSearch() {
 	var end = false
-	var patternx = len(searchPattern)
+	if e.searchPattern == nil { e.searchPattern = []rune{} }
+	var patternx = len(e.searchPattern)
 	var startline = y
 	var isChanged = true
 	var isDownSearch = true
@@ -1144,38 +690,39 @@ func (e *Editor) onSearch() {
 	// loop until escape or enter pressed
 	for !end {
 
-		e.drawSearch(prefix, searchPattern, patternx)
+		e.drawSearch(prefix, e.searchPattern, patternx)
 		s.Show()
 
 		if isChanged {
 			var sy, sx = -1, -1
 			if isDownSearch {
-				sy, sx = searchDown(content, string(searchPattern), startline)
+				sy, sx = searchDown(content, string(e.searchPattern), startline)
 			} else {
-				sy, sx = searchUp(content, string(searchPattern), startline)
+				sy, sx = searchUp(content, string(e.searchPattern), startline)
 			}
 
 			if sx != -1 && sy != -1 {
 				r = sy; c = sx; e.focus()
 				startline = sy;
-				ssx = sx; ssy = sy; sex = sx + len(searchPattern); sey = sy; isSelected = true
+				e.selection.ssx = sx; e.selection.ssy = sy;
+				e.selection.sex = sx + len(e.searchPattern); e.selection.sey = sy; e.selection.isSelected = true
 				e.drawEverything()
-				e.drawSearch(prefix, searchPattern, patternx)
-				s.ShowCursor(len(prefix)+ patternx+LS+filesPanelWidth, ROWS-1)
+				e.drawSearch(prefix, e.searchPattern, patternx)
+				s.ShowCursor(len(prefix) + patternx + e.LS + e.filesPanelWidth, e.ROWS-1)
 				s.Show()
 			}else {
-				cleanSelection()
+				e.selection.cleanSelection()
 				if isDownSearch { startline = 0 } else  { startline = len(content)}
 				e.drawEverything()
-				e.drawSearch(prefix, searchPattern, patternx)
-				s.ShowCursor(len(prefix)+ patternx+LS+filesPanelWidth, ROWS-1)
+				e.drawSearch(prefix, e.searchPattern, patternx)
+				s.ShowCursor(len(prefix) + patternx + e.LS + e.filesPanelWidth, e.ROWS-1)
 				s.Show()
 			}
 		}
 
 		switch ev := s.PollEvent().(type) { // poll and handle event
 		case *EventResize:
-			COLUMNS, ROWS = s.Size()
+			e.COLUMNS, e.ROWS = s.Size()
 			//ROWS -= 1
 
 		case *EventKey:
@@ -1183,17 +730,17 @@ func (e *Editor) onSearch() {
 			key := ev.Key()
 
 			if key == KeyRune {
-				searchPattern = insert(searchPattern, patternx, ev.Rune())
+				e.searchPattern = insert(e.searchPattern, patternx, ev.Rune())
 				patternx++
 				isChanged = true
 			}
-			if key == KeyBackspace2 && patternx > 0 && len(searchPattern) > 0 {
+			if key == KeyBackspace2 && patternx > 0 && len(e.searchPattern) > 0 {
 				patternx--
-				searchPattern = remove(searchPattern, patternx)
+				e.searchPattern = remove(e.searchPattern, patternx)
 				isChanged = true
 			}
 			if key == KeyLeft && patternx > 0 { patternx-- }
-			if key == KeyRight && patternx < len(searchPattern) { patternx++ }
+			if key == KeyRight && patternx < len(e.searchPattern) { patternx++ }
 			if key == KeyDown  {
 				isDownSearch = true
 				if startline < len(content) {
@@ -1213,183 +760,39 @@ func (e *Editor) onSearch() {
 		}
 	}
 }
-
 func (e *Editor) drawSearch(prefix []rune, pattern []rune, patternx int) {
 	for i := 0; i < len(prefix); i++ {
-		s.SetContent(i+LS+filesPanelWidth, ROWS-1, prefix[i], nil, StyleDefault)
+		s.SetContent(i + e.LS + e.filesPanelWidth, e.ROWS-1, prefix[i], nil, StyleDefault)
 		//s.Show()
 	}
 
-	s.SetContent(len(prefix)+LS+filesPanelWidth, ROWS-1, ' ', nil, StyleDefault)
+	s.SetContent(len(prefix) + e.LS + e.filesPanelWidth, e.ROWS-1, ' ', nil, StyleDefault)
 	//s.Show()
 
 	for i := 0; i < len(pattern); i++ {
-		s.SetContent(len(prefix)+ i + LS + filesPanelWidth, ROWS-1, pattern[i], nil, StyleDefault)
+		s.SetContent(len(prefix) + i + e.LS + e.filesPanelWidth, e.ROWS-1, pattern[i], nil, StyleDefault)
 		//s.Show()
 	}
 
-	s.ShowCursor(len(prefix)+patternx+LS+filesPanelWidth, ROWS-1)
+	s.ShowCursor(len(prefix) + patternx + e.LS + e.filesPanelWidth, e.ROWS-1)
 	//s.Show()
 
-	for i := len(prefix) + len(pattern) + LS + filesPanelWidth; i < COLUMNS; i++ {
-		s.SetContent(i, ROWS-1, ' ', nil, StyleDefault)
+	for i := len(prefix) + len(pattern) + e.LS + e.filesPanelWidth; i < e.COLUMNS; i++ {
+		s.SetContent(i, e.ROWS-1, ' ', nil, StyleDefault)
 		//s.Show()
 	}
 }
 
-
-func (e *Editor) onRename() {
-	var end = false
-	var renameTo = []rune{}
-	var patternx = 0
-	var prefix = []rune("rename: ")
-
-	prepareRenameResponse, err := lsp.prepareRename(absoluteFilePath, r, c)
-	if err != nil  { return }
-	placeHolder := prepareRenameResponse.Result.Placeholder
-	renameTo = []rune(placeHolder)
-	patternx = len(renameTo)
-
-	// loop until escape or enter pressed
-	for !end {
-
-		for i := 0; i < len(prefix); i++ {
-			s.SetContent(filesPanelWidth + LS + i, ROWS-1, prefix[i], nil, StyleDefault)
-		}
-
-		s.SetContent(filesPanelWidth + LS + len(prefix), ROWS-1, ' ', nil, StyleDefault)
-
-		for i := 0; i < len(renameTo); i++ {
-			s.SetContent(filesPanelWidth + LS + len(prefix) + i, ROWS-1, renameTo[i], nil, StyleDefault)
-		}
-
-		s.ShowCursor(filesPanelWidth + LS + len(prefix) + patternx , ROWS-1)
-
-		for i := filesPanelWidth + LS + len(prefix) + len(renameTo); i < COLUMNS; i++ {
-			s.SetContent(i, ROWS-1, ' ', nil, StyleDefault)
-		}
-
-		s.Show()
-
-
-		switch ev := s.PollEvent().(type) { // poll and handle event
-		case *EventResize:
-			COLUMNS, ROWS = s.Size()
-
-		case *EventKey:
-			key := ev.Key()
-
-			if key == KeyRune {
-				renameTo = insert(renameTo, patternx, ev.Rune())
-				patternx++
-			}
-			if key == KeyBackspace2 && patternx > 0 && len(renameTo) > 0 {
-				patternx--
-				renameTo = remove(renameTo, patternx)
-			}
-			if key == KeyLeft  && patternx > 0 { patternx-- }
-			if key == KeyRight && patternx < len(renameTo) { patternx++ }
-			if key == KeyESC  || key == KeyCtrlF { end = true }
-			if key == KeyEnter {
-				renameResponse, err := lsp.rename(absoluteFilePath, string(renameTo), r, c)
-				if err != nil  { return }
-				e.applyRename(renameResponse)
-				end = true
-			}
-		}
-	}
-}
-
-func (e *Editor) applyRename(renameResponse RenameResponse) {
-	inputFileTmp := inputFile
-	tmpr := r; tmpc := c;  tmpy := y;  tmpx := x;
-
-	for _, dc := range renameResponse.Result.DocumentChanges {
-		if dc.TextDocument.URI != "file://" + absoluteFilePath {
-			inputFile = strings.Split(dc.TextDocument.URI, "file://")[1]
-			e.openFile(inputFile)
-		}
-		if dc.TextDocument.URI == "file://"+absoluteFilePath {
-			// apply the changes in reverse order, its matter
-			for ei := len(dc.Edits) - 1; ei >= 0; ei-- {
-				edit := dc.Edits[ei]
-				line := int(edit.Range.Start.Line)
-				startc := int(edit.Range.Start.Character)
-				endc := int(edit.Range.End.Character)
-
-				// replace the old text with the new text
-				after := content[line][endc:]
-				newText := []rune(edit.NewText)
-				newTextAndAfter := append(newText, after...)
-				before := content[line][:startc]
-				wholeNewLine := append(before, newTextAndAfter...)
-				content[line] = wholeNewLine
-
-				e.updateColorsAtLine(line)
-			}
-
-			e.writeFile()
-		}
-	}
-
-	if inputFile != inputFileTmp {
-		inputFile = inputFileTmp
-		e.openFile(inputFile)
-		r = tmpr; c = tmpc;  y = tmpy;  x = tmpx;
-	}
-
-}
-
-
-func (e *Editor) readUpdateFiles() {
-	ignoreDirs := []string{
-		".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
-		".DS_Store",
-	}
-
-	filesTree, err := getFiles("./", ignoreDirs)
-	if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
-
-	if filesTree != nil {
-		if files == nil && len(files) == 0 {
-			files = make([]FileInfo, len(filesTree))
-			for i, f := range filesTree {
-				abs, _ := filepath.Abs(f)
-				files[i] = FileInfo{f, abs, 0}
-			}
-		} else {
-			originalFiles := make([]string, len(files))
-			for i, f := range files {
-				originalFiles[i] = f.filename
-			}
-			newFiles, deletedFiles := findNewAndDeletedFiles(originalFiles, filesTree)
-			for _, f := range newFiles {
-				abs, _ := filepath.Abs(f)
-				files = append(files, FileInfo{f, abs, 0})
-			}
-
-			// Remove deleted files from originalFiles
-			for i := 0; i < len(files); i++ {
-				if contains(deletedFiles, files[i].filename) {
-					files = remove(files, i)
-					i-- // Adjust index after removal
-				}
-			}
-		}
-	}
-}
-
-
 func (e *Editor) onFiles() {
-	isFileSelection = true
+	e.isFileSelection = true
 
-	if filesPanelWidth == 0 {
+	if e.filesPanelWidth == 0 {
 		e.readUpdateFiles()
-		if len(files) == 0 { return }
-		filesPanelWidth = 28
+		if len(e.files) == 0 { return }
+		e.filesPanelWidth = 28
 	}
 
-	if filename != "" { e.drawEverything() }
+	if e.filename != "" { e.drawEverything() }
 
 	var end = false
 	var filterPattern = []rune{}
@@ -1402,15 +805,19 @@ func (e *Editor) onFiles() {
 		var selectionEnd = false;
 
 		for !selectionEnd {
-			if fileSelected != -1 && fileSelected < fileScrollingOffset { fileScrollingOffset = fileSelected }
-			if fileSelected >= fileScrollingOffset + ROWS { fileScrollingOffset = fileSelected - ROWS + 1 }
+			if e.fileSelected != -1 && e.fileSelected < e.fileScrollingOffset {
+				e.fileScrollingOffset = e.fileSelected
+			}
+			if e.fileSelected >= e.fileScrollingOffset + e.ROWS {
+				e.fileScrollingOffset = e.fileSelected - e.ROWS + 1
+			}
 
-			filteredFiles := files
-			if isFilesSearch && len(filterPattern) > 0 {
+			filteredFiles := e.files
+			if e.isFilesSearch && len(filterPattern) > 0 {
 				pattern := string(filterPattern)
 				filteredFiles = []FileInfo{}
 
-				for _, f := range files {
+				for _, f := range e.files {
 					var foundMatch = false
 					foundMatch = strings.Contains(f.filename, pattern)
 					if foundMatch { filteredFiles = append(filteredFiles, f) } else {
@@ -1422,7 +829,7 @@ func (e *Editor) onFiles() {
 
 				if isChanged { e.drawFiles(string(filterPattern), filteredFiles, patternx) }
 			} else {
-				if isChanged { e.drawFiles(string(filterPattern), files, patternx) }
+				if isChanged { e.drawFiles(string(filterPattern), e.files, patternx) }
 			}
 
 			s.Show()
@@ -1438,107 +845,107 @@ func (e *Editor) onFiles() {
 				//	return
 				//}
 
-				if mx > filesPanelWidth {
-					selectionEnd = true; end = true; isFilesSearch = false;
+				if mx > e.filesPanelWidth {
+					selectionEnd = true; end = true; e.isFilesSearch = false;
 				} else {
-					if buttons & WheelDown != 0  && modifiers & ModCtrl != 0 && filesPanelWidth < COLUMNS  {
-						filesPanelWidth++
-						if filename != "" { e.drawEverything(); s.Show() }
+					if buttons & WheelDown != 0  && modifiers & ModCtrl != 0 && e.filesPanelWidth < e.COLUMNS  {
+						e.filesPanelWidth++
+						if e.filename != "" { e.drawEverything(); s.Show() }
 						continue
 					}
-					if buttons & WheelUp != 0  && modifiers & ModCtrl != 0  && filesPanelWidth > 0 {
-						filesPanelWidth--
-						if filename != "" { e.drawEverything(); s.Show() }
+					if buttons & WheelUp != 0  && modifiers & ModCtrl != 0  && e.filesPanelWidth > 0 {
+						e.filesPanelWidth--
+						if e.filename != "" { e.drawEverything(); s.Show() }
 						continue
 					}
 
-					if buttons & WheelDown != 0 &&  len(filteredFiles) > ROWS {
-						if len(filteredFiles) > ROWS {
-							if !isFilesSearch && fileScrollingOffset <  len(filteredFiles) - ROWS {
-								fileScrollingOffset++
+					if buttons & WheelDown != 0 &&  len(filteredFiles) > e.ROWS {
+						if len(filteredFiles) > e.ROWS {
+							if !e.isFilesSearch && e.fileScrollingOffset <  len(filteredFiles) - e.ROWS {
+								e.fileScrollingOffset++
 							}
-							if isFilesSearch && fileScrollingOffset <  len(filteredFiles) - ROWS +1 {
-								fileScrollingOffset++
+							if e.isFilesSearch && e.fileScrollingOffset <  len(filteredFiles) - e.ROWS +1 {
+								e.fileScrollingOffset++
 							}
 
 						}
 					}
-					if buttons & WheelUp != 0 && fileScrollingOffset > 0 {
-						fileScrollingOffset--
+					if buttons & WheelUp != 0 && e.fileScrollingOffset > 0 {
+						e.fileScrollingOffset--
 					}
 
-					if my < len(filteredFiles) { fileSelected = my + fileScrollingOffset }
+					if my < len(filteredFiles) { e.fileSelected = my + e.fileScrollingOffset }
 					if buttons & Button1 == 1 {
 						e.readUpdateFiles()
-						fileSelected = my + fileScrollingOffset
-						if fileSelected < 0  { continue }
-						if fileSelected >= len(filteredFiles) { continue }
-						if mx > len(filteredFiles[fileSelected].filename) { continue}
+						e.fileSelected = my + e.fileScrollingOffset
+						if e.fileSelected < 0  { continue }
+						if e.fileSelected >= len(filteredFiles) { continue }
+						if mx > len(filteredFiles[e.fileSelected].filename) { continue}
 						selectionEnd = true; end = true
-						selectedFile := filteredFiles[fileSelected]
-						inputFile = selectedFile.fullfilename
-						e.openFile(inputFile)
-						isFilesSearch = false
+						selectedFile := filteredFiles[e.fileSelected]
+						e.inputFile = selectedFile.fullfilename
+						e.openFile(e.inputFile)
+						e.isFilesSearch = false
 					}
 				}
 
 			case *EventResize:
-				COLUMNS, ROWS = s.Size()
-				if filename != "" { e.drawEverything(); s.Show() }
+				e.COLUMNS, e.ROWS = s.Size()
+				if e.filename != "" { e.drawEverything(); s.Show() }
 
 			case *EventKey:
 				key := ev.Key()
 
-				if key == KeyCtrlF { isFilesSearch = !isFilesSearch }
-				if key == KeyEscape && !isFilesSearch { selectionEnd = true; end = true; filesPanelWidth =  0 }
-				if key == KeyEscape  && isFilesSearch {  isFilesSearch = false}
-				if key == KeyDown { fileSelected = min(len(filteredFiles)-1, fileSelected+1) }
-				if key == KeyUp { fileSelected = max(0, fileSelected-1) }
-				if key == KeyRune && isFilesSearch {
+				if key == KeyCtrlF { e.isFilesSearch = !e.isFilesSearch }
+				if key == KeyEscape && !e.isFilesSearch { selectionEnd = true; end = true; e.filesPanelWidth =  0 }
+				if key == KeyEscape  && e.isFilesSearch {  e.isFilesSearch = false}
+				if key == KeyDown { e.fileSelected = min(len(filteredFiles)-1, e.fileSelected+1) }
+				if key == KeyUp { e.fileSelected = max(0, e.fileSelected-1) }
+				if key == KeyRune {
+					e.isFilesSearch = true
 					filterPattern = insert(filterPattern, patternx, ev.Rune())
 					patternx++
 					isChanged = true
-					fileSelected = 0
+					e.fileSelected = 0
 				}
-				if key == KeyBackspace2  && isFilesSearch && patternx > 0 && len(filterPattern) > 0 {
+				if key == KeyBackspace2  && e.isFilesSearch && patternx > 0 && len(filterPattern) > 0 {
 					patternx--
 					filterPattern = remove(filterPattern, patternx)
 					isChanged = true
 				}
-				if key == KeyLeft && isFilesSearch && patternx > 0 {patternx--; isChanged = true }
-				if key == KeyRight && isFilesSearch && patternx < len(filterPattern) { patternx++; isChanged = true }
-				if key == KeyRight && !isFilesSearch  {
-					filesPanelWidth++
-					if filename != "" { e.drawEverything(); s.Show() }
+				if key == KeyLeft && e.isFilesSearch && patternx > 0 {patternx--; isChanged = true }
+				if key == KeyRight && e.isFilesSearch && patternx < len(filterPattern) { patternx++; isChanged = true }
+				if key == KeyRight && !e.isFilesSearch  {
+					e.filesPanelWidth++
+					if e.filename != "" { e.drawEverything(); s.Show() }
 				}
-				if key == KeyLeft && !isFilesSearch  && filesPanelWidth > 0  {
-					filesPanelWidth--
-					if filename != "" { e.drawEverything(); s.Show() }
+				if key == KeyLeft && !e.isFilesSearch  && e.filesPanelWidth > 0  {
+					e.filesPanelWidth--
+					if e.filename != "" { e.drawEverything(); s.Show() }
 				}
 				if key == KeyCtrlT {
 					selectionEnd = true; end = true
-					isFilesSearch = false
-					filesPanelWidth = 0
+					e.isFilesSearch = false
+					e.filesPanelWidth = 0
 				}
-				if key == KeyEnter && fileSelected < len(filteredFiles) {
+				if key == KeyEnter && e.fileSelected < len(filteredFiles) {
 					selectionEnd = true; end = true
-					isFilesSearch = false
-					selectedFile := filteredFiles[fileSelected]
-					inputFile = selectedFile.fullfilename
-					e.openFile(inputFile)
+					e.isFilesSearch = false
+					selectedFile := filteredFiles[e.fileSelected]
+					e.inputFile = selectedFile.fullfilename
+					e.openFile(e.inputFile)
 				}
 			}
 		}
 	}
 
-	isFileSelection = false
+	e.isFileSelection = false
 }
-
 
 func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 
-	for row := 0; row < ROWS; row++ {
-		for col := 0; col < filesPanelWidth ; col++ { // clean
+	for row := 0; row < e.ROWS; row++ {
+		for col := 0; col < e.filesPanelWidth ; col++ { // clean
 			s.SetContent(col, row, ' ', nil, StyleDefault)
 		}
 	}
@@ -1546,35 +953,35 @@ func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 	var offsety = 0
 
 	for fileIndex := 0; fileIndex < len(files); fileIndex++ {
-		if isFilesSearch && offsety == ROWS-1 { continue }
+		if e.isFilesSearch && offsety == e.ROWS-1 { continue }
 		style := StyleDefault
 
 		//s.SetContent(filesPanelWidth, offsety, '│', nil, style)
 
-		if fileIndex >= len(files) || fileIndex >= ROWS { break }
-		if fileIndex + max(fileScrollingOffset,0) >= len(files) { break }
-		file := files[fileIndex + max(fileScrollingOffset,0)]
+		if fileIndex >= len(files) || fileIndex >= e.ROWS { break }
+		if fileIndex + max(e.fileScrollingOffset,0) >= len(files) { break }
+		file := files[fileIndex + max(e.fileScrollingOffset,0)]
 
 
-		isSelectedFile := isFileSelection && fileSelected != -1 && fileIndex+fileScrollingOffset == fileSelected
+		isSelectedFile := e.isFileSelection && e.fileSelected != -1 && fileIndex + e.fileScrollingOffset == e.fileSelected
 		if isSelectedFile {
 			style = style.Foreground(Color(AccentColor))
 		}
-		if inputFile != "" && inputFile == file.fullfilename {
+		if e.inputFile != "" && e.inputFile == file.fullfilename {
 			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
 		}
 
 		for j, ch := range file.filename {
-			if j+1 > filesPanelWidth-1 { break }
+			if j+1 > e.filesPanelWidth-1 { break }
 			s.SetContent(j + 1, offsety, ch, nil, style)
 		}
 
 		offsety++
 	}
 
-	for row := 0; row <= ROWS; row++ {
+	for row := 0; row <= e.ROWS; row++ {
 		if row >= len(files) {
-			for col := 0; col < filesPanelWidth ; col++ { // clean
+			for col := 0; col < e.filesPanelWidth ; col++ { // clean
 				s.SetContent(col, row, ' ', nil, StyleDefault)
 			}
 		}
@@ -1583,41 +990,67 @@ func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 
 	s.HideCursor()
 
-	if isFilesSearch {
+	if e.isFilesSearch {
 		pref := " search: "
-		s.ShowCursor(len(pref) + patternx, ROWS-1)
+		s.ShowCursor(len(pref) + patternx, e.ROWS-1)
 		for i, ch := range pref { // draw prefix
-			s.SetContent(i, ROWS-1, ch, nil, StyleDefault)
+			s.SetContent(i, e.ROWS-1, ch, nil, StyleDefault)
 		}
 
 		for i, ch := range pattern { // draw pattern
-			s.SetContent(i+len(pref), ROWS-1, ch, nil, StyleDefault)
+			s.SetContent(i+len(pref), e.ROWS-1, ch, nil, StyleDefault)
 		}
-		for col := len(pref) + len(pattern); col < filesPanelWidth - 1; col++ { // clean
-			s.SetContent(col, ROWS-1, ' ', nil, StyleDefault)
+		for col := len(pref) + len(pattern); col < e.filesPanelWidth - 1; col++ { // clean
+			s.SetContent(col, e.ROWS-1, ' ', nil, StyleDefault)
 		}
 	}
 
 }
+
+func (e *Editor) addTab() {
+	if e.filesInfo == nil || len(e.filesInfo) == 0 {
+		e.filesInfo = append(e.filesInfo, FileInfo{e.filename, e.absoluteFilePath, 1})
+	} else {
+		var tabExists = false
+
+		for i := 0; i < len(e.filesInfo); i++ {
+			ti := e.filesInfo[i]
+			if e.absoluteFilePath == ti.fullfilename {
+				ti.openCount += 1
+				e.filesInfo[i] = ti
+				tabExists = true
+			}
+		}
+
+		if !tabExists {
+			e.filesInfo = append(e.filesInfo, FileInfo{e.filename, e.absoluteFilePath, 1})
+		}
+
+		sort.SliceStable(e.filesInfo, func(i, j int) bool {
+			return e.filesInfo[i].openCount < e.filesInfo[j].openCount
+		})
+	}
+}
+
 func (e *Editor) drawTabs() {
-	COLUMNS, ROWS = s.Size()
+	e.COLUMNS, e.ROWS = s.Size()
 
-	if len(filesInfo) == 0 { return }
-	if filesPanelWidth == 0 { return }
-	if filesPanelWidth == 0 { return }
+	if len(e.filesInfo) == 0 { return }
+	if e.filesPanelWidth == 0 { return }
+	if e.filesPanelWidth == 0 { return }
 
-	ROWS -= 1
-	at := ROWS
+	e.ROWS -= 1
+	at := e.ROWS
 	fromx := 1
 	styleDefault := StyleDefault
 
-	for i := fromx; i < COLUMNS; i++ {
+	for i := fromx; i < e.COLUMNS; i++ {
 		s.SetContent(0, at, ' ', nil, styleDefault)
 	}
 
 	xpos := 0
-	for _, info := range filesInfo {
-		if xpos > COLUMNS { break }
+	for _, info := range e.filesInfo {
+		if xpos > e.COLUMNS { break }
 		for _, ch := range info.filename {
 			s.SetContent(xpos + fromx, at, ch, nil, styleDefault)
 			xpos++
@@ -1629,897 +1062,46 @@ func (e *Editor) drawTabs() {
 	}
 }
 
-func (e *Editor) getSelectedStyle(isSelected bool, style Style) Style {
-	if isSelected {
-		style = style.Background(Color(AccentColor))
-	} else {
-		style = StyleDefault.Background(Color(SelectionColor))
-	}
-	return style.Foreground(ColorWhite)
-}
-
-
-func (e *Editor) getStyle(ry int, cx int) Style {
-	var style = StyleDefault
-	if !colorize { return style }
-	if ry >= len(colors) || cx >= len(colors[ry])  { return style }
-	color := colors[ry][cx]
-	if color > 0 { style = StyleDefault.Foreground(Color(color)) }
-	if isUnderSelection(cx, ry) {
-		style = style.Background(Color(SelectionColor))
-	}
-	return style
-}
-
-func (e *Editor) addChar(ch rune) {
-	if ssx != -1 && sex != -1 && isSelected  && ssx != sex { e.cut() }
-	e.focus()
-	e.insertCharacter(r, c, ch)
-	c++
-
-	e.maybeAddPair(ch)
-
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-	e.updateColorsAtLine(r)
-}
-
-func (e *Editor) focus() {
-	if r > y+ROWS { y = r + ROWS }
-	if r < y { y = r }
-}
-
-func (e *Editor) insertCharacter(line, pos int, ch rune) {
-	content[line] = insert(content[line], pos, ch)
-	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line, pos, line, pos, string(ch)) }
-	e.undo = append(e.undo, EditOperation{{Insert, ch, r, c}})
-}
-
-func (e *Editor) insertString(line, pos int, linestring string) {
-	// Convert the string to insert to a slice of runes
-	insertRunes := []rune(linestring)
-
-	// Record the operation on the undo stack. Note that we're creating a new EditOperation
-	// and adding all the Operations to it
-	var ops = EditOperation{}
-	for _, ch := range insertRunes {
-		content[line] = insert(content[line], pos, ch)
-		ops = append(ops, Operation{Insert, ch, line, pos})
-		pos++
-	}
-	c = pos
-	e.undo = append(e.undo, ops)
-}
-
-func (e *Editor) insertLines(line, pos int, lines []string) {
-	var ops = EditOperation{}
-
-	tabs := countTabs(content[r], c) // todo: spaces also can be
-    if len(content[r]) > 0 { r++ }
-	//ops = append(ops, Operation{Enter, '\n', r, c})
-	for _, linestr := range lines {
-		c = 0
-		if r >= len(content)  { content = append(content, []rune{}) } // if last line adding empty line before
-
-		nl := strings.Repeat("\t", tabs) + linestr
-		content = insert(content, r, []rune(nl))
-
-		ops = append(ops, Operation{Enter, '\n', r, c})
-		for _, ch := range nl {
-			ops = append(ops, Operation{Insert, ch, r, c})
-			c++
-		}
-		r++
-	}
-	r--
-	e.undo = append(e.undo, ops)
-}
-
-func (e *Editor) deleteCharacter(line, pos int) {
-	e.undo = append(e.undo, EditOperation{
-		{MoveCursor, content[line][pos], line, pos+1},
-		{Delete, content[line][pos], line, pos},
-	})
-	content[line] = remove(content[line], pos)
-	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line,pos,line,pos+1, "")}
-}
-
-
-func (e *Editor) maybeAddPair(ch rune) {
-	pairMap := map[rune]rune{
-		'(': ')', '{': '}', '[': ']',
-		'"': '"', '\'': '\'', '`': '`',
-	}
-
-	if closeChar, found := pairMap[ch]; found {
-		noMoreChars := c >= len(content[r])
-		isSpaceNext := c < len(content[r]) && content[r][c] == ' '
-		isStringAndClosedBracketNext := closeChar == '"' && c < len(content[r]) && content[r][c] == ')'
-
-		if noMoreChars || isSpaceNext || isStringAndClosedBracketNext {
-			e.insertCharacter(r, c, closeChar)
-		}
-	}
-}
-
-func (e *Editor) onScrollUp() {
-	if len(content) == 0 { return }
-	if y == 0 { return }
-	y--
-}
-func (e *Editor) onScrollDown() {
-	if len(content) == 0 { return }
-	if y + ROWS >= len(content) { return }
-	y++
-}
-
-func (e *Editor) onDown() {
-	if len(content) == 0 { return }
-	if r+1 >= len(content) { y = r - ROWS + 1; if y < 0 { y = 0 }; return }
-	r++
-	if c > len(content[r]) { c = len(content[r]) } // fit to content
-	if r < y { y = r }
-	if r >= y + ROWS { y = r - ROWS + 1  }
-}
-
-func (e *Editor) onUp() {
-	if len(content) == 0 { return }
-	if r == 0 { y = 0; return }
-	r--
-	if c > len(content[r]) { c = len(content[r]) } // fit to content
-	if r < y { y = r }
-	if r > y + ROWS { y = r -ROWS +1  }
-}
-
-func (e *Editor) onLeft() {
-	if len(content) == 0 { return }
-
-	if c > 0 {
-		c--
-	} else if r > 0 {
-		r -= 1
-		c = len(content[r]) // fit to content
-		if r < y { y = r }
-	}
-}
-func (e *Editor) onRight() {
-	if len(content) == 0 { return }
-
-	if c < len(content[r]) {
-		c++
-	} else if r < len(content)-1 {
-		r += 1 // to newline
-		c = 0
-		if r > y + ROWS { y ++  }
-	}
-}
-
-func (e *Editor) onEnter() {
-
-	var ops = EditOperation{{Enter, '\n', r, c}}
-	tabs := countTabs(content[r], c)
-	spaces := countSpaces(content[r], c)
-
-	after := content[r][c:]
-	before := content[r][:c]
-	content[r] = before
-	e.updateColorsAtLine(r)
-	r++
-	c = 0
-
-	countToInsert := tabs
-	characterToInsert := '\t'
-	if tabs == 0 && spaces != 0 { characterToInsert = ' '; countToInsert = spaces }
-
-	begining := []rune{}
-	for i := 0; i < countToInsert; i++ {
-		begining = append(begining, characterToInsert)
-		ops = append(ops, Operation{Insert, characterToInsert, r, c+i})
-	}
-	c = countToInsert
-
-	newline := append(begining, after...)
-	content = insert(content, r, newline)
-
-	if colorize && lang != "" {
-		colors = insert(colors, r, []int{})
-		e.updateColorsAtLine(r)
-	}
-
-	e.undo = append(e.undo, ops)
-	e.focus(); if r - y ==  ROWS { e.onScrollDown() }
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-func (e *Editor) onDelete() {
-
-	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut(); return }
-
-	if c > 0 {
-		c--
-		e.deleteCharacter(r,c)
-		e.updateColorsAtLine(r)
-	} else if r > 0 { // delete line
-		e.undo = append(e.undo, EditOperation{{DeleteLine, ' ', r-1, len(content[r-1])}})
-		l := content[r][c:]
-		content = remove(content, r)
-		if colorize && lang != "" {
-			if r < len(colors) { colors = remove(colors, r) }
-			e.updateColorsAtLine(r)
-		}
-
-		r--
-		c = len(content[r])
-		content[r] = append(content[r], l...)
-		e.updateColorsAtLine(r)
-	}
-
-	e.focus()
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-
-func (e *Editor) writeFile() {
-
-	// Create a new file, or open it if it exists
-	f, err := os.Create(absoluteFilePath)
-	if err != nil { panic(err) }
-
-	// Create a buffered writer from the file
-	w := bufio.NewWriter(f)
-
-	for i, row := range content {
-		for j := 0; j < len(row); {
-			if _, err := w.WriteRune(row[j]); err != nil { panic(err) }
-			j++
-		}
-
-		if i != len(content) - 1 { // do not write \n at the end
-			if _, err := w.WriteRune('\n'); err != nil { panic(err) }
-		}
-
-	}
-
-	// Don't forget to flush the buffered writer to ensure all data is written
-	if err := w.Flush(); err != nil { panic(err) }
-	if err := f.Close(); err != nil { panic(err) }
-
-	isFileChanged = false
-
-	if lang != "" && lsp.IsLangReady(lang) {
-		go lsp.didOpen(absoluteFilePath, lang) // todo remove it in future
-		//go lsp.didChange(absoluteFilePath)
-		//go lsp.didSave(absoluteFilePath)
-	}
-
-}
-
-func (e *Editor) buildContent(filename string, limit int) string {
-	//start := time.Now()
-	//logger.info("read file start", filename, string(limit))
-	//defer logger.info("read file end",   filename, string(limit), "elapsed", time.Since(start).String())
-
-	file, err := os.Open(filename)
-	if err != nil {
-		filec, err2 := os.Create(filename)
-		if err2 != nil {fmt.Printf("Failed to create file: %v\n", err2)}
-		defer filec.Close()
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-
-	content = make([][]rune, 0)
-	colors = make([][]int, 0)
-
-	for scanner.Scan() {
-		var line = scanner.Text()
-		var lineChars = []rune{}
-		for _, char := range line { lineChars = append(lineChars, char) }
-		content = append(content, lineChars)
-		if len(content) > limit { break }
-	}
-
-	// if no content, consider it like one line for next editing
-	if content == nil || len(content) == 0 {
-		content = make([][]rune, 1)
-		colors = make([][]int, 1)
-	}
-
-	return convertToString(content)
+func (e *Editor) overlayFalse() {
+	e.isOverlay = false
 }
 
 func (e *Editor) updateColors() {
-	if !colorize { return }
-	if lang == "" { return }
+	if !e.isColorize { return }
+	if e.lang == "" { return }
 	if len(content) >= 10000 {
 		line := string(content[r])
-		linecolors := highlighter.colorize(line, filename)
+		linecolors := highlighter.colorize(line, e.filename)
 		colors[r] = linecolors[0]
 	} else {
 		code := convertToString(content)
-		colors = highlighter.colorize(code, filename)
+		colors = highlighter.colorize(code, e.filename)
 	}
 }
 
 func (e *Editor) updateColorsFull() {
-	if !colorize { return }
-	if lang == "" { return }
+	if !e.isColorize { return }
+	if e.lang == "" { return }
 
 	code := convertToString(content)
-	colors = highlighter.colorize(code, filename)
+	colors = highlighter.colorize(code, e.filename)
 }
 
 func (e *Editor) updateColorsAtLine(at int) {
-	if !colorize { return }
-	if lang == "" { return }
+	if !e.isColorize { return }
+	if e.lang == "" { return }
 	if at >= len(colors) { return }
 
 	line := string(content[at])
 	if line == "" { colors[at] = []int{}; return }
-	linecolors := highlighter.colorize(line, filename)
+	linecolors := highlighter.colorize(line, e.filename)
 	colors[at] = linecolors[0]
 }
 
 // todo, get rid of this function, cause updateColors is slow for big files
 func (e *Editor) updateNeeded() {
-	update = true
-	isFileChanged = true
+	e.update = true
+	e.isContentChanged = true
 	if len(content) <= 10000 { go e.writeFile() }
 	e.updateColors()
 }
-
-func (e *Editor) onTab() {
-	e.focus()
-
-	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
-
-	if len(selectedLines) == 0 {
-		ch := '\t'
-		e.insertCharacter(r, c, ch)
-		e.updateColorsAtLine(r)
-		c++
-	} else  {
-		var ops = EditOperation{}
-		ssx = 0
-		for _, linenumber := range selectedLines {
-			r = linenumber
-			content[r] = insert(content[r], 0, '\t')
-			e.updateColorsAtLine(r)
-			ops = append(ops, Operation{Insert, '\t', r, 0})
-			c = len(content[r])
-		}
-		sex = c
-		e.undo = append(e.undo, ops)
-	}
-
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-func (e *Editor) onBackTab() {
-	e.focus()
-
-	selectedLines := getSelectedLines(content, ssx,ssy,sex,sey)
-
-	// deleting tabs from beginning
-	if len(selectedLines) == 0 {
-		if content[r][0] == '\t'  {
-			e.deleteCharacter(r,0)
-			colors[r] = remove(colors[r], 0)
-			c--
-		}
-	} else {
-		ssx = 0
-		for _, linenumber := range selectedLines {
-			r = linenumber
-			if len(content[r]) > 0 && content[r][0] == '\t'  {
-				e.deleteCharacter(r,0)
-				colors[r] = remove(colors[r], 0)
-				c = len(content[r])
-			}
-		}
-	}
-
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-func (e *Editor) onCopy() {
-	selectionString := getSelectionString(content, ssx, ssy, sex, sey)
-	clipboard.WriteAll(selectionString)
-}
-
-func (e *Editor) onSelectAll() {
-	if len(content) == 0 { return }
-	ssx = 0; ssy = 0
-	sey = len(content)
-	lastElement := len(content[len(content)-1])
-	sex = lastElement
-	sey = len(content)
-	isSelected = true
-}
-
-func (e *Editor) paste() {
-	e.focus()
-
-	if len(getSelectionString(content, ssx, ssy, sex, sey)) > 0 { e.cut() }
-
-	text, _ := clipboard.ReadAll()
-	lines := strings.Split(text, "\n")
-
-	if len(lines) == 0 { return }
-
-	if len(lines) == 1 { // single line paste
-		e.insertString(r,c, lines[0])
-	}
-
-	if len(lines) > 1 { // multiple line paste
-		e.insertLines(r,c, lines)
-	}
-
-	update = true
-	e.updateNeeded()
-}
-
-func (e *Editor) cut() {
-	e.focus()
-
-	if len(content) <= 1 {
-		content[0] = []rune{};
-		r, c = 0, 0
-		return
-	}
-	var ops = EditOperation{}
-
-	if len(getSelectionString(content, ssx, ssy, sex, sey)) == 0 { // cut single line
-		ops = append(ops, Operation{MoveCursor, ' ', r, c})
-
-		for i := len(content[r])-1; i >= 0; i-- {
-			ops = append(ops, Operation{Delete, content[r][i], r, i})
-		}
-
-		if r == 0 {
-			ops = append(ops, Operation{DeleteLine, '\n', 0, 0})
-			c = 0
-		} else {
-			newc := 0
-			if c > len(content[r-1]) { newc = len(content[r-1])} else { newc = c }
-			ops = append(ops, Operation{DeleteLine, '\n', r-1, newc})
-			c = newc
-		}
-
-		content = remove(content, r)
-		if colorize && lang != "" {
-			colors = remove(colors, r)
-			e.updateColorsAtLine(r)
-		}
-		if r > 0 { r-- }
-
-		update = true
-		isFileChanged = true
-		if len(content) <= 10000 { go e.writeFile() }
-
-	} else { // cut selection
-
-		//selectionString := getSelectionString(content, ssx, ssy, sex, sey)
-		//clipboard.WriteAll(selectionString)
-
-		ops = append(ops, Operation{MoveCursor, ' ', r, c})
-
-		selectedIndices := getSelectedIndices(content, ssx, ssy, sex, sey)
-
-		// Sort selectedIndices in reverse order to delete characters from the end
-		for i := len(selectedIndices) - 1; i >= 0; i-- {
-			indices := selectedIndices[i]
-			xd := indices[0]
-			yd := indices[1]
-			c, r = xd, yd
-
-			// Delete the character at index (x, j)
-			ops = append(ops, Operation{Delete, content[yd][xd], yd, xd})
-			content[yd] = append(content[yd][:xd], content[yd][xd+1:]...)
-			if len(content[yd]) == 0 { // delete line
-				if r == 0 {
-					ops = append(ops, Operation{DeleteLine, '\n', 0, 0})
-				} else {
-					ops = append(ops, Operation{DeleteLine, '\n', r-1, len(content[r-1])})
-				}
-
-				content = append(content[:yd], content[yd+1:]...)
-				colors = append(colors[:yd], colors[yd+1:]...)
-			}
-		}
-
-		if len(content) == 0 {
-			content = make([][]rune, 1)
-			colors = make([][]int, 1)
-		}
-
-		if r >= len(content)  {
-			r = len(content) - 1
-			if c >= len(content[r]) { c = len(content[r]) - 1 }
-		}
-		cleanSelection()
-		e.updateNeeded()
-	}
-
-	e.undo = append(e.undo, ops)
-}
-
-func (e *Editor) duplicate() {
-	e.focus()
-
-	if len(content) == 0 { return }
-
-	if ssx == -1 && ssy == -1 || ssx == sex && ssy == sey  {
-		var ops = EditOperation{}
-		ops = append(ops, Operation{MoveCursor, ' ', r, c})
-		ops = append(ops, Operation{Enter, '\n', r, len(content[r])})
-
-		duplicatedSlice := make([]rune, len(content[r]))
-		copy(duplicatedSlice, content[r])
-		for i, ch := range duplicatedSlice {
-			ops = append(ops, Operation{Insert, ch, r, i})
-		}
-		r++
-		content = insert(content, r, duplicatedSlice)
-		if colorize && lang != "" {
-			colors = insert(colors, r, []int{})
-			e.updateColorsAtLine(r)
-		}
-		e.undo = append(e.undo, ops)
-		update = true
-		isFileChanged = true
-		if len(content) <= 10000 { go e.writeFile() }
-
-	} else {
-		selection := getSelectionString(content, ssx,ssy,sex,sey)
-		if len(selection) == 0 { return }
-		lines := strings.Split(selection, "\n")
-
-		if len(lines) == 0 { return }
-
-		if len(lines) == 1 { // single line
-			lines[0] = " " + lines[0]// add space before
-			e.insertString(r,c, lines[0])
-		}
-
-		if len(lines) > 1 { // multiple line
-			e.insertLines(r,c, lines)
-		}
-		cleanSelection()
-		e.updateNeeded()
-	}
-
-
-}
-
-
-func (e *Editor) onCommentLine() {
-	e.focus()
-
-	found := false
-
-	for i, ch := range content[r] {
-		if len(content[r]) == 0 { break }
-		if len(e.langConf.Comment) == 1 && ch == rune(e.langConf.Comment[0]) {
-			// found 1 char comment, uncomment
-			c = i
-			e.undo = append(e.undo, EditOperation{
-				{MoveCursor, content[r][i], r, i+1},
-				{Delete, content[r][i], r, i},
-			})
-			content[r] = remove(content[r], i)
-			e.updateColorsAtLine(r)
-			found = true
-			break
-		}
-		if len(e.langConf.Comment) == 2 && ch == rune(e.langConf.Comment[0]) && content[r][i+1] == rune(e.langConf.Comment[1]) {
-			// found 2 char comment, uncomment
-			c = i
-			e.undo = append(e.undo, EditOperation{
-				{MoveCursor, content[r][i], r, i+1},
-				{Delete, content[r][i], r, i},
-				{MoveCursor, content[r][i+1], r, i+1},
-				{Delete, content[r][i], r, i},
-			})
-			content[r] = remove(content[r], i)
-			content[r] = remove(content[r], i)
-			e.updateColorsAtLine(r)
-			found = true
-			break
-		}
-	}
-
-	if found {
-		if c < 0 { c = 0 }
-		e.onDown()
-		update = true
-		isFileChanged = true
-		if len(content) <= 10000 { go e.writeFile() }
-		return
-	}
-
-	tabs := countTabs(content[r], c)
-	spaces := countSpaces(content[r], c)
-
-	from := tabs
-	if tabs == 0 && spaces != 0 { from = spaces }
-
-	c = from
-	ops := EditOperation{}
-	for _, ch := range e.langConf.Comment {
-		content[r] = insert(content[r], c, ch)
-		ops = append(ops, Operation{Insert, ch, r, c})
-	}
-
-	e.updateColorsAtLine(r)
-
-	e.undo = append(e.undo, ops)
-	if c < 0 { c = 0 }
-	e.onDown()
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-func (e *Editor) onSwapLinesUp() {
-	e.focus()
-
-	if r == 0 { return }
-	var ops = EditOperation{}
-	ops = append(ops, Operation{MoveCursor, ' ', r, c})
-
-	line1 := content[r]; line2 := content[r-1]
-	line1c := colors[r]; line2c := colors[r-1]
-
-	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], r, i}) }
-	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], r-1, i}) }
-	for i, ch := range line1 { ops = append(ops, Operation{Insert, ch, r-1, i}) }
-	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, r, i}) }
-
-	content[r] = line2; content[r-1] = line1 // swap
-	colors[r] = line2c; colors[r-1] = line1c // swap colors
-	r--
-
-	e.undo = append(e.undo, ops)
-	cleanSelection()
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-func (e *Editor) onSwapLinesDown() {
-	e.focus()
-
-	if r+1 == len(content) { return }
-
-	var ops = EditOperation{}
-	ops = append(ops, Operation{MoveCursor, ' ', r, c})
-
-	line1 := content[r]; line2 := content[r+1]
-	line1c := colors[r]; line2c := colors[r+1]
-
-	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], r, i}) }
-	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], r+1, i}) }
-	for i, ch := range line1 { ops = append(ops, Operation{Insert, ch, r+1, i}) }
-	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, r, i}) }
-
-	content[r] = line2; content[r+1] = line1 // swap
-	colors[r] = line2c; colors[r+1] = line1c // swap
-	r++
-
-	e.undo = append(e.undo, ops)
-	cleanSelection()
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-
-func (e *Editor) handleSmartMove(char rune) {
-	e.focus()
-	if char == 'f' || char == 'F' {
-		nw := findNextWord(content[r], c+1)
-		c = nw
-		c = min(c, len(content[r]))
-	}
-	if char == 'b' || char == 'B' {
-		nw := findPrevWord(content[r], c-1)
-		c = nw
-	}
-}
-func (e *Editor) handleSmartMoveDown() {
-
-	var ops = EditOperation{{Enter, '\n', r, c}}
-
-	// moving down, insert new line, add same amount of tabs
-	tabs := countTabs(content[r], c)
-	spaces := countSpaces(content[r], c)
-
-	countToInsert := tabs
-	characterToInsert := '\t'
-	if tabs == 0 && spaces != 0 { characterToInsert = ' '; countToInsert = spaces }
-
-	r++; c = 0
-	content = insert(content, r, []rune{})
-	for i := 0; i < countToInsert; i++ {
-		content[r] = insert(content[r], c, characterToInsert)
-		ops = append(ops, Operation{Insert, characterToInsert, r, c })
-		c++
-	}
-
-	if colorize && lang != "" {
-		colors = insert(colors, r, []int{})
-		e.updateColorsAtLine(r)
-	}
-
-	e.focus(); e.onScrollDown()
-	e.undo = append(e.undo, ops)
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-func (e *Editor) handleSmartMoveUp() {
-	e.focus()
-	// add new line and shift all lines, add same amount of tabs/spaces
-	tabs := countTabs(content[r], c)
-	spaces := countSpaces(content[r], c)
-
-	countToInsert := tabs
-	characterToInsert := '\t'
-	if tabs == 0 && spaces != 0 { characterToInsert = ' '; countToInsert = spaces }
-
-	var ops = EditOperation{{Enter, '\n', r, c}}
-	content = insert(content, r, []rune{})
-
-	c = 0
-	for i := 0; i < countToInsert; i++ {
-		content[r] = insert(content[r], c, characterToInsert)
-		ops = append(ops, Operation{Insert, characterToInsert, r, c })
-		c++
-	}
-
-	if colorize && lang != "" {
-		colors = insert(colors, r, []int{})
-		e.updateColorsAtLine(r)
-	}
-
-	e.undo = append(e.undo, ops)
-	update = true
-	isFileChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-}
-
-func (e *Editor) onUndo() {
-	if len(e.undo) == 0 { return }
-
-	lastOperation := e.undo[len(e.undo)-1]
-	e.undo = e.undo[:len(e.undo)-1]
-	e.focus()
-	for i := len(lastOperation) - 1; i >= 0; i-- {
-		o := lastOperation[i]
-
-		if o.action == Insert {
-			r = o.line; c = o.column
-			content[r] = append(content[r][:c], content[r][c+1:]...)
-
-		} else if o.action == Delete {
-			r = o.line; c = o.column
-			content[r] = insert(content[r], c, o.char)
-
-		} else if o.action == Enter {
-			// Merge lines
-			content[o.line] = append(content[o.line], content[o.line+1]...)
-			content = append(content[:o.line+1], content[o.line+2:]...)
-			r = o.line; c = o.column
-
-		} else if o.action == DeleteLine {
-			// Insert enter
-			r = o.line; c = o.column
-			after := content[r][c:]
-			before := content[r][:c]
-			content[r] = before
-			r++; c = 0
-			newline := append([]rune{}, after...)
-			content = insert(content, r, newline)
-		} else if o.action == MoveCursor {
-			r = o.line; c = o.column
-		}
-	}
-
-	e.redoStack = append(e.redoStack, lastOperation)
-	e.updateNeeded()
-}
-
-func (e *Editor) redo() {
-	if len(e.redoStack) == 0 { return }
-
-	lastRedoOperation := e.redoStack[len(e.redoStack)-1]
-	e.redoStack = e.redoStack[:len(e.redoStack)-1]
-
-	for i := 0; i < len(lastRedoOperation); i++ {
-		o := lastRedoOperation[i]
-
-		if o.action == Insert {
-			r = o.line; c = o.column
-			content[r] = insert(content[r], c, o.char)
-			c++
-		} else if o.action == Delete {
-			r = o.line; c = o.column
-			content[r] = append(content[r][:c], content[r][c+1:]...)
-		} else if o.action == Enter {
-			r = o.line; c = o.column
-			after := content[r][c:]
-			before := content[r][:c]
-			content[r] = before
-			r++; c = 0
-			newline := append([]rune{}, after...)
-			content = insert(content, r, newline)
-		} else if o.action == DeleteLine {
-			// Merge lines
-			content[o.line] = append(content[o.line], content[o.line+1]...)
-			content = append(content[:o.line+1], content[o.line+2:]...)
-			r = o.line; c = o.column
-		} else if o.action == MoveCursor {
-			r = o.line; c = o.column
-		}
-	}
-
-	e.undo = append(e.undo, lastRedoOperation)
-	e.updateNeeded()
-}
-
-func (e *Editor) onCodeAction() {
-	codeAction, err := lsp.codeAction(absoluteFilePath, ssx, ssy, sex, sey)
-	if err != nil { return }
-	if len(codeAction.Result) == 0 { return }
-	//
-	commandResponse, err := lsp.command(codeAction.Result[0].Command)
-	if err != nil { return }
-	if len(commandResponse.Params.Edit.DocumentChanges) == 0 { return }
-
-	e.handleEdits(commandResponse.Params.Edit.DocumentChanges[0].Edits, commandResponse.Params.Edit.DocumentChanges[0].TextDocument.Version+1)
-	lsp.applyEdit(commandResponse.ID)
-}
-
-func (e *Editor) handleEdits(edits []Edit, version int) {
-	for _, edit := range edits {
-		start := edit.Range.Start
-		//end := edit.Range.End
-
-		// Adjusting because slices are 0-indexed.
-		//startLine, startChar := int(start.Line), int(start.Character)
-		//endLine, endChar := int(end.Line), int(end.Character)
-
-		newLines := strings.Split(edit.NewText, "\n")
-		for i, line := range newLines {
-			index := int(start.Line) + i
-			if index >= len(content) {
-				content = append(content,  []rune(line))
-			} else  {
-				content[index] = []rune(line)
-			}
-		}
-
-		//lsp.didChange(absoluteFilePath, version, startLine, startChar, endLine, endChar, edit.NewText)
-	}
-
-	//e.updateColors()
-    e.updateNeeded()
-}
-

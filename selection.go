@@ -1,16 +1,24 @@
 package main
 
-func cleanSelection() {
-	isSelected = false
-	ssx, ssy, sex, sey = -1, -1, -1, -1
+type Selection struct {
+	ssx int          // selection start x
+	ssy int          // selection start y
+	sex int          // selection end x
+	sey int          // selection end y
+	isSelected bool  // true if selection is active
 }
 
-func isUnderSelection(x, y int) bool {
-	// Check if there is an active selection
-	if ssx == -1 || ssy == -1  || sex == -1 || sey == -1{ return false }
+func (this *Selection) cleanSelection() {
+	this.isSelected = false
+	this.ssx, this.ssy, this.sex, this.sey = -1, -1, -1, -1
+}
 
-	var startx, starty = ssx, ssy
-	var endx, endy = sex, sey
+func (this *Selection) isUnderSelection(x, y int) bool {
+	// Check if there is an active selection
+	if this.ssx == -1 || this.ssy == -1  || this.sex == -1 || this.sey == -1 { return false }
+
+	var startx, starty = this.ssx, this.ssy
+	var endx, endy = this.sex, this.sey
 
 	if GreaterThan(startx, starty, endx, endy) {
 		startx, endx = endx, startx
@@ -48,17 +56,17 @@ func Equal(x, y, x1, y1 int) bool {
 	return x == x1 && y == y1
 }
 
-func getSelectedIndices(content [][]rune, ssx, ssy, sex, sey int) [][]int {
+func (this *Selection) getSelectedIndices(content [][]rune) [][]int {
 	var selectedIndices = [][]int{}
 
 	// check for empty selection
-	if Equal(ssx, ssy, sex, sey) {
+	if Equal(this.ssx, this.ssy, this.sex, this.sey) {
 		return selectedIndices
 	}
 
 	// getting selection start point
-	var startx, starty = ssx, ssy
-	var endx, endy = sex, sey
+	var startx, starty = this.ssx, this.ssy
+	var endx, endy = this.sex, this.sey
 
 	// swap points if selection is inversed
 	if GreaterThan(startx, starty, endx, endy) {
@@ -70,7 +78,7 @@ func getSelectedIndices(content [][]rune, ssx, ssy, sex, sey int) [][]int {
 	// iterate over content, starting from selection start point until out ouf selection
 	for j := starty; j < len(content); j++ {
 		for i := 0; i < len(content[j]); i++ {
-			if isUnderSelection(i, j) {
+			if this.isUnderSelection(i, j) {
 				selectedIndices = append(selectedIndices, []int{i, j})
 				inside = true
 			} else  {
@@ -83,16 +91,16 @@ func getSelectedIndices(content [][]rune, ssx, ssy, sex, sey int) [][]int {
 	return selectedIndices
 }
 
-func getSelectionString(content [][]rune, ssx, ssy, sex, sey int) string {
+func (this *Selection) getSelectionString(content [][]rune) string {
 	var ret = []rune {}
 	var in = false
 
 	// check for empty selection
-	if Equal(ssx, ssy, sex, sey) { return "" }
+	if Equal(this.ssx, this.ssy, this.sex, this.sey) { return "" }
 
 	// getting selection start point
-	var startx, starty = ssx, ssy
-	var endx, endy = sex, sey
+	var startx, starty = this.ssx, this.ssy
+	var endx, endy = this.sex, this.sey
 
 	if GreaterThan(startx, starty, endx, endy) {
 		startx, endx = endx, startx // swap  points if selection inverse
@@ -126,16 +134,16 @@ func getSelectionString(content [][]rune, ssx, ssy, sex, sey int) string {
 }
 
 
-func getSelectedLines(content [][]rune, ssx, ssy, sex, sey int)  []int {
+func (this *Selection) getSelectedLines(content [][]rune)  []int {
 	var lineNumbers = make(Set)
 	var in = false
 
 	// check for empty selection
-	if Equal(ssx, ssy, sex, sey) { return lineNumbers.GetKeys() }
+	if Equal(this.ssx, this.ssy, this.sex, this.sey) { return lineNumbers.GetKeys() }
 
 	// getting selection start point
-	var startx, starty = ssx, ssy
-	var endx, endy = sex, sey
+	var startx, starty = this.ssx, this.ssy
+	var endx, endy = this.sex, this.sey
 
 	if GreaterThan(startx, starty, endx, endy) {
 		startx, endx = endx, startx // swap  points if selection inverse

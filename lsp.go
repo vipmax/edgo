@@ -28,6 +28,8 @@ type LspClient struct {
 	//isReady   	   bool
 	id        	   int
 	file2diagnostic map[string]DiagnosticParams
+	
+	lang string
 }
 
 func (this *LspClient) start(language string, lspCmd []string) bool {
@@ -82,7 +84,7 @@ func (this *LspClient) send(o interface{})  {
 	logger.info("->", string(m))
 
 	message := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(m), m)
-	stdin := this.lang2stdin[lang]
+	stdin := this.lang2stdin[this.lang]
 	_, err = stdin.Write([]byte(message))
 	if err != nil {
 		logger.error(err.Error())
@@ -144,7 +146,7 @@ func (this *LspClient) init(dir string) {
 
 	if response == "" {
 		logger.info("cant get initialize response from lsp server")
-		this.lang2isReady[lang] = false
+		this.lang2isReady[this.lang] = false
 		return
 	}
 
@@ -154,7 +156,7 @@ func (this *LspClient) init(dir string) {
 	this.send(initializedRequest)
 	logger.info("lsp initialized ")
 	//this.isReady = true
-	this.lang2isReady[lang] = true
+	this.lang2isReady[this.lang] = true
 }
 
 func (this *LspClient) shutdown() {
