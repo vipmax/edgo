@@ -284,13 +284,11 @@ func (e *Editor) openFile(fname string) error {
 	newLang := detectLang(e.filename)
 	logger.info("new lang is", newLang)
 
-	if newLang != "" {
-		if newLang != e.lang {
-			e.lang = newLang
-			lsp.lang = newLang
-			_, found := lsp.lang2stdin[e.lang]
-			if !found { go e.init_lsp(e.lang) }
-		}
+	if newLang != "" && newLang != e.lang {
+		e.lang = newLang
+		lsp.lang = newLang
+		_, found := lsp.lang2stdin[e.lang]
+		if !found { go e.init_lsp(e.lang) }
 	}
 
 	conf, found := e.config.Langs[e.lang]
@@ -346,7 +344,9 @@ func (e *Editor) drawEverything() {
 	//correction := tabs*(e.langTabWidth)
 
 	if e.c < e.x { e.x = e.c }
-	if e.c + e.LINES_WIDTH+ e.filesPanelWidth >= e.x + e.COLUMNS  { e.x = e.c - e.COLUMNS + 1 + e.LINES_WIDTH + e.filesPanelWidth }
+	if e.c + e.LINES_WIDTH+ e.filesPanelWidth >= e.x + e.COLUMNS  {
+		e.x = e.c - e.COLUMNS + 1 + e.LINES_WIDTH + e.filesPanelWidth
+	}
 
 	// draw line number and chars according to scrolling offsets
 	for row := 0; row < e.ROWS; row++ {
@@ -370,7 +370,7 @@ func (e *Editor) drawEverything() {
 					style = StyleDefault.Background(color)
 				}
 				for i := 0; i < e.langTabWidth; i++ {
-					e.screen.SetContent(col + e.LINES_WIDTH+ tabsOffset + e.filesPanelWidth, row, ' ', nil, style)
+					e.screen.SetContent(col + e.LINES_WIDTH + tabsOffset + e.filesPanelWidth, row, ' ', nil, style)
 					if i != e.langTabWidth-1 { tabsOffset++ }
 				}
 			} else {

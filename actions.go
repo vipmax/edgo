@@ -8,7 +8,11 @@ import (
 
 func (e *Editor) onDown() {
 	if len(e.content) == 0 { return }
-	if e.r+1 >= len(e.content) { e.y = e.r - e.ROWS + 1; if e.y < 0 { e.y = 0 }; return }
+	if e.r+1 >= len(e.content) { 
+		e.y = e.r - e.ROWS + 1
+		if e.y < 0 { e.y = 0 }
+		return 
+	}
 	e.r++
 	if e.c > len(e.content[e.r]) { e.c = len(e.content[e.r]) } // fit to e.content
 	if e.r < e.y { e.y = e.r }
@@ -35,6 +39,7 @@ func (e *Editor) onLeft() {
 		if e.r < e.y { e.y = e.r }
 	}
 }
+
 func (e *Editor) onRight() {
 	if len(e.content) == 0 { return }
 
@@ -46,11 +51,13 @@ func (e *Editor) onRight() {
 		if e.r > e.y + e.ROWS { e.y ++  }
 	}
 }
+
 func (e *Editor) onScrollUp() {
 	if len(e.content) == 0 { return }
 	if e.y == 0 { return }
 	e.y--
 }
+
 func (e *Editor) onScrollDown() {
 	if len(e.content) == 0 { return }
 	if e.y + e.ROWS >= len(e.content) { return }
@@ -396,8 +403,8 @@ func (e *Editor) cut() {
 
 	} else { // cut selection
 
-		//selectionString := getSelectionString(e.content, ssx, ssy, sex, sey)
-		//clipboard.WriteAll(selectionString)
+		selectionString := e.selection.getSelectionString(e.content)
+		clipboard.WriteAll(selectionString)
 
 		ops = append(ops, Operation{MoveCursor, ' ', e.r, e.c})
 
