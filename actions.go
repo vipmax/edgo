@@ -222,7 +222,7 @@ func (e *Editor) AddChar(ch rune) {
 
 func (e *Editor) InsertCharacter(line, pos int, ch rune) {
 	e.Content[line] = InsertTo(e.Content[line], pos, ch)
-	//if lsp.isReady { go lsp.didChange(AbsoluteFilePath, line, pos, line, pos, string(ch)) }
+	//if lsp.isReady { go lsp.didChange(AbsoluteFilePath, Line, pos, Line, pos, string(ch)) }
 	e.Undo = append(e.Undo, EditOperation{{Insert, ch, e.Row, e.Col}})
 }
 
@@ -250,7 +250,7 @@ func (e *Editor) InsertLines(line, pos int, lines []string) {
 	//ops = append(ops, Operation{Enter, '\n', e.Row, e.Col})
 	for _, linestr := range lines {
 		e.Col = 0
-		if e.Row >= len(e.Content)  { e.Content = append(e.Content, []rune{}) } // if last line adding empty line before
+		if e.Row >= len(e.Content)  { e.Content = append(e.Content, []rune{}) } // if last Line adding empty Line before
 
 		nl := strings.Repeat("\t", tabs) + linestr
 		e.Content = InsertTo(e.Content, e.Row, []rune(nl))
@@ -272,7 +272,7 @@ func (e *Editor) DeleteCharacter(line, pos int) {
 		{Delete, e.Content[line][pos], line, pos},
 	})
 	e.Content[line] = Remove(e.Content[line], pos)
-	//if lsp.isReady { go lsp.didChange(AbsoluteFilePath, line,pos,line,pos+1, "")}
+	//if lsp.isReady { go lsp.didChange(AbsoluteFilePath, Line,pos,Line,pos+1, "")}
 }
 
 func (e *Editor) OnSwapLinesUp() {
@@ -353,11 +353,11 @@ func (e *Editor) OnPaste() {
 
 	if len(lines) == 0 { return }
 
-	if len(lines) == 1 { // single line paste
+	if len(lines) == 1 { // single Line paste
 		e.InsertString(e.Row, e.Col, lines[0])
 	}
 
-	if len(lines) > 1 { // multiple line paste
+	if len(lines) > 1 { // multiple Line paste
 		e.InsertLines(e.Row, e.Col, lines)
 	}
 
@@ -375,7 +375,7 @@ func (e *Editor) Cut() {
 	}
 	var ops = EditOperation{}
 
-	if len(e.Selection.GetSelectionString(e.Content)) == 0 { // cut single line
+	if len(e.Selection.GetSelectionString(e.Content)) == 0 { // cut single Line
 		ops = append(ops, Operation{MoveCursor, ' ', e.Row, e.Col})
 
 		for i := len(e.Content[e.Row])-1; i >= 0; i-- {
@@ -425,7 +425,7 @@ func (e *Editor) Cut() {
 			e.Content[yd] = append(e.Content[yd][:xd], e.Content[yd][xd+1:]...)
 			e.Colors[yd] = append(e.Colors[yd][:xd], e.Colors[yd][xd+1:]...)
 
-			if len(e.Content[yd]) == 0 { // delete line
+			if len(e.Content[yd]) == 0 { // delete Line
 				if e.Row == 0 { ops = append(ops, Operation{DeleteLine, '\n', 0, 0}) } else {
 					ops = append(ops, Operation{DeleteLine, '\n', e.Row -1, len(e.Content[e.Row-1])})
 				}
@@ -489,12 +489,12 @@ func (e *Editor) Duplicate() {
 
 		if len(lines) == 0 { return }
 
-		if len(lines) == 1 { // single line
+		if len(lines) == 1 { // single Line
 			lines[0] = " " + lines[0]// add space before
 			e.InsertString(e.Row, e.Col, lines[0])
 		}
 
-		if len(lines) > 1 { // multiple line
+		if len(lines) > 1 { // multiple Line
 			e.InsertLines(e.Row, e.Col, lines)
 		}
 		e.Selection.CleanSelection()
@@ -511,31 +511,31 @@ func (e *Editor) OnUndo() {
 	for i := len(lastOperation) - 1; i >= 0; i-- {
 		o := lastOperation[i]
 
-		if o.action == Insert {
-			e.Row = o.line; e.Col = o.column
+		if o.Action == Insert {
+			e.Row = o.Line; e.Col = o.Column
 			e.Content[e.Row] = append(e.Content[e.Row][:e.Col], e.Content[e.Row][e.Col+1:]...)
 
-		} else if o.action == Delete {
-			e.Row = o.line; e.Col = o.column
-			e.Content[e.Row] = InsertTo(e.Content[e.Row], e.Col, o.char)
+		} else if o.Action == Delete {
+			e.Row = o.Line; e.Col = o.Column
+			e.Content[e.Row] = InsertTo(e.Content[e.Row], e.Col, o.Char)
 
-		} else if o.action == Enter {
+		} else if o.Action == Enter {
 			// Merge lines
-			e.Content[o.line] = append(e.Content[o.line], e.Content[o.line+1]...)
-			e.Content = append(e.Content[:o.line+1], e.Content[o.line+2:]...)
-			e.Row = o.line; e.Col = o.column
+			e.Content[o.Line] = append(e.Content[o.Line], e.Content[o.Line+1]...)
+			e.Content = append(e.Content[:o.Line+1], e.Content[o.Line+2:]...)
+			e.Row = o.Line; e.Col = o.Column
 
-		} else if o.action == DeleteLine {
+		} else if o.Action == DeleteLine {
 			// Insert enter
-			e.Row = o.line; e.Col = o.column
+			e.Row = o.Line; e.Col = o.Column
 			after := e.Content[e.Row][e.Col:]
 			before := e.Content[e.Row][:e.Col]
 			e.Content[e.Row] = before
 			e.Row++; e.Col = 0
 			newline := append([]rune{}, after...)
 			e.Content = InsertTo(e.Content, e.Row, newline)
-		} else if o.action == MoveCursor {
-			e.Row = o.line; e.Col = o.column
+		} else if o.Action == MoveCursor {
+			e.Row = o.Line; e.Col = o.Column
 		}
 	}
 
@@ -551,28 +551,28 @@ func (e *Editor) OnRedo() {
 	for i := 0; i < len(lastRedoOperation); i++ {
 		o := lastRedoOperation[i]
 
-		if o.action == Insert {
-			e.Row = o.line; e.Col = o.column
-			e.Content[e.Row] = InsertTo(e.Content[e.Row], e.Col, o.char)
+		if o.Action == Insert {
+			e.Row = o.Line; e.Col = o.Column
+			e.Content[e.Row] = InsertTo(e.Content[e.Row], e.Col, o.Char)
 			e.Col++
-		} else if o.action == Delete {
-			e.Row = o.line; e.Col = o.column
+		} else if o.Action == Delete {
+			e.Row = o.Line; e.Col = o.Column
 			e.Content[e.Row] = append(e.Content[e.Row][:e.Col], e.Content[e.Row][e.Col+1:]...)
-		} else if o.action == Enter {
-			e.Row = o.line; e.Col = o.column
+		} else if o.Action == Enter {
+			e.Row = o.Line; e.Col = o.Column
 			after := e.Content[e.Row][e.Col:]
 			before := e.Content[e.Row][:e.Col]
 			e.Content[e.Row] = before
 			e.Row++; e.Col = 0
 			newline := append([]rune{}, after...)
 			e.Content = InsertTo(e.Content, e.Row, newline)
-		} else if o.action == DeleteLine {
+		} else if o.Action == DeleteLine {
 			// Merge lines
-			e.Content[o.line] = append(e.Content[o.line], e.Content[o.line+1]...)
-			e.Content = append(e.Content[:o.line+1], e.Content[o.line+2:]...)
-			e.Row = o.line; e.Col = o.column
-		} else if o.action == MoveCursor {
-			e.Row = o.line; e.Col = o.column
+			e.Content[o.Line] = append(e.Content[o.Line], e.Content[o.Line+1]...)
+			e.Content = append(e.Content[:o.Line+1], e.Content[o.Line+2:]...)
+			e.Row = o.Line; e.Col = o.Column
+		} else if o.Action == MoveCursor {
+			e.Row = o.Line; e.Col = o.Column
 		}
 	}
 
@@ -664,7 +664,7 @@ func (e *Editor) HandleSmartMoveDown() {
 
 	var ops = EditOperation{{Enter, '\n', e.Row, e.Col}}
 
-	// moving down, insert new line, add same amount of tabs
+	// moving down, insert new Line, add same amount of tabs
 	tabs := CountTabs(e.Content[e.Row], e.Col)
 	spaces := CountSpaces(e.Content[e.Row], e.Col)
 
@@ -694,7 +694,7 @@ func (e *Editor) HandleSmartMoveDown() {
 
 func (e *Editor) HandleSmartMoveUp() {
 	e.Focus()
-	// add new line and shift all lines, add same amount of tabs/spaces
+	// add new Line and shift all lines, add same amount of tabs/spaces
 	tabs := CountTabs(e.Content[e.Row], e.Col)
 	spaces := CountSpaces(e.Content[e.Row], e.Col)
 

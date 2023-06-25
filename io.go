@@ -94,7 +94,7 @@ func (e *Editor) BuildContent(filename string, limit int) string {
 		if len(e.Content) > limit { break }
 	}
 
-	// if no e.Content, consider it like one line for next editing
+	// if no e.Content, consider it like one Line for next editing
 	if e.Content == nil || len(e.Content) == 0 {
 		e.Content = make([][]rune, 1)
 		e.Colors = make([][]int, 1)
@@ -123,7 +123,7 @@ func (e *Editor) ReadFilesUpdate() {
 		} else {
 			originalFiles := make([]string, len(e.Files))
 			for i, f := range e.Files {
-				originalFiles[i] = f.filename
+				originalFiles[i] = f.Filename
 			}
 			newFiles, deletedFiles := FindNewAndDeletedFiles(originalFiles, filesTree)
 			for _, f := range newFiles {
@@ -133,7 +133,7 @@ func (e *Editor) ReadFilesUpdate() {
 
 			// Remove deleted files from originalFiles
 			for i := 0; i < len(e.Files); i++ {
-				if Contains(deletedFiles, e.Files[i].filename) {
+				if Contains(deletedFiles, e.Files[i].Filename) {
 					e.Files = Remove(e.Files, i)
 					i-- // Adjust index after removal
 				}
@@ -147,15 +147,15 @@ func (e *Editor) UpdateFilesOpenStats(file string) {
 
 	for i := 0; i < len(e.Files); i++ {
 		ti := e.Files[i]
-		if file == ti.fullfilename {
-			ti.openCount += 1
+		if file == ti.FullFilename {
+			ti.OpenCount += 1
 			e.Files[i] = ti
 			break
 		}
 	}
 
 	sort.SliceStable(e.Files, func(i, j int) bool {
-		return e.Files[i].openCount > e.Files[j].openCount
+		return e.Files[i].OpenCount > e.Files[j].OpenCount
 	})
 }
 
@@ -188,4 +188,10 @@ func FindNewAndDeletedFiles(originalFiles []string, newFiles []string) ([]string
 	}
 
 	return newlyCreated, deleted
+}
+
+type FileInfo struct {
+	Filename     string
+	FullFilename string
+	OpenCount    int
 }

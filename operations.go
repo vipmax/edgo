@@ -11,16 +11,10 @@ const (
 )
 
 type Operation struct {
-	action Action
-	char   rune
-	line   int
-	column int
+	Action Action
+	Char   rune
+	Line   int
+	Column int
 }
 
 type EditOperation []Operation
-
-type FileInfo struct {
-	filename string
-	fullfilename string
-	openCount int
-}

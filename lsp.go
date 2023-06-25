@@ -533,7 +533,7 @@ func (this *LspClient) readStdout(language string) (map[string]interface{}, stri
 			if err != nil { Log.Error(err.Error()); continue }
 			line = string(buf)
 			messageSize = 0
-			//fmt.Println("response", line)
+			//fmt.Println("response", Line)
 
 			responseJSON := make(map[string]interface{})
 			err = json.Unmarshal(buf, &responseJSON)
@@ -570,7 +570,7 @@ func (this *LspClient) readStdout(language string) (map[string]interface{}, stri
 				//}
 				Log.Error("[445 lsp]", err.Error()); continue
 			}
-			//fmt.Println("line", line)
+			//fmt.Println("Line", Line)
 		}
 
 		line = strings.TrimSuffix(line, "\r\n")

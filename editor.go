@@ -353,7 +353,7 @@ func (e *Editor) DrawEverything() {
 		e.X = e.Col - e.COLUMNS + 1 + e.LINES_WIDTH + e.FilesPanelWidth
 	}
 
-	// draw line number and chars according to scrolling offsets
+	// draw Line number and chars according to scrolling offsets
 	for row := 0; row < e.ROWS; row++ {
 		ry := row + e.Y // index to get right row in characters buffer by scrolling offset Y
 		//e.cleanLineAfter(0, row)
@@ -454,7 +454,7 @@ func (e *Editor) DrawDiagnostic() {
 				tabs = CountTabs(e.Content[dline], len(e.Content[dline]))
 				xpos := i + e.LINES_WIDTH + e.FilesPanelWidth + len(e.Content[dline+shifty]) + tabs*e.langTabWidth + 5
 
-				//for { // draw ch on the next line if not fit to e.Screen
+				//for { // draw ch on the next Line if not fit to e.Screen
 				//	if xpos >= COLUMNS {
 				//		shifty++
 				//		tabs = CountTabs(e.Content[dline+shifty], len(e.Content[dline+shifty]))
@@ -678,7 +678,7 @@ func (e *Editor) DrawErrors(atx int, width int, aty int, height int, options []s
 		}
 	}
 
-	for col := 0; col < width; col++ { // Fill empty line below
+	for col := 0; col < width; col++ { // Fill empty Line below
 		e.Screen.SetContent(col+atx, height+aty+shifty-1, ' ', nil,
 			StyleDefault.Background(Color(OverlayColor)))
 	}
@@ -827,9 +827,9 @@ func (e *Editor) OnFiles() {
 
 				for _, f := range e.Files {
 					var foundMatch = false
-					foundMatch = strings.Contains(f.filename, pattern)
+					foundMatch = strings.Contains(f.Filename, pattern)
 					if foundMatch { filteredFiles = append(filteredFiles, f) } else {
-						matches, err := filepath.Match(pattern, f.filename)
+						matches, err := filepath.Match(pattern, f.Filename)
 						if err != nil { continue }
 						if matches { filteredFiles = append(filteredFiles, f) }
 					}
@@ -889,10 +889,10 @@ func (e *Editor) OnFiles() {
 						e.FileSelectedIndex = my + e.FileScrollingOffset
 						if e.FileSelectedIndex < 0  { continue }
 						if e.FileSelectedIndex >= len(filteredFiles) { continue }
-						if mx > len(filteredFiles[e.FileSelectedIndex].filename) { continue}
+						if mx > len(filteredFiles[e.FileSelectedIndex].Filename) { continue}
 						selectionEnd = true; end = true
 						selectedFile := filteredFiles[e.FileSelectedIndex]
-						e.InputFile = selectedFile.fullfilename
+						e.InputFile = selectedFile.FullFilename
 						e.OpenFile(e.InputFile)
 						e.IsFilesSearch = false
 					}
@@ -942,7 +942,7 @@ func (e *Editor) OnFiles() {
 					selectionEnd = true; end = true
 					e.IsFilesSearch = false
 					selectedFile := filteredFiles[e.FileSelectedIndex]
-					e.InputFile = selectedFile.fullfilename
+					e.InputFile = selectedFile.FullFilename
 					e.OpenFile(e.InputFile)
 				}
 			}
@@ -977,11 +977,11 @@ func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int) {
 		if isSelectedFile {
 			style = style.Foreground(Color(AccentColor))
 		}
-		if e.InputFile != "" && e.InputFile == file.fullfilename {
+		if e.InputFile != "" && e.InputFile == file.FullFilename {
 			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
 		}
 
-		for j, ch := range file.filename {
+		for j, ch := range file.Filename {
 			if j+1 > e.FilesPanelWidth-1 { break }
 			e.Screen.SetContent(j + 1, offsety, ch, nil, style)
 		}
@@ -1025,8 +1025,8 @@ func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int) {
 //
 //		for i := 0; i < len(e.filesInfo); i++ {
 //			ti := e.filesInfo[i]
-//			if e.AbsoluteFilePath == ti.fullfilename {
-//				ti.openCount += 1
+//			if e.AbsoluteFilePath == ti.FullFilename {
+//				ti.OpenCount += 1
 //				e.filesInfo[i] = ti
 //				tabExists = true
 //			}
@@ -1037,7 +1037,7 @@ func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int) {
 //		}
 //
 //		sort.SliceStable(e.filesInfo, func(i, j int) bool {
-//			return e.filesInfo[i].openCount < e.filesInfo[j].openCount
+//			return e.filesInfo[i].OpenCount < e.filesInfo[j].OpenCount
 //		})
 //	}
 //}
