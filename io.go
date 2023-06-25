@@ -21,9 +21,9 @@ func (e *Editor) readFile(fileToRead string) string {
 		go func() { // sync?? no need yet
 			code = e.buildContent(fileToRead, 1000000)
 			code, _ = getFirstLines(code, 20000)
-			colors = highlighter.colorize(code, e.filename);
+			e.colors = highlighter.colorize(code, e.filename);
 			e.drawEverything();
-			s.Show()
+			e.screen.Show()
 
 		}()
 
@@ -42,13 +42,13 @@ func (e *Editor) writeFile() {
 	// Create a buffered writer from the file
 	w := bufio.NewWriter(f)
 
-	for i, row := range content {
+	for i, row := range e.content {
 		for j := 0; j < len(row); {
 			if _, err := w.WriteRune(row[j]); err != nil { panic(err) }
 			j++
 		}
 
-		if i != len(content) - 1 { // do not write \n at the end
+		if i != len(e.content) - 1 { // do not write \n at the end
 			if _, err := w.WriteRune('\n'); err != nil { panic(err) }
 		}
 
@@ -83,24 +83,24 @@ func (e *Editor) buildContent(filename string, limit int) string {
 
 	scanner := bufio.NewScanner(file)
 
-	content = make([][]rune, 0)
-	colors = make([][]int, 0)
+	e.content = make([][]rune, 0)
+	e.colors = make([][]int, 0)
 
 	for scanner.Scan() {
 		var line = scanner.Text()
 		var lineChars = []rune{}
 		for _, char := range line { lineChars = append(lineChars, char) }
-		content = append(content, lineChars)
-		if len(content) > limit { break }
+		e.content = append(e.content, lineChars)
+		if len(e.content) > limit { break }
 	}
 
-	// if no content, consider it like one line for next editing
-	if content == nil || len(content) == 0 {
-		content = make([][]rune, 1)
-		colors = make([][]int, 1)
+	// if no e.content, consider it like one line for next editing
+	if e.content == nil || len(e.content) == 0 {
+		e.content = make([][]rune, 1)
+		e.colors = make([][]int, 1)
 	}
 
-	return convertToString(content)
+	return convertToString(e.content)
 }
 
 

@@ -9,7 +9,7 @@ import (
 )
 
 func (e *Editor) onDefinition() {
-	definition, err := lsp.definition(e.absoluteFilePath, r, c )
+	definition, err := lsp.definition(e.absoluteFilePath, e.r, e.c)
 
 	if err != nil || len(definition.Result) == 0{
 		return
@@ -20,17 +20,17 @@ func (e *Editor) onDefinition() {
 		e.openFile(e.inputFile)
 	}
 
-	if int(definition.Result[0].Range.Start.Line) > len(content) ||  // not out of content
-		int(definition.Result[0].Range.Start.Character) > len(content[int(definition.Result[0].Range.Start.Line)]) {
+	if int(definition.Result[0].Range.Start.Line) > len(e.content) ||  // not out of e.content
+		int(definition.Result[0].Range.Start.Character) > len(e.content[int(definition.Result[0].Range.Start.Line)]) {
 		return
 	}
 
-	r = int(definition.Result[0].Range.Start.Line)
-	c = int(definition.Result[0].Range.Start.Character)
-	e.selection.ssx = c; e.selection.ssy = r;
+	e.r = int(definition.Result[0].Range.Start.Line)
+	e.c = int(definition.Result[0].Range.Start.Character)
+	e.selection.ssx = e.c; e.selection.ssy = e.r;
 	e.selection.sey = int(definition.Result[0].Range.End.Line)
 	e.selection.sex = int(definition.Result[0].Range.End.Character)
-	r = e.selection.sey; c = e.selection.sex
+	e.r = e.selection.sey; e.c = e.selection.sex
 	e.selection.isSelected = true
 	e.focus()
 }
@@ -47,23 +47,23 @@ func (e *Editor) onHover() {
 	for !hoverEnd {
 
 		start := time.Now()
-		hover, err := lsp.hover(e.absoluteFilePath, r, c)
+		hover, err := lsp.hover(e.absoluteFilePath, e.r, e.c)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp hover, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.lang, r+1, c+1, e.inputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.lang, e.r + 1, e.c + 1, e.inputFile)
 		e.drawStatus(status)
 
 		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
 		options := strings.Split(hover.Result.Contents.Value, "\n")
 		if len(options) == 0 { return }
 
-		tabs := countTabsTo(content[r], c)
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := (c-tabs) + e.LS + tabs*(e.tabWidth) + e.filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
+		tabs := countTabsTo(e.content[e.r], e.c)
+		width := max(30, maxString(options))                                                                         // width depends on max option len or 30 at min
+		height := minMany(10, len(options))                                                                          // depends on min option len or 5 at min or how many rows to the end of e.screen
+		atx := (e.c - tabs) + e.LINES_WIDTH + tabs * (e.langTabWidth) + e.filesPanelWidth; aty := e.r - height - e.y // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
-		if len(options) > r - y { aty = r + 1 }
+		if len(options) > e.r - e.y { aty = e.r + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
@@ -72,19 +72,19 @@ func (e *Editor) onHover() {
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
 			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
+			e.screen.Show()
 
-			switch ev := s.PollEvent().(type) { // poll and handle event
+			switch ev := e.screen.PollEvent().(type) { // poll and handle event
 			case *EventKey:
 				key := ev.Key()
 				if key == KeyEscape || key == KeyEnter ||
 					key == KeyBackspace || key == KeyBackspace2 {
-					s.Clear(); selectionEnd = true; hoverEnd = true
+					e.screen.Clear(); selectionEnd = true; hoverEnd = true
 				}
 				if key == KeyDown { selected = min(len(options)-1, selected+1) }
 				if key == KeyUp { selected = max(0, selected-1) }
-				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyRight { e.onRight(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyLeft { e.onLeft(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
 			}
 		}
 	}
@@ -102,11 +102,11 @@ func (e *Editor) onSignatureHelp() {
 	for !end {
 
 		start := time.Now()
-		signatureHelpResponse, err := lsp.signatureHelp(e.absoluteFilePath, r, c)
+		signatureHelpResponse, err := lsp.signatureHelp(e.absoluteFilePath, e.r, e.c)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp signature help, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.lang, r+1, c+1, e.inputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.lang, e.r+1, e.c + 1, e.inputFile)
 		e.drawStatus(status)
 
 		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
@@ -123,12 +123,12 @@ func (e *Editor) onSignatureHelp() {
 
 		if len(options) == 0 { return }
 
-		tabs := countTabsTo(content[r], c)
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := (c-tabs) + e.LS + tabs*(e.tabWidth) + e.filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
+		tabs := countTabsTo(e.content[e.r], e.c)
+		width := max(30, maxString(options))                                                                       // width depends on max option len or 30 at min
+		height := minMany(10, len(options))                                                                        // depends on min option len or 5 at min or how many rows to the end of e.screen
+		atx := (e.c - tabs) + e.LINES_WIDTH + tabs*(e.langTabWidth) + e.filesPanelWidth; aty := e.r - height - e.y // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
-		if len(options) > r - y { aty = r + 1 }
+		if len(options) > e.r - e.y { aty = e.r + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
@@ -137,18 +137,18 @@ func (e *Editor) onSignatureHelp() {
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
 			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
+			e.screen.Show()
 
-			switch ev := s.PollEvent().(type) { // poll and handle event
+			switch ev := e.screen.PollEvent().(type) { // poll and handle event
 			case *EventKey:
 				key := ev.Key()
 				if key == KeyEscape || key == KeyEnter ||
-					key == KeyBackspace || key == KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
+					key == KeyBackspace || key == KeyBackspace2 { e.screen.Clear(); selectionEnd = true; end = true }
 				if key == KeyDown { selected = min(len(options)-1, selected+1) }
 				if key == KeyUp { selected = max(0, selected-1) }
-				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				if key == KeyRight { e.onRight(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyLeft { e.onLeft(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); e.screen.Clear(); e.drawEverything(); selectionEnd = true  }
 			}
 		}
 	}
@@ -166,11 +166,11 @@ func (e *Editor) onReferences() {
 	for !end {
 
 		start := time.Now()
-		referencesResponse, err := lsp.references(e.absoluteFilePath, r, c)
+		referencesResponse, err := lsp.references(e.absoluteFilePath, e.r, e.c)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp references, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.lang, r+1, c+1, e.inputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.lang, e.r + 1, e. c + 1, e.inputFile)
 		e.drawStatus(status)
 
 		if err != nil || len(referencesResponse.Result) == 0 { return }
@@ -191,12 +191,12 @@ func (e *Editor) onReferences() {
 			return
 		}
 
-		tabs := countTabsTo(content[r], c)
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options)) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := (c-tabs) + e.LS + tabs*(e.tabWidth) + e.filesPanelWidth; aty := r - height - y // Define the window  position and dimensions
+		tabs := countTabsTo(e.content[e.r], e.c)
+		width := max(30, maxString(options))                                                                     // width depends on max option len or 30 at min
+		height := minMany(10, len(options))                                                                      // depends on min option len or 5 at min or how many rows to the end of e.screen
+		atx := (e.c-tabs) + e.LINES_WIDTH + tabs*(e.langTabWidth) + e.filesPanelWidth; aty := e.r - height - e.y // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
-		if len(options) > r - y { aty = r + 1 }
+		if len(options) > e.r - e.y { aty = e.r + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
@@ -205,18 +205,18 @@ func (e *Editor) onReferences() {
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
 			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
+			e.screen.Show()
 
-			switch ev := s.PollEvent().(type) { // poll and handle event
+			switch ev := e.screen.PollEvent().(type) { // poll and handle event
 			case *EventKey:
 				key := ev.Key()
 				if key == KeyEscape || key == KeyEnter ||
-					key == KeyBackspace || key == KeyBackspace2 { s.Clear(); selectionEnd = true; end = true }
+					key == KeyBackspace || key == KeyBackspace2 { e.screen.Clear(); selectionEnd = true; end = true }
 				if key == KeyDown { selected = min(len(options)-1, selected+1) }
 				if key == KeyUp { selected = max(0, selected-1) }
-				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				if key == KeyRight { e.onRight(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyLeft { e.onLeft(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyRune { e.addChar(ev.Rune()); e.writeFile(); e.screen.Clear(); e.drawEverything(); selectionEnd = true  }
 				if key == KeyEnter {
 					selectionEnd = true
 					referencesResult := referencesResponse.Result[selected]
@@ -233,13 +233,13 @@ func (e *Editor) applyReferences(referencesResult ReferencesRange) {
 		e.openFile(e.inputFile)
 	}
 
-	r = referencesResult.Range.Start.Line
-	c = referencesResult.Range.Start.Character
-	e.selection.ssx = c; e.selection.ssy = r;
+	e.r = referencesResult.Range.Start.Line
+	e.c = referencesResult.Range.Start.Character
+	e.selection.ssx = e.c; e.selection.ssy = e.r;
 	e.selection.sey = referencesResult.Range.End.Line
 	e.selection.sex = referencesResult.Range.End.Character
 	e.selection.isSelected = true
-	r = e.selection.sey; c = e.selection.sex
+	e.r = e.selection.sey; e.c = e.selection.sex
 	e.focus();
 	e.drawEverything()
 }
@@ -256,23 +256,23 @@ func (e *Editor) onCompletion() {
 	for !completionEnd {
 
 		start := time.Now()
-		completion, err := lsp.completion(e.absoluteFilePath, r, c)
+		completion, err := lsp.completion(e.absoluteFilePath, e.r, e.c)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.lang, r+1, c+1, e.filename)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.lang, e.r+1, e.c+1, e.filename)
 		e.drawStatus(status)
 
 		options := e.buildCompletionOptions(completion)
 		if err != nil || len(options) == 0 { return }
 
-		tabs := countTabsTo(content[r], c)
-		atx := (c-tabs) + e.LS + tabs*(e.tabWidth) + e.filesPanelWidth; aty := r + 1 - y // Define the window  position and dimensions
-		width := max(30, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(5, len(options), e.ROWS - (r - y)) // depends on min option len or 5 at min or how many rows to the end of screen
+		tabs := countTabsTo(e.content[e.r], e.c)
+		atx := (e.c - tabs) + e.LINES_WIDTH + tabs*(e.langTabWidth) + e.filesPanelWidth; aty := e.r + 1 - e.y // Define the window  position and dimensions
+		width := max(30, maxString(options))                                                                  // width depends on max option len or 30 at min
+		height := minMany(5, len(options), e.ROWS - (e.r - e.y))                                              // depends on min option len or 5 at min or how many rows to the end of e.screen
 		style := StyleDefault
-		// if completion on last two rows of the screen - move window up
-		if r - y  >= e.ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
+		// if completion on last two rows of the e.screen - move window up
+		if e.r - e.y  >= e.ROWS - 1 { aty -= min(5, len(options)); aty--; height = min(5, len(options)) }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
@@ -282,24 +282,24 @@ func (e *Editor) onCompletion() {
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
 			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
-			s.Show()
+			e.screen.Show()
 
-			switch ev := s.PollEvent().(type) { // poll and handle event
+			switch ev := e.screen.PollEvent().(type) { // poll and handle event
 			case *EventKey:
 				key := ev.Key()
 				if key == KeyEscape || key == KeyCtrlSpace { selectionEnd = true; completionEnd = true }
-				if key == KeyDown { selected = min(len(options)-1, selected+1); s.Clear(); e.drawEverything() }
-				if key == KeyUp { selected = max(0, selected-1); s.Clear(); e.drawEverything(); }
-				if key == KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyLeft { e.onLeft(); s.Clear(); e.drawEverything(); selectionEnd = true }
-				if key == KeyRune { e.addChar(ev.Rune()); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				if key == KeyDown { selected = min(len(options)-1, selected+1); e.screen.Clear(); e.drawEverything() }
+				if key == KeyUp { selected = max(0, selected-1); e.screen.Clear(); e.drawEverything(); }
+				if key == KeyRight { e.onRight(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyLeft { e.onLeft(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
+				if key == KeyRune { e.addChar(ev.Rune()); e.screen.Clear(); e.drawEverything(); selectionEnd = true  }
 				if key == KeyBackspace || key == KeyBackspace2 {
-					e.onDelete(); s.Clear(); e.drawEverything(); selectionEnd = true
+					e.onDelete(); e.screen.Clear(); e.drawEverything(); selectionEnd = true
 				}
 				if key == KeyEnter {
 					selectionEnd = true; completionEnd = true
 					e.completionApply(completion, selected)
-					s.Show()
+					e.screen.Show()
 				}
 			}
 		}
@@ -311,8 +311,8 @@ func (e *Editor) buildCompletionOptions(completion CompletionResponse) []string 
 	var options []string
 	var maxOptlen = 5
 
-	prev := findPrevWord(content[r], c)
-	filterword := string(content[r][prev:c])
+	prev := findPrevWord(e.content[e.r], e.c)
+	filterword := string(e.content[e.r][prev:e.c])
 
 	sortItemsByMatchCount(&completion.Result, filterword)
 
@@ -367,12 +367,12 @@ func (e *Editor) drawCompletion(atx int, aty int, height int, width int,
 		}
 		//style = style.Foreground(ColorWhite)
 
-		s.SetContent(atx-1, row+aty, ' ', nil, style)
+		e.screen.SetContent(atx-1, row+aty, ' ', nil, style)
 		for col, char := range option {
-			s.SetContent(col+atx, row+aty, char, nil, style)
+			e.screen.SetContent(col+atx, row+aty, char, nil, style)
 		}
 		for col := len(option); col < width; col++ { // Fill the remaining space
-			s.SetContent(col+atx, row+aty, ' ', nil, style)
+			e.screen.SetContent(col+atx, row+aty, ' ', nil, style)
 		}
 	}
 }
@@ -387,31 +387,31 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 	if item.TextEdit.Range.Start.Character != 0 && item.TextEdit.Range.End.Character != 0 {
 		// text edit supported by lsp server
 		// move cursor to beginning
-		c = int(from)
+		e.c = int(from)
 		// remove chars between from and end
-		content[r] = append(content[r][:c], content[r][int(end):]...)
+		e.content[e.r] = append(e.content[e.r][:e.c], e.content[e.r][int(end):]...)
 		newText = item.TextEdit.NewText
 	}
 
 	if from == 0 && end == 0 {
 		// text edit not supported by lsp
-		prev := findPrevWord(content[r], c)
-		next := findNextWord(content[r], c)
+		prev := findPrevWord(e.content[e.r], e.c)
+		next := findNextWord(e.content[e.r], e.c)
 		from = float64(prev)
 		newText = item.InsertText
 		if len(newText) == 0 { newText = item.Label }
 		end = float64(next)
-		c = prev
-		content[r] = append(content[r][:c], content[r][int(end) :]...)
+		e.c = prev
+		e.content[e.r] = append(e.content[e.r][:e.c], e.content[e.r][int(end) :]...)
 	}
 
 	// add newText
-	for _, char := range newText { e.insertCharacter(r,c,char); c++ }
-	e.updateColorsAtLine(r)
+	for _, char := range newText { e.insertCharacter(e.r, e.c, char); e.c++ }
+	e.updateColorsAtLine(e.r)
 
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onRename() {
@@ -420,7 +420,7 @@ func (e *Editor) onRename() {
 	var patternx = 0
 	var prefix = []rune("rename: ")
 
-	prepareRenameResponse, err := lsp.prepareRename(e.absoluteFilePath, r, c)
+	prepareRenameResponse, err := lsp.prepareRename(e.absoluteFilePath, e.r, e.c)
 	if err != nil  { return }
 	placeHolder := prepareRenameResponse.Result.Placeholder
 	renameTo = []rune(placeHolder)
@@ -430,27 +430,27 @@ func (e *Editor) onRename() {
 	for !end {
 
 		for i := 0; i < len(prefix); i++ {
-			s.SetContent(e.filesPanelWidth + e.LS + i, e.ROWS-1, prefix[i], nil, StyleDefault)
+			e.screen.SetContent(e.filesPanelWidth + e.LINES_WIDTH+ i, e.ROWS-1, prefix[i], nil, StyleDefault)
 		}
 
-		s.SetContent(e.filesPanelWidth + e.LS + len(prefix), e.ROWS-1, ' ', nil, StyleDefault)
+		e.screen.SetContent(e.filesPanelWidth + e.LINES_WIDTH+ len(prefix), e.ROWS-1, ' ', nil, StyleDefault)
 
 		for i := 0; i < len(renameTo); i++ {
-			s.SetContent(e.filesPanelWidth + e.LS + len(prefix) + i, e.ROWS-1, renameTo[i], nil, StyleDefault)
+			e.screen.SetContent(e.filesPanelWidth + e.LINES_WIDTH+ len(prefix) + i, e.ROWS-1, renameTo[i], nil, StyleDefault)
 		}
 
-		s.ShowCursor(e.filesPanelWidth + e.LS + len(prefix) + patternx , e.ROWS-1)
+		e.screen.ShowCursor(e.filesPanelWidth + e.LINES_WIDTH+ len(prefix) + patternx , e.ROWS-1)
 
-		for i := e.filesPanelWidth + e.LS + len(prefix) + len(renameTo); i < e.COLUMNS; i++ {
-			s.SetContent(i, e.ROWS-1, ' ', nil, StyleDefault)
+		for i := e.filesPanelWidth + e.LINES_WIDTH + len(prefix) + len(renameTo); i < e.COLUMNS; i++ {
+			e.screen.SetContent(i, e.ROWS-1, ' ', nil, StyleDefault)
 		}
 
-		s.Show()
+		e.screen.Show()
 
 
-		switch ev := s.PollEvent().(type) { // poll and handle event
+		switch ev := e.screen.PollEvent().(type) { // poll and handle event
 		case *EventResize:
-			e.COLUMNS, e.ROWS = s.Size()
+			e.COLUMNS, e.ROWS = e.screen.Size()
 
 		case *EventKey:
 			key := ev.Key()
@@ -467,7 +467,7 @@ func (e *Editor) onRename() {
 			if key == KeyRight && patternx < len(renameTo) { patternx++ }
 			if key == KeyESC  || key == KeyCtrlF { end = true }
 			if key == KeyEnter {
-				renameResponse, err := lsp.rename(e.absoluteFilePath, string(renameTo), r, c)
+				renameResponse, err := lsp.rename(e.absoluteFilePath, string(renameTo), e.r, e.c)
 				if err != nil  { return }
 				e.applyRename(renameResponse)
 				end = true
@@ -478,7 +478,7 @@ func (e *Editor) onRename() {
 
 func (e *Editor) applyRename(renameResponse RenameResponse) {
 	inputFileTmp := e.inputFile
-	tmpr := r; tmpc := c;  tmpy := y;  tmpx := x;
+	tmpr := e.r; tmpc := e.c;  tmpy := e.y;  tmpx := e.x;
 
 	for _, dc := range renameResponse.Result.DocumentChanges {
 		if dc.TextDocument.URI != "file://" + e.absoluteFilePath {
@@ -494,12 +494,12 @@ func (e *Editor) applyRename(renameResponse RenameResponse) {
 				endc := int(edit.Range.End.Character)
 
 				// replace the old text with the new text
-				after := content[line][endc:]
+				after := e.content[line][endc:]
 				newText := []rune(edit.NewText)
 				newTextAndAfter := append(newText, after...)
-				before := content[line][:startc]
+				before := e.content[line][:startc]
 				wholeNewLine := append(before, newTextAndAfter...)
-				content[line] = wholeNewLine
+				e.content[line] = wholeNewLine
 
 				e.updateColorsAtLine(line)
 			}
@@ -511,7 +511,7 @@ func (e *Editor) applyRename(renameResponse RenameResponse) {
 	if e.inputFile != inputFileTmp {
 		e.inputFile = inputFileTmp
 		e.openFile(e.inputFile)
-		r = tmpr; c = tmpc;  y = tmpy;  x = tmpx;
+		e.r = tmpr; e.c = tmpc;  e.y = tmpy;  e.x = tmpx;
 	}
 
 }
@@ -542,10 +542,10 @@ func (e *Editor) handleEdits(edits []Edit, version int) {
 		newLines := strings.Split(edit.NewText, "\n")
 		for i, line := range newLines {
 			index := int(start.Line) + i
-			if index >= len(content) {
-				content = append(content,  []rune(line))
+			if index >= len(e.content) {
+				e.content = append(e.content,  []rune(line))
 			} else  {
-				content[index] = []rune(line)
+				e.content[index] = []rune(line)
 			}
 		}
 

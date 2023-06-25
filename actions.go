@@ -7,73 +7,73 @@ import (
 
 
 func (e *Editor) onDown() {
-	if len(content) == 0 { return }
-	if r+1 >= len(content) { y = r - e.ROWS + 1; if y < 0 { y = 0 }; return }
-	r++
-	if c > len(content[r]) { c = len(content[r]) } // fit to content
-	if r < y { y = r }
-	if r >= y + e.ROWS { y = r - e.ROWS + 1  }
+	if len(e.content) == 0 { return }
+	if e.r+1 >= len(e.content) { e.y = e.r - e.ROWS + 1; if e.y < 0 { e.y = 0 }; return }
+	e.r++
+	if e.c > len(e.content[e.r]) { e.c = len(e.content[e.r]) } // fit to e.content
+	if e.r < e.y { e.y = e.r }
+	if e.r >= e.y + e.ROWS { e.y = e.r - e.ROWS + 1  }
 }
 
 func (e *Editor) onUp() {
-	if len(content) == 0 { return }
-	if r == 0 { y = 0; return }
-	r--
-	if c > len(content[r]) { c = len(content[r]) } // fit to content
-	if r < y { y = r }
-	if r > y + e.ROWS { y = r - e.ROWS + 1  }
+	if len(e.content) == 0 { return }
+	if e.r == 0 { e.y = 0; return }
+	e.r--
+	if e.c > len(e.content[e.r]) { e.c = len(e.content[e.r]) } // fit to e.content
+	if e.r < e.y { e.y = e.r }
+	if e.r > e.y + e.ROWS { e.y = e.r - e.ROWS + 1  }
 }
 
 func (e *Editor) onLeft() {
-	if len(content) == 0 { return }
+	if len(e.content) == 0 { return }
 
-	if c > 0 {
-		c--
-	} else if r > 0 {
-		r -= 1
-		c = len(content[r]) // fit to content
-		if r < y { y = r }
+	if e.c > 0 {
+		e.c--
+	} else if e.r > 0 {
+		e.r--
+		e.c = len(e.content[e.r]) // fit to e.content
+		if e.r < e.y { e.y = e.r }
 	}
 }
 func (e *Editor) onRight() {
-	if len(content) == 0 { return }
+	if len(e.content) == 0 { return }
 
-	if c < len(content[r]) {
-		c++
-	} else if r < len(content)-1 {
-		r += 1 // to newline
-		c = 0
-		if r > y + e.ROWS { y ++  }
+	if e.c < len(e.content[e.r]) {
+		e.c++
+	} else if e.r < len(e.content)-1 {
+		e.r++
+		e.c = 0
+		if e.r > e.y + e.ROWS { e.y ++  }
 	}
 }
 func (e *Editor) onScrollUp() {
-	if len(content) == 0 { return }
-	if y == 0 { return }
-	y--
+	if len(e.content) == 0 { return }
+	if e.y == 0 { return }
+	e.y--
 }
 func (e *Editor) onScrollDown() {
-	if len(content) == 0 { return }
-	if y + e.ROWS >= len(content) { return }
-	y++
+	if len(e.content) == 0 { return }
+	if e.y + e.ROWS >= len(e.content) { return }
+	e.y++
 }
 
 func (e *Editor) focus() {
-	if r > y+e.ROWS { y = r + e.ROWS }
-	if r < y { y = r }
+	if e.r > e.y + e.ROWS { e.y = e.r + e.ROWS }
+	if e.r < e.y { e.y = e.r }
 }
 
 func (e *Editor) onEnter() {
 
-	var ops = EditOperation{{Enter, '\n', r, c}}
-	tabs := countTabs(content[r], c)
-	spaces := countSpaces(content[r], c)
+	var ops = EditOperation{{Enter, '\n', e.r, e.c}}
+	tabs := countTabs(e.content[e.r], e.c)
+	spaces := countSpaces(e.content[e.r], e.c)
 
-	after := content[r][c:]
-	before := content[r][:c]
-	content[r] = before
-	e.updateColorsAtLine(r)
-	r++
-	c = 0
+	after := e.content[e.r][e.c:]
+	before := e.content[e.r][:e.c]
+	e.content[e.r] = before
+	e.updateColorsAtLine(e.r)
+	e.r++
+	e.c = 0
 
 	countToInsert := tabs
 	characterToInsert := '\t'
@@ -82,137 +82,137 @@ func (e *Editor) onEnter() {
 	begining := []rune{}
 	for i := 0; i < countToInsert; i++ {
 		begining = append(begining, characterToInsert)
-		ops = append(ops, Operation{Insert, characterToInsert, r, c+i})
+		ops = append(ops, Operation{Insert, characterToInsert, e.r, e.c + i})
 	}
-	c = countToInsert
+	e.c = countToInsert
 
 	newline := append(begining, after...)
-	content = insert(content, r, newline)
+	e.content = insert(e.content, e.r, newline)
 
 	if e.isColorize && e.lang != "" {
-		colors = insert(colors, r, []int{})
-		e.updateColorsAtLine(r)
+		e.colors = insert(e.colors, e.r, []int{})
+		e.updateColorsAtLine(e.r)
 	}
 
 	e.undo = append(e.undo, ops)
-	e.focus(); if r - y == e.ROWS { e.onScrollDown() }
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
+	e.focus(); if e.r - e.y == e.ROWS { e.onScrollDown() }
+	if len(e.redo) > 0 { e.redo = []EditOperation{} }
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onDelete() {
 
-	if len(e.selection.getSelectionString(content)) > 0 { e.cut(); return }
+	if len(e.selection.getSelectionString(e.content)) > 0 { e.cut(); return }
 
-	if c > 0 {
-		c--
-		e.deleteCharacter(r,c)
-		e.updateColorsAtLine(r)
-	} else if r > 0 { // delete line
-		e.undo = append(e.undo, EditOperation{{DeleteLine, ' ', r-1, len(content[r-1])}})
-		l := content[r][c:]
-		content = remove(content, r)
+	if e.c > 0 {
+		e.c--
+		e.deleteCharacter(e.r, e.c)
+		e.updateColorsAtLine(e.r)
+	} else if e.r > 0 { // delete line
+		e.undo = append(e.undo, EditOperation{{DeleteLine, ' ', e.r-1, len(e.content[e.r-1])}})
+		l := e.content[e.r][e.c:]
+		e.content = remove(e.content, e.r)
 		if e.isColorize && e.lang != "" {
-			if r < len(colors) { colors = remove(colors, r) }
-			e.updateColorsAtLine(r)
+			if e.r < len(e.colors) { e.colors = remove(e.colors, e.r) }
+			e.updateColorsAtLine(e.r)
 		}
 
-		r--
-		c = len(content[r])
-		content[r] = append(content[r], l...)
-		e.updateColorsAtLine(r)
+		e.r--
+		e.c = len(e.content[e.r])
+		e.content[e.r] = append(e.content[e.r], l...)
+		e.updateColorsAtLine(e.r)
 	}
 
 	e.focus()
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
+	if len(e.redo) > 0 { e.redo = []EditOperation{} }
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onTab() {
 	e.focus()
 
-	selectedLines := e.selection.getSelectedLines(content)
+	selectedLines := e.selection.getSelectedLines(e.content)
 
 	if len(selectedLines) == 0 {
 		ch := '\t'
-		e.insertCharacter(r, c, ch)
-		e.updateColorsAtLine(r)
-		c++
+		e.insertCharacter(e.r, e.c, ch)
+		e.updateColorsAtLine(e.r)
+		e.c++
 	} else  {
 		var ops = EditOperation{}
 		e.selection.ssx = 0
 		for _, linenumber := range selectedLines {
-			r = linenumber
-			content[r] = insert(content[r], 0, '\t')
-			e.updateColorsAtLine(r)
-			ops = append(ops, Operation{Insert, '\t', r, 0})
-			c = len(content[r])
+			e.r = linenumber
+			e.content[e.r] = insert(e.content[e.r], 0, '\t')
+			e.updateColorsAtLine(e.r)
+			ops = append(ops, Operation{Insert, '\t', e.r, 0})
+			e.c = len(e.content[e.r])
 		}
-		e.selection.sex = c
+		e.selection.sex = e.c
 		e.undo = append(e.undo, ops)
 	}
 
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
+	if len(e.redo) > 0 { e.redo = []EditOperation{} }
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onBackTab() {
 	e.focus()
 
-	selectedLines := e.selection.getSelectedLines(content)
+	selectedLines := e.selection.getSelectedLines(e.content)
 
 	// deleting tabs from beginning
 	if len(selectedLines) == 0 {
-		if content[r][0] == '\t'  {
-			e.deleteCharacter(r,0)
-			colors[r] = remove(colors[r], 0)
-			c--
+		if e.content[e.r][0] == '\t'  {
+			e.deleteCharacter(e.r,0)
+			e.colors[e.r] = remove(e.colors[e.r], 0)
+			e.c--
 		}
 	} else {
 		e.selection.ssx = 0
 		for _, linenumber := range selectedLines {
-			r = linenumber
-			if len(content[r]) > 0 && content[r][0] == '\t'  {
-				e.deleteCharacter(r,0)
-				colors[r] = remove(colors[r], 0)
-				c = len(content[r])
+			e.r = linenumber
+			if len(e.content[e.r]) > 0 && e.content[e.r][0] == '\t'  {
+				e.deleteCharacter(e.r,0)
+				e.colors[e.r] = remove(e.colors[e.r], 0)
+				e.c = len(e.content[e.r])
 			}
 		}
 	}
 
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
+	if len(e.redo) > 0 { e.redo = []EditOperation{} }
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) addChar(ch rune) {
-	if len(e.selection.getSelectionString(content)) != 0 { e.cut() }
+	if len(e.selection.getSelectionString(e.content)) != 0 { e.cut() }
 
 	e.focus()
-	e.insertCharacter(r, c, ch)
-	c++
+	e.insertCharacter(e.r, e.c, ch)
+	e.c++
 
 	e.maybeAddPair(ch)
 
-	if len(e.redoStack) > 0 { e.redoStack = []EditOperation{} }
+	if len(e.redo) > 0 { e.redo = []EditOperation{} }
 
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
-	e.updateColorsAtLine(r)
+	if len(e.content) <= 10000 { go e.writeFile() }
+	e.updateColorsAtLine(e.r)
 }
 
 func (e *Editor) insertCharacter(line, pos int, ch rune) {
-	content[line] = insert(content[line], pos, ch)
+	e.content[line] = insert(e.content[line], pos, ch)
 	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line, pos, line, pos, string(ch)) }
-	e.undo = append(e.undo, EditOperation{{Insert, ch, r, c}})
+	e.undo = append(e.undo, EditOperation{{Insert, ch, e.r, e.c}})
 }
 
 func (e *Editor) insertString(line, pos int, linestring string) {
@@ -223,44 +223,44 @@ func (e *Editor) insertString(line, pos int, linestring string) {
 	// and adding all the Operations to it
 	var ops = EditOperation{}
 	for _, ch := range insertRunes {
-		content[line] = insert(content[line], pos, ch)
+		e.content[line] = insert(e.content[line], pos, ch)
 		ops = append(ops, Operation{Insert, ch, line, pos})
 		pos++
 	}
-	c = pos
+	e.c = pos
 	e.undo = append(e.undo, ops)
 }
 
 func (e *Editor) insertLines(line, pos int, lines []string) {
 	var ops = EditOperation{}
 
-	tabs := countTabs(content[r], c) // todo: spaces also can be
-	if len(content[r]) > 0 { r++ }
-	//ops = append(ops, Operation{Enter, '\n', r, c})
+	tabs := countTabs(e.content[e.r], e.c) // todo: spaces also can be
+	if len(e.content[e.r]) > 0 { e.r++ }
+	//ops = append(ops, Operation{Enter, '\n', e.r, e.c})
 	for _, linestr := range lines {
-		c = 0
-		if r >= len(content)  { content = append(content, []rune{}) } // if last line adding empty line before
+		e.c = 0
+		if e.r >= len(e.content)  { e.content = append(e.content, []rune{}) } // if last line adding empty line before
 
 		nl := strings.Repeat("\t", tabs) + linestr
-		content = insert(content, r, []rune(nl))
+		e.content = insert(e.content, e.r, []rune(nl))
 
-		ops = append(ops, Operation{Enter, '\n', r, c})
+		ops = append(ops, Operation{Enter, '\n', e.r, e.c})
 		for _, ch := range nl {
-			ops = append(ops, Operation{Insert, ch, r, c})
-			c++
+			ops = append(ops, Operation{Insert, ch, e.r, e.c})
+			e.c++
 		}
-		r++
+		e.r++
 	}
-	r--
+	e.r--
 	e.undo = append(e.undo, ops)
 }
 
 func (e *Editor) deleteCharacter(line, pos int) {
 	e.undo = append(e.undo, EditOperation{
-		{MoveCursor, content[line][pos], line, pos+1},
-		{Delete, content[line][pos], line, pos},
+		{MoveCursor, e.content[line][pos], line, pos+1},
+		{Delete, e.content[line][pos], line, pos},
 	})
-	content[line] = remove(content[line], pos)
+	e.content[line] = remove(e.content[line], pos)
 	//if lsp.isReady { go lsp.didChange(absoluteFilePath, line,pos,line,pos+1, "")}
 }
 
@@ -269,75 +269,75 @@ func (e *Editor) deleteCharacter(line, pos int) {
 func (e *Editor) onSwapLinesUp() {
 	e.focus()
 
-	if r == 0 { return }
+	if e.r == 0 { return }
 	var ops = EditOperation{}
-	ops = append(ops, Operation{MoveCursor, ' ', r, c})
+	ops = append(ops, Operation{MoveCursor, ' ', e.r, e.c})
 
-	line1 := content[r]; line2 := content[r-1]
-	line1c := colors[r]; line2c := colors[r-1]
+	line1 := e.content[e.r]; line2 := e.content[e.r-1]
+	line1c := e.colors[e.r]; line2c := e.colors[e.r-1]
 
-	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], r, i}) }
-	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], r-1, i}) }
-	for i, ch := range line1 { ops = append(ops, Operation{Insert, ch, r-1, i}) }
-	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, r, i}) }
+	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], e.r, i}) }
+	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], e.r-1, i}) }
+	for i, ch := range line1 { ops = append(ops, Operation{Insert, ch, e.r-1, i}) }
+	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, e.r, i}) }
 
-	content[r] = line2; content[r-1] = line1 // swap
-	colors[r] = line2c; colors[r-1] = line1c // swap colors
-	r--
+	e.content[e.r] = line2; e.content[e.r-1] = line1 // swap
+	e.colors[e.r] = line2c; e.colors[e.r-1] = line1c // swap e.colors
+	e.r--
 
 	e.undo = append(e.undo, ops)
 	e.selection.cleanSelection()
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onSwapLinesDown() {
 	e.focus()
 
-	if r+1 == len(content) { return }
+	if e.r+1 == len(e.content) { return }
 
 	var ops = EditOperation{}
-	ops = append(ops, Operation{MoveCursor, ' ', r, c})
+	ops = append(ops, Operation{MoveCursor, ' ', e.r, e.c})
 
-	line1 := content[r]; line2 := content[r+1]
-	line1c := colors[r]; line2c := colors[r+1]
+	line1 := e.content[e.r]; line2 := e.content[e.r+1]
+	line1c := e.colors[e.r]; line2c := e.colors[e.r+1]
 
-	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], r, i}) }
-	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], r+1, i}) }
-	for i, ch := range line1 { ops = append(ops, Operation{Insert, ch, r+1, i}) }
-	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, r, i}) }
+	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], e.r, i}) }
+	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], e.r+1, i}) }
+	for i, ch := range line1 { ops = append(ops, Operation{Insert, ch, e.r+1, i}) }
+	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, e.r, i}) }
 
-	content[r] = line2; content[r+1] = line1 // swap
-	colors[r] = line2c; colors[r+1] = line1c // swap
-	r++
+	e.content[e.r] = line2; e.content[e.r+1] = line1 // swap
+	e.colors[e.r] = line2c; e.colors[e.r+1] = line1c // swap
+	e.r++
 
 	e.undo = append(e.undo, ops)
 	e.selection.cleanSelection()
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) onCopy() {
-	selectionString := e.selection.getSelectionString(content)
+	selectionString := e.selection.getSelectionString(e.content)
 	clipboard.WriteAll(selectionString)
 }
 
 func (e *Editor) onSelectAll() {
-	if len(content) == 0 { return }
+	if len(e.content) == 0 { return }
 	e.selection.ssx = 0; e.selection.ssy = 0
-	e.selection.sey = len(content)
-	lastElement := len(content[len(content)-1])
+	e.selection.sey = len(e.content)
+	lastElement := len(e.content[len(e.content)-1])
 	e.selection.sex = lastElement
-	e.selection.sey = len(content)
+	e.selection.sey = len(e.content)
 	e.selection.isSelected = true
 }
 
 func (e *Editor) onPaste() {
 	e.focus()
 
-	if len(e.selection.getSelectionString(content)) > 0 { e.cut() }
+	if len(e.selection.getSelectionString(e.content)) > 0 { e.cut() }
 
 	text, _ := clipboard.ReadAll()
 	lines := strings.Split(text, "\n")
@@ -345,11 +345,11 @@ func (e *Editor) onPaste() {
 	if len(lines) == 0 { return }
 
 	if len(lines) == 1 { // single line paste
-		e.insertString(r,c, lines[0])
+		e.insertString(e.r, e.c, lines[0])
 	}
 
 	if len(lines) > 1 { // multiple line paste
-		e.insertLines(r,c, lines)
+		e.insertLines(e.r, e.c, lines)
 	}
 
 	e.update = true
@@ -359,85 +359,85 @@ func (e *Editor) onPaste() {
 func (e *Editor) cut() {
 	e.focus()
 
-	if len(content) <= 1 {
-		content[0] = []rune{};
-		r, c = 0, 0
+	if len(e.content) <= 1 {
+		e.content[0] = []rune{};
+		e.r, e.c = 0, 0
 		return
 	}
 	var ops = EditOperation{}
 
-	if len(e.selection.getSelectionString(content)) == 0 { // cut single line
-		ops = append(ops, Operation{MoveCursor, ' ', r, c})
+	if len(e.selection.getSelectionString(e.content)) == 0 { // cut single line
+		ops = append(ops, Operation{MoveCursor, ' ', e.r, e.c})
 
-		for i := len(content[r])-1; i >= 0; i-- {
-			ops = append(ops, Operation{Delete, content[r][i], r, i})
+		for i := len(e.content[e.r])-1; i >= 0; i-- {
+			ops = append(ops, Operation{Delete, e.content[e.r][i], e.r, i})
 		}
 
-		if r == 0 {
+		if e.r == 0 {
 			ops = append(ops, Operation{DeleteLine, '\n', 0, 0})
-			c = 0
+			e.c = 0
 		} else {
 			newc := 0
-			if c > len(content[r-1]) { newc = len(content[r-1])} else { newc = c }
-			ops = append(ops, Operation{DeleteLine, '\n', r-1, newc})
-			c = newc
+			if e.c > len(e.content[e.r-1]) { newc = len(e.content[e.r-1])} else { newc = e.c }
+			ops = append(ops, Operation{DeleteLine, '\n', e.r-1, newc})
+			e.c = newc
 		}
 
-		content = remove(content, r)
+		e.content = remove(e.content, e.r)
 		if e.isColorize && e.lang != "" {
-			colors = remove(colors, r)
-			e.updateColorsAtLine(r)
+			e.colors = remove(e.colors, e.r)
+			e.updateColorsAtLine(e.r)
 		}
-		if r > 0 { r-- }
+		if e.r > 0 { e.r-- }
 
 		e.update = true
 		e.isContentChanged = true
-		if len(content) <= 10000 { go e.writeFile() }
+		if len(e.content) <= 10000 { go e.writeFile() }
 
 	} else { // cut selection
 
-		//selectionString := getSelectionString(content, ssx, ssy, sex, sey)
+		//selectionString := getSelectionString(e.content, ssx, ssy, sex, sey)
 		//clipboard.WriteAll(selectionString)
 
-		ops = append(ops, Operation{MoveCursor, ' ', r, c})
+		ops = append(ops, Operation{MoveCursor, ' ', e.r, e.c})
 
-		selectedIndices := e.selection.getSelectedIndices(content)
+		selectedIndices := e.selection.getSelectedIndices(e.content)
 
 		// Sort selectedIndices in reverse order to delete characters from the end
 		for i := len(selectedIndices) - 1; i >= 0; i-- {
 			indices := selectedIndices[i]
 			xd := indices[0]
 			yd := indices[1]
-			c, r = xd, yd
+			e.c, e.r = xd, yd
 
 			// Delete the character at index (x, j)
-			ops = append(ops, Operation{Delete, content[yd][xd], yd, xd})
-			content[yd] = append(content[yd][:xd], content[yd][xd+1:]...)
-			colors[yd] = append(colors[yd][:xd], colors[yd][xd+1:]...)
+			ops = append(ops, Operation{Delete, e.content[yd][xd], yd, xd})
+			e.content[yd] = append(e.content[yd][:xd], e.content[yd][xd+1:]...)
+			e.colors[yd] = append(e.colors[yd][:xd], e.colors[yd][xd+1:]...)
 
-			if len(content[yd]) == 0 { // delete line
-				if r == 0 { ops = append(ops, Operation{DeleteLine, '\n', 0, 0}) } else {
-					ops = append(ops, Operation{DeleteLine, '\n', r-1, len(content[r-1])})
+			if len(e.content[yd]) == 0 { // delete line
+				if e.r == 0 { ops = append(ops, Operation{DeleteLine, '\n', 0, 0}) } else {
+					ops = append(ops, Operation{DeleteLine, '\n', e.r-1, len(e.content[e.r-1])})
 				}
 
-				content = append(content[:yd], content[yd+1:]...)
-				colors = append(colors[:yd], colors[yd+1:]...)
+				e.content = append(e.content[:yd], e.content[yd+1:]...)
+				e.colors = append(e.colors[:yd], e.colors[yd+1:]...)
 			}
 		}
 
-		if len(content) == 0 {
-			content = make([][]rune, 1)
-			colors = make([][]int, 1)
+		if len(e.content) == 0 {
+			e.content = make([][]rune, 1)
+			e.colors = make([][]int, 1)
 		}
 
-		if r >= len(content)  {
-			r = len(content) - 1
-			if c >= len(content[r]) { c = len(content[r]) - 1 }
+		if e.r >= len(e.content)  {
+			e.r = len(e.content) - 1
+			if e.c >= len(e.content[e.r]) { e.c = len(e.content[e.r]) - 1 }
 		}
 		e.selection.cleanSelection()
 		e.update = true
 		e.isContentChanged = true
-		if len(content) <= 10000 { go e.writeFile() }
+		if len(e.content) <= 10000 { go e.writeFile() }
 
 		//e.updateNeeded()
 	}
@@ -448,32 +448,32 @@ func (e *Editor) cut() {
 func (e *Editor) duplicate() {
 	e.focus()
 
-	if len(content) == 0 { return }
+	if len(e.content) == 0 { return }
 
 	if e.selection.ssx == -1 && e.selection.ssy == -1 ||
 		e.selection.ssx == e.selection.sex && e.selection.ssy == e.selection.sey  {
 		var ops = EditOperation{}
-		ops = append(ops, Operation{MoveCursor, ' ', r, c})
-		ops = append(ops, Operation{Enter, '\n', r, len(content[r])})
+		ops = append(ops, Operation{MoveCursor, ' ', e.r, e.c})
+		ops = append(ops, Operation{Enter, '\n', e.r, len(e.content[e.r])})
 
-		duplicatedSlice := make([]rune, len(content[r]))
-		copy(duplicatedSlice, content[r])
+		duplicatedSlice := make([]rune, len(e.content[e.r]))
+		copy(duplicatedSlice, e.content[e.r])
 		for i, ch := range duplicatedSlice {
-			ops = append(ops, Operation{Insert, ch, r, i})
+			ops = append(ops, Operation{Insert, ch, e.r, i})
 		}
-		r++
-		content = insert(content, r, duplicatedSlice)
+		e.r++
+		e.content = insert(e.content, e.r, duplicatedSlice)
 		if e.isColorize && e.lang != "" {
-			colors = insert(colors, r, []int{})
-			e.updateColorsAtLine(r)
+			e.colors = insert(e.colors, e.r, []int{})
+			e.updateColorsAtLine(e.r)
 		}
 		e.undo = append(e.undo, ops)
 		e.update = true
 		e.isContentChanged = true
-		if len(content) <= 10000 { go e.writeFile() }
+		if len(e.content) <= 10000 { go e.writeFile() }
 
 	} else {
-		selection := e.selection.getSelectionString(content)
+		selection := e.selection.getSelectionString(e.content)
 		if len(selection) == 0 { return }
 		lines := strings.Split(selection, "\n")
 
@@ -481,11 +481,11 @@ func (e *Editor) duplicate() {
 
 		if len(lines) == 1 { // single line
 			lines[0] = " " + lines[0]// add space before
-			e.insertString(r,c, lines[0])
+			e.insertString(e.r, e.c, lines[0])
 		}
 
 		if len(lines) > 1 { // multiple line
-			e.insertLines(r,c, lines)
+			e.insertLines(e.r, e.c, lines)
 		}
 		e.selection.cleanSelection()
 		e.updateNeeded()
@@ -502,67 +502,67 @@ func (e *Editor) onUndo() {
 		o := lastOperation[i]
 
 		if o.action == Insert {
-			r = o.line; c = o.column
-			content[r] = append(content[r][:c], content[r][c+1:]...)
+			e.r = o.line; e.c = o.column
+			e.content[e.r] = append(e.content[e.r][:e.c], e.content[e.r][e.c+1:]...)
 
 		} else if o.action == Delete {
-			r = o.line; c = o.column
-			content[r] = insert(content[r], c, o.char)
+			e.r = o.line; e.c = o.column
+			e.content[e.r] = insert(e.content[e.r], e.c, o.char)
 
 		} else if o.action == Enter {
 			// Merge lines
-			content[o.line] = append(content[o.line], content[o.line+1]...)
-			content = append(content[:o.line+1], content[o.line+2:]...)
-			r = o.line; c = o.column
+			e.content[o.line] = append(e.content[o.line], e.content[o.line+1]...)
+			e.content = append(e.content[:o.line+1], e.content[o.line+2:]...)
+			e.r = o.line; e.c = o.column
 
 		} else if o.action == DeleteLine {
 			// Insert enter
-			r = o.line; c = o.column
-			after := content[r][c:]
-			before := content[r][:c]
-			content[r] = before
-			r++; c = 0
+			e.r = o.line; e.c = o.column
+			after := e.content[e.r][e.c:]
+			before := e.content[e.r][:e.c]
+			e.content[e.r] = before
+			e.r++; e.c = 0
 			newline := append([]rune{}, after...)
-			content = insert(content, r, newline)
+			e.content = insert(e.content, e.r, newline)
 		} else if o.action == MoveCursor {
-			r = o.line; c = o.column
+			e.r = o.line; e.c = o.column
 		}
 	}
 
-	e.redoStack = append(e.redoStack, lastOperation)
+	e.redo = append(e.redo, lastOperation)
 	e.updateNeeded()
 }
-func (e *Editor) redo() {
-	if len(e.redoStack) == 0 { return }
+func (e *Editor) onRedo() {
+	if len(e.redo) == 0 { return }
 
-	lastRedoOperation := e.redoStack[len(e.redoStack)-1]
-	e.redoStack = e.redoStack[:len(e.redoStack)-1]
+	lastRedoOperation := e.redo[len(e.redo)-1]
+	e.redo = e.redo[:len(e.redo)-1]
 
 	for i := 0; i < len(lastRedoOperation); i++ {
 		o := lastRedoOperation[i]
 
 		if o.action == Insert {
-			r = o.line; c = o.column
-			content[r] = insert(content[r], c, o.char)
-			c++
+			e.r = o.line; e.c = o.column
+			e.content[e.r] = insert(e.content[e.r], e.c, o.char)
+			e.c++
 		} else if o.action == Delete {
-			r = o.line; c = o.column
-			content[r] = append(content[r][:c], content[r][c+1:]...)
+			e.r = o.line; e.c = o.column
+			e.content[e.r] = append(e.content[e.r][:e.c], e.content[e.r][e.c+1:]...)
 		} else if o.action == Enter {
-			r = o.line; c = o.column
-			after := content[r][c:]
-			before := content[r][:c]
-			content[r] = before
-			r++; c = 0
+			e.r = o.line; e.c = o.column
+			after := e.content[e.r][e.c:]
+			before := e.content[e.r][:e.c]
+			e.content[e.r] = before
+			e.r++; e.c = 0
 			newline := append([]rune{}, after...)
-			content = insert(content, r, newline)
+			e.content = insert(e.content, e.r, newline)
 		} else if o.action == DeleteLine {
 			// Merge lines
-			content[o.line] = append(content[o.line], content[o.line+1]...)
-			content = append(content[:o.line+1], content[o.line+2:]...)
-			r = o.line; c = o.column
+			e.content[o.line] = append(e.content[o.line], e.content[o.line+1]...)
+			e.content = append(e.content[:o.line+1], e.content[o.line+2:]...)
+			e.r = o.line; e.c = o.column
 		} else if o.action == MoveCursor {
-			r = o.line; c = o.column
+			e.r = o.line; e.c = o.column
 		}
 	}
 
@@ -574,143 +574,143 @@ func (e *Editor) onCommentLine() {
 
 	found := false
 
-	for i, ch := range content[r] {
-		if len(content[r]) == 0 { break }
+	for i, ch := range e.content[e.r] {
+		if len(e.content[e.r]) == 0 { break }
 		if len(e.langConf.Comment) == 1 && ch == rune(e.langConf.Comment[0]) {
 			// found 1 char comment, uncomment
-			c = i
+			e.c = i
 			e.undo = append(e.undo, EditOperation{
-				{MoveCursor, content[r][i], r, i+1},
-				{Delete, content[r][i], r, i},
+				{MoveCursor, e.content[e.r][i], e.r, i+1},
+				{Delete, e.content[e.r][i], e.r, i},
 			})
-			content[r] = remove(content[r], i)
-			e.updateColorsAtLine(r)
+			e.content[e.r] = remove(e.content[e.r], i)
+			e.updateColorsAtLine(e.r)
 			found = true
 			break
 		}
-		if len(e.langConf.Comment) == 2 && ch == rune(e.langConf.Comment[0]) && content[r][i+1] == rune(e.langConf.Comment[1]) {
+		if len(e.langConf.Comment) == 2 && ch == rune(e.langConf.Comment[0]) && e.content[e.r][i+1] == rune(e.langConf.Comment[1]) {
 			// found 2 char comment, uncomment
-			c = i
+			e.c = i
 			e.undo = append(e.undo, EditOperation{
-				{MoveCursor, content[r][i], r, i+1},
-				{Delete, content[r][i], r, i},
-				{MoveCursor, content[r][i+1], r, i+1},
-				{Delete, content[r][i], r, i},
+				{MoveCursor, e.content[e.r][i], e.r, i+1},
+				{Delete, e.content[e.r][i], e.r, i},
+				{MoveCursor, e.content[e.r][i+1], e.r, i+1},
+				{Delete, e.content[e.r][i], e.r, i},
 			})
-			content[r] = remove(content[r], i)
-			content[r] = remove(content[r], i)
-			e.updateColorsAtLine(r)
+			e.content[e.r] = remove(e.content[e.r], i)
+			e.content[e.r] = remove(e.content[e.r], i)
+			e.updateColorsAtLine(e.r)
 			found = true
 			break
 		}
 	}
 
 	if found {
-		if c < 0 { c = 0 }
+		if e.c < 0 { e.c = 0 }
 		e.onDown()
 		e.update = true
 		e.isContentChanged = true
-		if len(content) <= 10000 { go e.writeFile() }
+		if len(e.content) <= 10000 { go e.writeFile() }
 		return
 	}
 
-	tabs := countTabs(content[r], c)
-	spaces := countSpaces(content[r], c)
+	tabs := countTabs(e.content[e.r], e.c)
+	spaces := countSpaces(e.content[e.r], e.c)
 
 	from := tabs
 	if tabs == 0 && spaces != 0 { from = spaces }
 
-	c = from
+	e.c = from
 	ops := EditOperation{}
 	for _, ch := range e.langConf.Comment {
-		content[r] = insert(content[r], c, ch)
-		ops = append(ops, Operation{Insert, ch, r, c})
+		e.content[e.r] = insert(e.content[e.r], e.c, ch)
+		ops = append(ops, Operation{Insert, ch, e.r, e.c})
 	}
 
-	e.updateColorsAtLine(r)
+	e.updateColorsAtLine(e.r)
 
 	e.undo = append(e.undo, ops)
-	if c < 0 { c = 0 }
+	if e.c < 0 { e.c = 0 }
 	e.onDown()
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) handleSmartMove(char rune) {
 	e.focus()
 	if char == 'f' || char == 'F' {
-		nw := findNextWord(content[r], c+1)
-		c = nw
-		c = min(c, len(content[r]))
+		nw := findNextWord(e.content[e.r], e.c + 1)
+		e.c = nw
+		e.c = min(e.c, len(e.content[e.r]))
 	}
 	if char == 'b' || char == 'B' {
-		nw := findPrevWord(content[r], c-1)
-		c = nw
+		nw := findPrevWord(e.content[e.r], e.c-1)
+		e.c = nw
 	}
 }
 
 func (e *Editor) handleSmartMoveDown() {
 
-	var ops = EditOperation{{Enter, '\n', r, c}}
+	var ops = EditOperation{{Enter, '\n', e.r, e.c}}
 
 	// moving down, insert new line, add same amount of tabs
-	tabs := countTabs(content[r], c)
-	spaces := countSpaces(content[r], c)
+	tabs := countTabs(e.content[e.r], e.c)
+	spaces := countSpaces(e.content[e.r], e.c)
 
 	countToInsert := tabs
 	characterToInsert := '\t'
 	if tabs == 0 && spaces != 0 { characterToInsert = ' '; countToInsert = spaces }
 
-	r++; c = 0
-	content = insert(content, r, []rune{})
+	e.r++; e.c = 0
+	e.content = insert(e.content, e.r, []rune{})
 	for i := 0; i < countToInsert; i++ {
-		content[r] = insert(content[r], c, characterToInsert)
-		ops = append(ops, Operation{Insert, characterToInsert, r, c })
-		c++
+		e.content[e.r] = insert(e.content[e.r], e.c, characterToInsert)
+		ops = append(ops, Operation{Insert, characterToInsert, e.r, e.c })
+		e.c++
 	}
 
 	if e.isColorize && e.lang != "" {
-		colors = insert(colors, r, []int{})
-		e.updateColorsAtLine(r)
+		e.colors = insert(e.colors, e.r, []int{})
+		e.updateColorsAtLine(e.r)
 	}
 
 	e.focus(); e.onScrollDown()
 	e.undo = append(e.undo, ops)
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) handleSmartMoveUp() {
 	e.focus()
 	// add new line and shift all lines, add same amount of tabs/spaces
-	tabs := countTabs(content[r], c)
-	spaces := countSpaces(content[r], c)
+	tabs := countTabs(e.content[e.r], e.c)
+	spaces := countSpaces(e.content[e.r], e.c)
 
 	countToInsert := tabs
 	characterToInsert := '\t'
 	if tabs == 0 && spaces != 0 { characterToInsert = ' '; countToInsert = spaces }
 
-	var ops = EditOperation{{Enter, '\n', r, c}}
-	content = insert(content, r, []rune{})
+	var ops = EditOperation{{Enter, '\n', e.r, e.c}}
+	e.content = insert(e.content, e.r, []rune{})
 
-	c = 0
+	e.c = 0
 	for i := 0; i < countToInsert; i++ {
-		content[r] = insert(content[r], c, characterToInsert)
-		ops = append(ops, Operation{Insert, characterToInsert, r, c })
-		c++
+		e.content[e.r] = insert(e.content[e.r], e.c, characterToInsert)
+		ops = append(ops, Operation{Insert, characterToInsert, e.r, e.c })
+		e.c++
 	}
 
 	if e.isColorize && e.lang != "" {
-		colors = insert(colors, r, []int{})
-		e.updateColorsAtLine(r)
+		e.colors = insert(e.colors, e.r, []int{})
+		e.updateColorsAtLine(e.r)
 	}
 
 	e.undo = append(e.undo, ops)
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 }
 
 func (e *Editor) maybeAddPair(ch rune) {
@@ -720,12 +720,12 @@ func (e *Editor) maybeAddPair(ch rune) {
 	}
 
 	if closeChar, found := pairMap[ch]; found {
-		noMoreChars := c >= len(content[r])
-		isSpaceNext := c < len(content[r]) && content[r][c] == ' '
-		isStringAndClosedBracketNext := closeChar == '"' && c < len(content[r]) && content[r][c] == ')'
+		noMoreChars := e.c >= len(e.content[e.r])
+		isSpaceNext := e.c < len(e.content[e.r]) && e.content[e.r][e.c] == ' '
+		isStringAndClosedBracketNext := closeChar == '"' && e.c < len(e.content[e.r]) && e.content[e.r][e.c] == ')'
 
 		if noMoreChars || isSpaceNext || isStringAndClosedBracketNext {
-			e.insertCharacter(r, c, closeChar)
+			e.insertCharacter(e.r, e.c, closeChar)
 		}
 	}
 }

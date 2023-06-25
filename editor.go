@@ -9,58 +9,60 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
-var content [][]rune      // characters
-var colors [][]int        // characters colors
-var r = 0                 // cursor position, row and column
-var c = 0                 // cursor position, row and column
-var y = 0                 // row offset for scrolling
-var x = 0                 // column offset for scrolling
-var s Screen              // screen
+type Editor struct {
+	COLUMNS     int // terminal size columns
+	ROWS        int // terminal size rows
+	LINES_WIDTH int // draw file lines number
 
+	r int // cursor position row
+	c int // cursor position column
+	y int // row offset for scrolling
+	x int // col offset for scrolling
 
-type Editor struct {	
-	COLUMNS int
-	ROWS int
-	LS int
-	
-	config Config
-	langConf Lang
-	tabWidth int
-	selection Selection
-		
-	undo      []EditOperation
-	redoStack []EditOperation
-	
-	inputFile string 
-	filename string 
-	absoluteFilePath string
-	isContentChanged bool
-	isColorize bool
-	lang string
-	update bool
-	isOverlay bool
-	
-	filesPanelWidth int
-	files []FileInfo
-	isFileSelection bool
-	fileScrollingOffset int
-	fileSelected int
-	searchPattern []rune
+	content [][]rune // text characters
+	colors  [][]int  // text characters colors
 
-	filesInfo []FileInfo
-	isFilesSearch bool
+	screen Screen // screen for drawing
 
-	isWindowMove bool
+	lang         string // current file language
+	config       Config // config, lsp, tabs, comments, etc
+	langConf     Lang   // current lang conf
+	langTabWidth int    // current lang tabs indentation  '\t' -> "    "
+
+	selection Selection // selection
+
+	undo []EditOperation // stack for undo operations
+	redo []EditOperation // stack for redo operations
+
+	inputFile        string // exact user input
+	filename         string // current file name
+	absoluteFilePath string // current file name and directory
+	isContentChanged bool   // shows * if file is changed
+	isColorize       bool   // colorize text is true by default
+	update           bool   // for screen updates,  if false it will not draw
+	isOverlay        bool   // true if overlay is active (completion, hover, errors...)
+
+	filesPanelWidth     int        // current width for files panel
+	files               []FileInfo // current dir files
+	isFileSelection     bool       // true if in files selection menu
+	fileScrollingOffset int        // for vertical scrolling  in selection menu
+	fileSelectedIndex   int        // selected file index
+	isFilesSearch       bool       // true if in files search mode
+	isFilesPanelMoving  bool       // true if in files panel moving mode
+
+	searchPattern []rune // pattern for search in a buffer
+
+	//filesInfo []FileInfo
+
 }
 
 func (e *Editor) start() {
 	logger.info("starting edgo")
 
-	s = e.initScreen()
+	e.initScreen()
 
 	// reading file from cmd args
 	if len(os.Args) == 1 {
@@ -79,7 +81,7 @@ func (e *Editor) start() {
 	for {
 		if e.update && e.filename != "" {
 			e.drawEverything()
-			s.Show()
+			e.screen.Show()
 		}
 		e.handleEvents()
 	}
@@ -87,10 +89,10 @@ func (e *Editor) start() {
 
 func (e *Editor) handleEvents() {
 	e.update = true
-	ev := s.PollEvent()      // Poll event
-	switch ev := ev.(type) { // Process event
+	ev := e.screen.PollEvent()
+	switch ev := ev.(type) {
 	case *EventResize:
-		e.COLUMNS, e.ROWS = s.Size()
+		e.COLUMNS, e.ROWS = e.screen.Size()
 
 	case *EventMouse:
 		mx, my := ev.Position()
@@ -108,57 +110,57 @@ func (e *Editor) handleEvents() {
 }
 
 func (e *Editor) handleMouse(mx int, my int, buttons ButtonMask, modifiers ModMask) {
-	if !e.isWindowMove && buttons&Button1 == 1 &&
-		math.Abs(float64(e.filesPanelWidth-mx)) <= 2 &&
-		len(e.selection.getSelectedLines(content)) == 0 {
+	if !e.isFilesPanelMoving && buttons & Button1 == 1 &&
+		math.Abs(float64(e.filesPanelWidth - mx)) <= 2 &&
+		len(e.selection.getSelectedLines(e.content)) == 0 {
 
 		e.filesPanelWidth = mx - 1
-		e.isWindowMove = true
+		e.isFilesPanelMoving = true
 		return
 	}
 
-	if e.isWindowMove && buttons&Button1 == 1 { e.filesPanelWidth = mx; return }
-	if e.isWindowMove && buttons&Button1 == 0 { e.isWindowMove = false; return }
-	if mx < e.filesPanelWidth - 2 && buttons&Button1 == 0 { e.onFiles(); return }
+	if e.isFilesPanelMoving && buttons & Button1 == 1 { e.filesPanelWidth = mx; return }
+	if e.isFilesPanelMoving && buttons & Button1 == 0 { e.isFilesPanelMoving = false; return }
+	if mx < e.filesPanelWidth - 2 && buttons & Button1 == 0 { e.onFiles(); return }
 
 	if e.filename == "" { return }
 
-	mx -= e.LS + e.filesPanelWidth
+	mx -= e.LINES_WIDTH + e.filesPanelWidth
 
 	if mx < 0 { return }
 	if my > e.ROWS { return }
 
 	// if click with control or option, lookup for definition or references
-	if buttons&Button1 == 1 && (modifiers&ModAlt != 0 || modifiers&ModCtrl != 0) {
-		r = my + y
-		if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+	if buttons & Button1 == 1 && (modifiers & ModAlt != 0 || modifiers & ModCtrl != 0) {
+		e.r = my + e.y
+		if e.r > len(e.content)-1 { e.r = len(e.content) - 1 } // fit cursor to e.content
 
-		c = e.findCursorXPosition(mx)
-		if modifiers&ModAlt != 0 { e.onReferences() }
-		if modifiers&ModCtrl != 0 { e.onDefinition() }
+		e.c = e.findCursorXPosition(mx)
+		if modifiers & ModAlt != 0 { e.onReferences() }
+		if modifiers & ModCtrl != 0 { e.onDefinition() }
 		return
 	}
 
-	if e.selection.isSelected && buttons&Button1 == 1 {
-		r = my + y
-		if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+	if e.selection.isSelected && buttons & Button1 == 1 {
+		e.r = my + e.y
+		if e.r > len(e.content)-1 { e.r = len(e.content) - 1 } // fit cursor to e.content
 
 		xPosition := e.findCursorXPosition(mx)
 
-		isTripleClick := e.selection.isUnderSelection(xPosition, r) &&
-			len(e.selection.getSelectedLines(content)) == 1
+		isTripleClick := e.selection.isUnderSelection(xPosition, e.r) &&
+			len(e.selection.getSelectedLines(e.content)) == 1
 
 		if isTripleClick {
-			r = my + y
-			c = xPosition
-			if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
-			if c > len(content[r]) { c = len(content[r]) }
-			//if c < 0 { sex = len(content[r]) }
+			e.r = my + e.y
+			e.c = xPosition
+			if e.r > len(e.content)-1 { e.r = len(e.content) - 1 } // fit cursor to e.content
+			if e.c > len(e.content[e.r]) { e.c = len(e.content[e.r]) }
+			//if e.c < 0 { sex = len(e.content[r]) }
 
 			e.selection.ssx = 0
-			e.selection.sex = len(content[r])
-			e.selection.ssy = r
-			e.selection.sey = r
+			e.selection.sex = len(e.content[e.r])
+			e.selection.ssy = e.r
+			e.selection.sey = e.r
 
 			return
 		} else {
@@ -166,29 +168,29 @@ func (e *Editor) handleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 		}
 	}
 
-	if buttons&WheelDown != 0 { e.onScrollDown(); return }
-	if buttons&WheelUp != 0 { e.onScrollUp(); return }
-	if buttons&Button1 == 0 && e.selection.ssx == -1 { e.update = false; return }
+	if buttons & WheelDown != 0 { e.onScrollDown(); return }
+	if buttons & WheelUp != 0 { e.onScrollUp(); return }
+	if buttons & Button1 == 0 && e.selection.ssx == -1 { e.update = false; return }
 
-	if buttons&Button1 == 1 {
-		r = my + y
-		if r > len(content)-1 { r = len(content) - 1 } // fit cursor to content
+	if buttons & Button1 == 1 {
+		e.r = my + e.y
+		if e.r > len(e.content)-1 { e.r = len(e.content) - 1 } // fit cursor to e.content
 
 		xPosition := e.findCursorXPosition(mx)
 
-		if c == xPosition && len(e.selection.getSelectedLines(content)) == 0 {
+		if e.c == xPosition && len(e.selection.getSelectedLines(e.content)) == 0 {
 			// double click
-			prw := findPrevWord(content[r], c)
-			nxw := findNextWord(content[r], c)
-			e.selection.ssx, e.selection.ssy = prw, r
-			e.selection.sex, e.selection.sey = nxw, r
-			c = nxw
+			prw := findPrevWord(e.content[e.r], e.c)
+			nxw := findNextWord(e.content[e.r], e.c)
+			e.selection.ssx, e.selection.ssy = prw, e.r
+			e.selection.sex, e.selection.sey = nxw, e.r
+			e.c = nxw
 			return
 		}
-		c = xPosition
-		if c < 0 { c = 0 }
-		if e.selection.ssx < 0 { e.selection.ssx, e.selection.ssy = c, r }
-		if e.selection.ssx >= 0 { e.selection.sex, e.selection.sey = c, r }
+		e.c = xPosition
+		if e.c < 0 { e.c = 0 }
+		if e.selection.ssx < 0 { e.selection.ssx, e.selection.ssy = e.c, e.r }
+		if e.selection.ssx >= 0 { e.selection.sex, e.selection.sey = e.c, e.r }
 	}
 
 	if buttons&Button1 == 0 {
@@ -228,32 +230,32 @@ func (e *Editor) handleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 			key == KeyUp ||
 			key == KeyDown) {
 
-		if e.selection.ssx < 0 { e.selection.ssx, e.selection.ssy = c, r }
+		if e.selection.ssx < 0 { e.selection.ssx, e.selection.ssy = e.c, e.r }
 		if key == KeyRight { e.onRight() }
 		if key == KeyLeft { e.onLeft() }
 		if key == KeyUp { e.onUp() }
 		if key == KeyDown { e.onDown() }
 		if e.selection.ssx >= 0 {
-			e.selection.sex, e.selection.sey = c, r
+			e.selection.sex, e.selection.sey = e.c, e.r
 			e.selection.isSelected = true
 		}
 		return
 	}
 
-	if key == KeyRune && modifiers & ModAlt != 0 && len(content) > 0 { e.handleSmartMove(ev.Rune()); return }
+	if key == KeyRune && modifiers & ModAlt != 0 && len(e.content) > 0 { e.handleSmartMove(ev.Rune()); return }
 	if key == KeyDown && modifiers & ModAlt != 0 { e.handleSmartMoveDown(); return }
 	if key == KeyUp && modifiers & ModAlt != 0 { e.handleSmartMoveUp(); return }
 
 	if key == KeyRune {
 		e.addChar(ev.Rune())
 		if ev.Rune() == '.' {
-			e.drawEverything(); s.Show()
+			e.drawEverything(); e.screen.Show()
 			e.onCompletion()
 		}
-		//if ev.Rune() == '(' { e.drawEverything(); s.Show(); e.onSignatureHelp(); s.Clear() }
+		//if ev.Rune() == '(' { e.drawEverything(); e.screen.Show(); e.onSignatureHelp(); e.screen.Clear() }
 	}
 
-	if /*key == tcell.KeyEscape ||*/ key == KeyCtrlQ { s.Fini(); os.Exit(1) }
+	if /*key == tcell.KeyEscape ||*/ key == KeyCtrlQ { e.screen.Fini(); os.Exit(1) }
 	if key == KeyCtrlS { e.writeFile() }
 	if key == KeyEnter { e.onEnter() }
 	if key == KeyBackspace || key == KeyBackspace2 { e.onDelete() }
@@ -265,7 +267,7 @@ func (e *Editor) handleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if key == KeyCtrlF { e.onSearch() }
 	if key == KeyF18 { e.onRename() }
 	if key == KeyCtrlU { e.onUndo() }
-	//if key == tcell.KeyCtrlR { e.redo() } // todo: fix it
+	if key == KeyCtrlR { e.onRedo() } // todo: fix it
 	if key == KeyCtrlSpace { e.onCompletion() }
 
 }
@@ -294,84 +296,85 @@ func (e *Editor) openFile(fname string) error {
 	conf, found := e.config.Langs[e.lang]
 	if !found { conf = DefaultLangConfig }
 	e.langConf = conf
-	e.tabWidth = conf.TabWidth
+	e.langTabWidth = conf.TabWidth
 
 	code := e.readFile(e.absoluteFilePath)
-	colors = highlighter.colorize(code, e.filename)
+	e.colors = highlighter.colorize(code, e.filename)
 
 	e.undo = []EditOperation{}
-	e.redoStack = []EditOperation{}
+	e.redo = []EditOperation{}
 
 	e.updateFilesOpenStats(fname)
 
-	r = 0; c = 0; y = 0; x = 0
+    e.r = 0; e.c = 0; e.y = 0; e.x = 0
 	e.selection = Selection{ -1,-1,-1,-1,false }
 
 	return nil
 }
 
-func (e *Editor) initScreen() Screen {
+func (e *Editor) initScreen() {
 	encoding.Register()
 	screen, err := NewScreen()
 	if err != nil { fmt.Fprintf(os.Stderr, "%v\n", err); os.Exit(1) }
+	e.screen = screen
 
-	err2 := screen.Init()
+	err2 := e.screen.Init()
 	if err2 != nil { fmt.Fprintf(os.Stderr, "%v\n", err2); os.Exit(1) }
 
-	screen.EnableMouse()
-	screen.Clear()
+	e.screen.EnableMouse()
+	e.screen.Clear()
 
-	e.COLUMNS, e.ROWS = screen.Size()
+	e.COLUMNS, e.ROWS = e.screen.Size()
 	//ROWS -= 1
 	
-	e.LS = 6
+	e.LINES_WIDTH = 6
 	e.update = true
 	e.isColorize = true
-	e.fileSelected = -1
+	e.fileSelectedIndex = -1
 
-	return screen
+	return
 }
 
 func (e *Editor) drawEverything() {
-	if len(content) == 0 { return }
-	s.Clear()
+	if len(e.content) == 0 { return }
+	e.screen.Clear()
 
 	if e.filesPanelWidth != 0 { e.drawFiles("", e.files, 0) }
 
 	
-	//tabs := countTabsTo(content[r], c)
-	//correction := tabs*(e.tabWidth)
+	//tabs := countTabsTo(e.content[r], e.c)
+	//correction := tabs*(e.langTabWidth)
 
-	if c < x { x = c }
-	if c + e.LS + e.filesPanelWidth >= x + e.COLUMNS  { x = c - e.COLUMNS + 1 + e.LS + e.filesPanelWidth }
+	if e.c < e.x { e.x = e.c }
+	if e.c + e.LINES_WIDTH+ e.filesPanelWidth >= e.x + e.COLUMNS  { e.x = e.c - e.COLUMNS + 1 + e.LINES_WIDTH + e.filesPanelWidth }
 
 	// draw line number and chars according to scrolling offsets
 	for row := 0; row < e.ROWS; row++ {
-		ry := row + y  // index to get right row in characters buffer by scrolling offset y
+		ry := row + e.y  // index to get right row in characters buffer by scrolling offset y
 		//e.cleanLineAfter(0, row)
-		if row >= len(content) || ry >= len(content) { break }
+		if row >= len(e.content) || ry >= len(e.content) { break }
 		e.drawLineNumber(ry, row)
 
 		tabsOffset := 0
 		for col := 0; col <= e.COLUMNS; col++ {
-			cx := col + x // index to get right column in characters buffer by scrolling offset x
-			if cx >= len(content[ry]) { break }
-			ch := content[ry][cx]
+			cx := col + e.x // index to get right column in characters buffer by scrolling offset x
+			if cx >= len(e.content[ry]) { break }
+			ch := e.content[ry][cx]
 			style := e.getStyle(ry, cx)
 			if ch == '\t'  {
 				//draw big cursor with next symbol color
-				if ry == r && cx == c {
+				if ry == e.r && cx == e.c {
 					var color = Color(AccentColor)
-					if cx+1 < len(colors[ry]) { color = Color(colors[ry][cx+1]) }
+					if cx+1 < len(e.colors[ry]) { color = Color(e.colors[ry][cx+1]) }
 					if color == -1 { color = Color(AccentColor)}
 					style = StyleDefault.Background(color)
 				}
-				for i := 0; i < e.tabWidth ; i++ {
-					s.SetContent(col + e.LS + tabsOffset + e.filesPanelWidth, row, ' ', nil, style)
-					if i != e.tabWidth-1 { tabsOffset++ }
+				for i := 0; i < e.langTabWidth; i++ {
+					e.screen.SetContent(col + e.LINES_WIDTH+ tabsOffset + e.filesPanelWidth, row, ' ', nil, style)
+					if i != e.langTabWidth-1 { tabsOffset++ }
 				}
 			} else {
-				s.SetContent(col + e.LS + tabsOffset + e.filesPanelWidth, row , ch, nil, style)
+				e.screen.SetContent(col + e.LINES_WIDTH+ tabsOffset + e.filesPanelWidth, row , ch, nil, style)
 			}
 		}
 	}
@@ -380,15 +383,15 @@ func (e *Editor) drawEverything() {
 	//e.drawTabs()
 
 	var changes = ""; if e.isContentChanged { changes = "*" }
-	status := fmt.Sprintf(" %s %d %d %s%s ", e.lang, r+1, c+1, e.filename, changes)
+	status := fmt.Sprintf(" %s %d %d %s%s ", e.lang, e.r+1, e.c+1, e.filename, changes)
 	e.drawStatus(status)
 
 	// if tab under cursor, hide cursor because it has already drawn
-	if r < len(content) && c < len(content[r]) && content[r][c] == '\t' {
-		s.HideCursor()
+	if e.r < len(e.content) && e.c < len(e.content[e.r]) && e.content[e.r][e.c] == '\t' {
+		e.screen.HideCursor()
 	} else  {
-		tabs := countTabsTo(content[r], c) * (e.tabWidth -1)
-		s.ShowCursor(c - x + e.LS +tabs + e.filesPanelWidth, r - y) // show cursor
+		tabs := countTabsTo(e.content[e.r], e.c) * (e.langTabWidth -1)
+		e.screen.ShowCursor(e.c - e.x + e.LINES_WIDTH+tabs + e.filesPanelWidth, e.r - e.y) // show cursor
 	}
 
 }
@@ -396,8 +399,8 @@ func (e *Editor) drawEverything() {
 func (e *Editor) getStyle(ry int, cx int) Style {
 	var style = StyleDefault
 	if !e.isColorize { return style }
-	if ry >= len(colors) || cx >= len(colors[ry])  { return style }
-	color := colors[ry][cx]
+	if ry >= len(e.colors) || cx >= len(e.colors[ry])  { return style }
+	color := e.colors[ry][cx]
 	if color > 0 { style = StyleDefault.Foreground(Color(color)) }
 	if e.selection.isUnderSelection(cx, ry) {
 		style = style.Background(Color(SelectionColor))
@@ -417,46 +420,46 @@ func (e *Editor) drawDiagnostic() {
 
 		for _, diagnostic := range maybeDiagnostic.Diagnostics {
 			dline := int(diagnostic.Range.Start.Line)
-			if dline >= len(content) { continue } // sometimes it out of content
-			if dline - y > e.ROWS { continue } // sometimes it out of content
+			if dline >= len(e.content) { continue } // sometimes it out of e.content
+			if dline - e.y > e.ROWS { continue } // sometimes it out of e.content
 
 			// iterate over error range and, todo::fix
 			//for i := dline; i <= int(diagnostic.Range.End.Line); i++ {
-			//	if i >= len(content) { continue }
-			//	tabs := countTabs(content[i], dline)
+			//	if i >= len(e.content) { continue }
+			//	tabs := countTabs(e.content[i], dline)
 			//	for j := int(diagnostic.Range.Start.Character); j <= int(diagnostic.Range.End.Character); j++ {
-			//		if j >= len(content[i]) { continue }
+			//		if j >= len(e.content[i]) { continue }
 			//
-			//		ch := content[dline][j]
-			//		s.SetContent(j+LS + tabs*e.tabWidth + x, i-y, ch, nil, textStyle)
+			//		ch := e.content[dline][j]
+			//		e.screen.SetContent(j+LINES_WIDTH + tabs*e.langTabWidth + x, i-y, ch, nil, textStyle)
 			//	}
 			//}
 
 
-			tabs := countTabs(content[dline], len(content[dline]))
+			tabs := countTabs(e.content[dline], len(e.content[dline]))
 			var shifty = 0
 			errorMessage := "error: " + diagnostic.Message
-			errorMessage = PadLeft(errorMessage, e.COLUMNS - len(content[dline]) - tabs*e.tabWidth - 5 - e.LS - e.filesPanelWidth)
+			errorMessage = PadLeft(errorMessage, e.COLUMNS - len(e.content[dline]) - tabs*e.langTabWidth- 5 - e.LINES_WIDTH- e.filesPanelWidth)
 
 			// iterate over message characters and draw it
 			for i, m := range errorMessage {
-				ypos :=  dline - y
-				if ypos < 0 || ypos >= len(content) { break }
+				ypos :=  dline - e.y
+				if ypos < 0 || ypos >= len(e.content) { break }
 
-				tabs = countTabs(content[dline], len(content[dline]))
-				xpos := i + e.LS + e.filesPanelWidth + len(content[dline+shifty]) + tabs*e.tabWidth + 5
+				tabs = countTabs(e.content[dline], len(e.content[dline]))
+				xpos := i + e.LINES_WIDTH + e.filesPanelWidth + len(e.content[dline+shifty]) + tabs*e.langTabWidth + 5
 
-				//for { // draw ch on the next line if not fit to screen
+				//for { // draw ch on the next line if not fit to e.screen
 				//	if xpos >= COLUMNS {
 				//		shifty++
-				//		tabs = countTabs(content[dline+shifty], len(content[dline+shifty]))
+				//		tabs = countTabs(e.content[dline+shifty], len(e.content[dline+shifty]))
 				//		ypos +=  (i / COLUMNS) + 1
-				//		if ypos >= len(content) { break}
-				//		xpos = len(content[dline+shifty]) + 5 + (xpos % COLUMNS) % COLUMNS
+				//		if ypos >= len(e.content) { break}
+				//		xpos = len(e.content[dline+shifty]) + 5 + (xpos % COLUMNS) % COLUMNS
 				//	} else { break }
 				//}
 
-				s.SetContent(xpos,  ypos, m, nil,  style)
+				e.screen.SetContent(xpos,  ypos, m, nil,  style)
 			}
 		}
 
@@ -465,10 +468,10 @@ func (e *Editor) drawDiagnostic() {
 
 func (e *Editor) drawLineNumber(brw int, row int) {
 	var style = StyleDefault.Foreground(ColorDimGray)
-	if brw == r { style = StyleDefault}
-	lineNumber := centerNumber(brw + 1, e.LS)
+	if brw == e.r { style = StyleDefault}
+	lineNumber := centerNumber(brw + 1, e.LINES_WIDTH)
 	for index, char := range lineNumber {
-		s.SetContent(index + e.filesPanelWidth, row, char, nil, style)
+		e.screen.SetContent(index + e.filesPanelWidth, row, char, nil, style)
 	}
 }
 
@@ -478,20 +481,20 @@ func (e *Editor) drawStatus(text string) {
 }
 
 func (e *Editor) drawText(row, col int, text string, style Style) {
-	s.SetContent(col-1, row, ' ', nil, style)
+	e.screen.SetContent(col-1, row, ' ', nil, style)
 	for _, ch := range []rune(text) {
 		if col > e.COLUMNS { break }
-		s.SetContent(col, row, ch, nil, style)
+		e.screen.SetContent(col, row, ch, nil, style)
 		col++
 	}
 }
 
 func (e *Editor) findCursorXPosition(mx int) int {
 	count := 0; realCount := 0  // searching x position
-	for _, ch := range content[r] {
-		if count >= mx+x { break }
+	for _, ch := range e.content[e.r] {
+		if count >= mx + e.x { break }
 		if ch == '\t' {
-			count += e.tabWidth; realCount++
+			count += e.langTabWidth; realCount++
 		} else {
 			count++; realCount++
 		}
@@ -522,15 +525,15 @@ func (e *Editor) init_lsp(lang string) {
 	//lspStatus := "lsp started, elapsed " + time.Since(start).String()
 	//if !lsp.isReady { lspStatus = "lsp is not ready yet" }
 	//logger.info("lsp status", lspStatus)
-	//status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus,  lang, r+1, c+1, inputFile)
+	//status := fmt.Sprintf(" %e.screen %e.screen %d %d %e.screen ", lspStatus,  lang, r+1, c+1, inputFile)
 	//e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
-	//s.Show()
+	//e.screen.Show()
 
 	go func() {
 		for range diagnosticUpdateChan {
 			if e.isOverlay { continue }
 			e.drawEverything()
-			s.Show()
+			e.screen.Show()
 		}
 	}()
 }
@@ -560,9 +563,9 @@ func (e *Editor) onErrors() {
 		}
 
 
-		width := max(50, maxString(options)) // width depends on max option len or 30 at min
-		height := minMany(10, len(options) + 1) // depends on min option len or 5 at min or how many rows to the end of screen
-		atx := 0 + e.LS + e.filesPanelWidth; aty := 0 // Define the window  position and dimensions
+		width := max(50, maxString(options))                   // width depends on max option len or 30 at min
+		height := minMany(10, len(options) + 1)                // depends on min option len or 5 at min or how many rows to the end of e.screen
+		atx := 0 + e.LINES_WIDTH + e.filesPanelWidth; aty := 0 // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
@@ -573,54 +576,54 @@ func (e *Editor) onErrors() {
 
 			shifty := e.drawErrors(atx, width, aty, height, options, selectedOffset, selected, style)
 
-			s.Show()
+			e.screen.Show()
 
-			switch ev := s.PollEvent().(type) { // poll and handle event
+			switch ev := e.screen.PollEvent().(type) { // poll and handle event
 			case *EventResize:
-				e.COLUMNS, e.ROWS = s.Size()
+				e.COLUMNS, e.ROWS = e.screen.Size()
 				//ROWS -= 1
-				s.Sync()
-				s.Clear(); e.drawEverything(); s.Show()
+				e.screen.Sync()
+				e.screen.Clear(); e.drawEverything(); e.screen.Show()
 
 			case *EventKey:
 				key := ev.Key()
 				if key == KeyEscape || key == KeyEnter ||
 					key == KeyBackspace || key == KeyBackspace2 ||
-					key == KeyCtrlE { s.Clear(); selectionEnd = true; end = true }
+					key == KeyCtrlE { e.screen.Clear(); selectionEnd = true; end = true }
 				if key == KeyDown { selected = min(len(options)-1, selected+1) }
 				if key == KeyUp { selected = max(0, selected-1) }
 				if key == KeyCtrlC {
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
 					clipboard.WriteAll(diagnostic.Message)
 				}
-				//if key == tcell.KeyRight { e.onRight(); s.Clear(); e.drawEverything(); selectionEnd = true }
+				//if key == tcell.KeyRight { e.onRight(); e.screen.Clear(); e.drawEverything(); selectionEnd = true }
 				if key == KeyRight {
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
-					r = int(diagnostic.Range.Start.Line)
-					c = int(diagnostic.Range.Start.Character)
+					e.r = int(diagnostic.Range.Start.Line)
+					e.c = int(diagnostic.Range.Start.Character)
 					e.focus();
 					// add space for errors panel
-					if r - y  < shifty + height { y -= shifty + height + 1}
-					if y < 0 { y = 0 }
-					e.drawEverything(); s.Show()
+					if e.r - e.y  < shifty + height { e.y -= shifty + height + 1}
+					if e.y < 0 { e.y = 0 }
+					e.drawEverything(); e.screen.Show()
 				}
-				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); s.Clear(); e.drawEverything(); selectionEnd = true  }
+				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); e.screen.Clear(); e.drawEverything(); selectionEnd = true  }
 				if key == KeyEnter {
 					selectionEnd = true; end = true
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
-					r = int(diagnostic.Range.Start.Line)
-					c = int(diagnostic.Range.Start.Character)
+					e.r = int(diagnostic.Range.Start.Line)
+					e.c = int(diagnostic.Range.Start.Character)
 
-					e.selection.ssx = c; e.selection.ssy = r;
+					e.selection.ssx = e.c; e.selection.ssy = e.r;
 					e.selection.sey = int(diagnostic.Range.End.Line)
 					e.selection.sex = int(diagnostic.Range.End.Character)
-					r = e.selection.sey; c = e.selection.sex
+					e.r = e.selection.sey; e.c = e.selection.sex
 					e.selection.isSelected = true
 					e.focus()
 					// add space for errors panel
-					if r - y  < shifty + height { y -= shifty + height + 1}
-					if y < 0 { y = 0 }
-					e.drawEverything(); s.Show()
+					if e.r - e.y  < shifty + height { e.y -= shifty + height + 1}
+					if e.y < 0 { e.y = 0 }
+					e.drawEverything(); e.screen.Show()
 				}
 			}
 		}
@@ -652,26 +655,26 @@ func (e *Editor) drawErrors(atx int, width int, aty int, height int, options []s
 			ch := runes[j]
 			nextWord := findNextWord(runes, j)
 			if shiftx == 0 {
-				s.SetContent(atx, row+aty+shifty, ' ', nil, style)
+				e.screen.SetContent(atx, row+aty+shifty, ' ', nil, style)
 			}
 			if shiftx+atx+(nextWord-j) >= e.COLUMNS {
 				for k := shiftx; k <= e.COLUMNS; k++ { // Fill the remaining space
-					s.SetContent(k+atx, row+aty+shifty, ' ', nil, style)
+					e.screen.SetContent(k+atx, row+aty+shifty, ' ', nil, style)
 				}
 				shifty++
 				shiftx = 0
 			}
-			s.SetContent(atx+shiftx, row+aty+shifty, ch, nil, style)
+			e.screen.SetContent(atx+shiftx, row+aty+shifty, ch, nil, style)
 			shiftx++
 		}
 
 		for col := shiftx; col < e.COLUMNS; col++ { // Fill the remaining space
-			s.SetContent(col+atx, row+aty+shifty, ' ', nil, style)
+			e.screen.SetContent(col+atx, row+aty+shifty, ' ', nil, style)
 		}
 	}
 
 	for col := 0; col < width; col++ { // Fill empty line below
-		s.SetContent(col+atx, height+aty+shifty-1, ' ', nil,
+		e.screen.SetContent(col+atx, height+aty+shifty-1, ' ', nil,
 			StyleDefault.Background(Color(OverlayColor)))
 	}
 
@@ -682,7 +685,7 @@ func (e *Editor) onSearch() {
 	var end = false
 	if e.searchPattern == nil { e.searchPattern = []rune{} }
 	var patternx = len(e.searchPattern)
-	var startline = y
+	var startline = e.y
 	var isChanged = true
 	var isDownSearch = true
 	var prefix = []rune("search: ")
@@ -691,38 +694,38 @@ func (e *Editor) onSearch() {
 	for !end {
 
 		e.drawSearch(prefix, e.searchPattern, patternx)
-		s.Show()
+		e.screen.Show()
 
 		if isChanged {
 			var sy, sx = -1, -1
 			if isDownSearch {
-				sy, sx = searchDown(content, string(e.searchPattern), startline)
+				sy, sx = searchDown(e.content, string(e.searchPattern), startline)
 			} else {
-				sy, sx = searchUp(content, string(e.searchPattern), startline)
+				sy, sx = searchUp(e.content, string(e.searchPattern), startline)
 			}
 
 			if sx != -1 && sy != -1 {
-				r = sy; c = sx; e.focus()
+				e.r = sy; e.c = sx; e.focus()
 				startline = sy;
 				e.selection.ssx = sx; e.selection.ssy = sy;
 				e.selection.sex = sx + len(e.searchPattern); e.selection.sey = sy; e.selection.isSelected = true
 				e.drawEverything()
 				e.drawSearch(prefix, e.searchPattern, patternx)
-				s.ShowCursor(len(prefix) + patternx + e.LS + e.filesPanelWidth, e.ROWS-1)
-				s.Show()
+				e.screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH+ e.filesPanelWidth, e.ROWS-1)
+				e.screen.Show()
 			}else {
 				e.selection.cleanSelection()
-				if isDownSearch { startline = 0 } else  { startline = len(content)}
+				if isDownSearch { startline = 0 } else  { startline = len(e.content)}
 				e.drawEverything()
 				e.drawSearch(prefix, e.searchPattern, patternx)
-				s.ShowCursor(len(prefix) + patternx + e.LS + e.filesPanelWidth, e.ROWS-1)
-				s.Show()
+				e.screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH+ e.filesPanelWidth, e.ROWS-1)
+				e.screen.Show()
 			}
 		}
 
-		switch ev := s.PollEvent().(type) { // poll and handle event
+		switch ev := e.screen.PollEvent().(type) { // poll and handle event
 		case *EventResize:
-			e.COLUMNS, e.ROWS = s.Size()
+			e.COLUMNS, e.ROWS = e.screen.Size()
 			//ROWS -= 1
 
 		case *EventKey:
@@ -743,7 +746,7 @@ func (e *Editor) onSearch() {
 			if key == KeyRight && patternx < len(e.searchPattern) { patternx++ }
 			if key == KeyDown  {
 				isDownSearch = true
-				if startline < len(content) {
+				if startline < len(e.content) {
 					startline++
 					isChanged = true
 				} else {
@@ -754,7 +757,7 @@ func (e *Editor) onSearch() {
 			if key == KeyUp {
 				isDownSearch = false
 				isChanged = true
-				if startline == 0 { startline = len(content) } else { startline-- }
+				if startline == 0 { startline = len(e.content) } else { startline-- }
 			}
 			if key == KeyESC || key == KeyEnter || key == KeyCtrlF { end = true }
 		}
@@ -762,24 +765,24 @@ func (e *Editor) onSearch() {
 }
 func (e *Editor) drawSearch(prefix []rune, pattern []rune, patternx int) {
 	for i := 0; i < len(prefix); i++ {
-		s.SetContent(i + e.LS + e.filesPanelWidth, e.ROWS-1, prefix[i], nil, StyleDefault)
-		//s.Show()
+		e.screen.SetContent(i + e.LINES_WIDTH+ e.filesPanelWidth, e.ROWS-1, prefix[i], nil, StyleDefault)
+		//e.screen.Show()
 	}
 
-	s.SetContent(len(prefix) + e.LS + e.filesPanelWidth, e.ROWS-1, ' ', nil, StyleDefault)
-	//s.Show()
+	e.screen.SetContent(len(prefix) + e.LINES_WIDTH+ e.filesPanelWidth, e.ROWS-1, ' ', nil, StyleDefault)
+	//e.screen.Show()
 
 	for i := 0; i < len(pattern); i++ {
-		s.SetContent(len(prefix) + i + e.LS + e.filesPanelWidth, e.ROWS-1, pattern[i], nil, StyleDefault)
-		//s.Show()
+		e.screen.SetContent(len(prefix) + i + e.LINES_WIDTH+ e.filesPanelWidth, e.ROWS-1, pattern[i], nil, StyleDefault)
+		//e.screen.Show()
 	}
 
-	s.ShowCursor(len(prefix) + patternx + e.LS + e.filesPanelWidth, e.ROWS-1)
-	//s.Show()
+	e.screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH+ e.filesPanelWidth, e.ROWS-1)
+	//e.screen.Show()
 
-	for i := len(prefix) + len(pattern) + e.LS + e.filesPanelWidth; i < e.COLUMNS; i++ {
-		s.SetContent(i, e.ROWS-1, ' ', nil, StyleDefault)
-		//s.Show()
+	for i := len(prefix) + len(pattern) + e.LINES_WIDTH + e.filesPanelWidth; i < e.COLUMNS; i++ {
+		e.screen.SetContent(i, e.ROWS-1, ' ', nil, StyleDefault)
+		//e.screen.Show()
 	}
 }
 
@@ -805,11 +808,11 @@ func (e *Editor) onFiles() {
 		var selectionEnd = false;
 
 		for !selectionEnd {
-			if e.fileSelected != -1 && e.fileSelected < e.fileScrollingOffset {
-				e.fileScrollingOffset = e.fileSelected
+			if e.fileSelectedIndex != -1 && e.fileSelectedIndex < e.fileScrollingOffset {
+				e.fileScrollingOffset = e.fileSelectedIndex
 			}
-			if e.fileSelected >= e.fileScrollingOffset + e.ROWS {
-				e.fileScrollingOffset = e.fileSelected - e.ROWS + 1
+			if e.fileSelectedIndex >= e.fileScrollingOffset + e.ROWS {
+				e.fileScrollingOffset = e.fileSelectedIndex - e.ROWS + 1
 			}
 
 			filteredFiles := e.files
@@ -832,9 +835,9 @@ func (e *Editor) onFiles() {
 				if isChanged { e.drawFiles(string(filterPattern), e.files, patternx) }
 			}
 
-			s.Show()
+			e.screen.Show()
 
-			switch ev := s.PollEvent().(type) { // poll and handle event
+			switch ev := e.screen.PollEvent().(type) { // poll and handle event
 			case *EventMouse:
 				mx, my := ev.Position()
 				buttons := ev.Buttons()
@@ -850,12 +853,12 @@ func (e *Editor) onFiles() {
 				} else {
 					if buttons & WheelDown != 0  && modifiers & ModCtrl != 0 && e.filesPanelWidth < e.COLUMNS  {
 						e.filesPanelWidth++
-						if e.filename != "" { e.drawEverything(); s.Show() }
+						if e.filename != "" { e.drawEverything(); e.screen.Show() }
 						continue
 					}
 					if buttons & WheelUp != 0  && modifiers & ModCtrl != 0  && e.filesPanelWidth > 0 {
 						e.filesPanelWidth--
-						if e.filename != "" { e.drawEverything(); s.Show() }
+						if e.filename != "" { e.drawEverything(); e.screen.Show() }
 						continue
 					}
 
@@ -874,15 +877,15 @@ func (e *Editor) onFiles() {
 						e.fileScrollingOffset--
 					}
 
-					if my < len(filteredFiles) { e.fileSelected = my + e.fileScrollingOffset }
+					if my < len(filteredFiles) { e.fileSelectedIndex = my + e.fileScrollingOffset }
 					if buttons & Button1 == 1 {
 						e.readUpdateFiles()
-						e.fileSelected = my + e.fileScrollingOffset
-						if e.fileSelected < 0  { continue }
-						if e.fileSelected >= len(filteredFiles) { continue }
-						if mx > len(filteredFiles[e.fileSelected].filename) { continue}
+						e.fileSelectedIndex = my + e.fileScrollingOffset
+						if e.fileSelectedIndex < 0  { continue }
+						if e.fileSelectedIndex >= len(filteredFiles) { continue }
+						if mx > len(filteredFiles[e.fileSelectedIndex].filename) { continue}
 						selectionEnd = true; end = true
-						selectedFile := filteredFiles[e.fileSelected]
+						selectedFile := filteredFiles[e.fileSelectedIndex]
 						e.inputFile = selectedFile.fullfilename
 						e.openFile(e.inputFile)
 						e.isFilesSearch = false
@@ -890,8 +893,8 @@ func (e *Editor) onFiles() {
 				}
 
 			case *EventResize:
-				e.COLUMNS, e.ROWS = s.Size()
-				if e.filename != "" { e.drawEverything(); s.Show() }
+				e.COLUMNS, e.ROWS = e.screen.Size()
+				if e.filename != "" { e.drawEverything(); e.screen.Show() }
 
 			case *EventKey:
 				key := ev.Key()
@@ -899,14 +902,14 @@ func (e *Editor) onFiles() {
 				if key == KeyCtrlF { e.isFilesSearch = !e.isFilesSearch }
 				if key == KeyEscape && !e.isFilesSearch { selectionEnd = true; end = true; e.filesPanelWidth =  0 }
 				if key == KeyEscape  && e.isFilesSearch {  e.isFilesSearch = false}
-				if key == KeyDown { e.fileSelected = min(len(filteredFiles)-1, e.fileSelected+1) }
-				if key == KeyUp { e.fileSelected = max(0, e.fileSelected-1) }
+				if key == KeyDown { e.fileSelectedIndex = min(len(filteredFiles)-1, e.fileSelectedIndex+1) }
+				if key == KeyUp { e.fileSelectedIndex = max(0, e.fileSelectedIndex-1) }
 				if key == KeyRune {
 					e.isFilesSearch = true
 					filterPattern = insert(filterPattern, patternx, ev.Rune())
 					patternx++
 					isChanged = true
-					e.fileSelected = 0
+					e.fileSelectedIndex = 0
 				}
 				if key == KeyBackspace2  && e.isFilesSearch && patternx > 0 && len(filterPattern) > 0 {
 					patternx--
@@ -917,21 +920,21 @@ func (e *Editor) onFiles() {
 				if key == KeyRight && e.isFilesSearch && patternx < len(filterPattern) { patternx++; isChanged = true }
 				if key == KeyRight && !e.isFilesSearch  {
 					e.filesPanelWidth++
-					if e.filename != "" { e.drawEverything(); s.Show() }
+					if e.filename != "" { e.drawEverything(); e.screen.Show() }
 				}
 				if key == KeyLeft && !e.isFilesSearch  && e.filesPanelWidth > 0  {
 					e.filesPanelWidth--
-					if e.filename != "" { e.drawEverything(); s.Show() }
+					if e.filename != "" { e.drawEverything(); e.screen.Show() }
 				}
 				if key == KeyCtrlT {
 					selectionEnd = true; end = true
 					e.isFilesSearch = false
 					e.filesPanelWidth = 0
 				}
-				if key == KeyEnter && e.fileSelected < len(filteredFiles) {
+				if key == KeyEnter && e.fileSelectedIndex < len(filteredFiles) {
 					selectionEnd = true; end = true
 					e.isFilesSearch = false
-					selectedFile := filteredFiles[e.fileSelected]
+					selectedFile := filteredFiles[e.fileSelectedIndex]
 					e.inputFile = selectedFile.fullfilename
 					e.openFile(e.inputFile)
 				}
@@ -946,7 +949,7 @@ func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 
 	for row := 0; row < e.ROWS; row++ {
 		for col := 0; col < e.filesPanelWidth ; col++ { // clean
-			s.SetContent(col, row, ' ', nil, StyleDefault)
+			e.screen.SetContent(col, row, ' ', nil, StyleDefault)
 		}
 	}
 
@@ -956,14 +959,14 @@ func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 		if e.isFilesSearch && offsety == e.ROWS-1 { continue }
 		style := StyleDefault
 
-		//s.SetContent(filesPanelWidth, offsety, '│', nil, style)
+		//e.screen.SetContent(filesPanelWidth, offsety, '│', nil, style)
 
 		if fileIndex >= len(files) || fileIndex >= e.ROWS { break }
 		if fileIndex + max(e.fileScrollingOffset,0) >= len(files) { break }
 		file := files[fileIndex + max(e.fileScrollingOffset,0)]
 
 
-		isSelectedFile := e.isFileSelection && e.fileSelected != -1 && fileIndex + e.fileScrollingOffset == e.fileSelected
+		isSelectedFile := e.isFileSelection && e.fileSelectedIndex != -1 && fileIndex + e.fileScrollingOffset == e.fileSelectedIndex
 		if isSelectedFile {
 			style = style.Foreground(Color(AccentColor))
 		}
@@ -973,7 +976,7 @@ func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 
 		for j, ch := range file.filename {
 			if j+1 > e.filesPanelWidth-1 { break }
-			s.SetContent(j + 1, offsety, ch, nil, style)
+			e.screen.SetContent(j + 1, offsety, ch, nil, style)
 		}
 
 		offsety++
@@ -982,85 +985,85 @@ func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 	for row := 0; row <= e.ROWS; row++ {
 		if row >= len(files) {
 			for col := 0; col < e.filesPanelWidth ; col++ { // clean
-				s.SetContent(col, row, ' ', nil, StyleDefault)
+				e.screen.SetContent(col, row, ' ', nil, StyleDefault)
 			}
 		}
-		//s.SetContent(filesPanelWidth, row, '│', nil, StyleDefault.Foreground(Color(AccentColor)))
+		//e.screen.SetContent(filesPanelWidth, row, '│', nil, StyleDefault.Foreground(Color(AccentColor)))
 	}
 
-	s.HideCursor()
+	e.screen.HideCursor()
 
 	if e.isFilesSearch {
 		pref := " search: "
-		s.ShowCursor(len(pref) + patternx, e.ROWS-1)
+		e.screen.ShowCursor(len(pref) + patternx, e.ROWS-1)
 		for i, ch := range pref { // draw prefix
-			s.SetContent(i, e.ROWS-1, ch, nil, StyleDefault)
+			e.screen.SetContent(i, e.ROWS-1, ch, nil, StyleDefault)
 		}
 
 		for i, ch := range pattern { // draw pattern
-			s.SetContent(i+len(pref), e.ROWS-1, ch, nil, StyleDefault)
+			e.screen.SetContent(i+len(pref), e.ROWS-1, ch, nil, StyleDefault)
 		}
 		for col := len(pref) + len(pattern); col < e.filesPanelWidth - 1; col++ { // clean
-			s.SetContent(col, e.ROWS-1, ' ', nil, StyleDefault)
+			e.screen.SetContent(col, e.ROWS-1, ' ', nil, StyleDefault)
 		}
 	}
 
 }
 
-func (e *Editor) addTab() {
-	if e.filesInfo == nil || len(e.filesInfo) == 0 {
-		e.filesInfo = append(e.filesInfo, FileInfo{e.filename, e.absoluteFilePath, 1})
-	} else {
-		var tabExists = false
-
-		for i := 0; i < len(e.filesInfo); i++ {
-			ti := e.filesInfo[i]
-			if e.absoluteFilePath == ti.fullfilename {
-				ti.openCount += 1
-				e.filesInfo[i] = ti
-				tabExists = true
-			}
-		}
-
-		if !tabExists {
-			e.filesInfo = append(e.filesInfo, FileInfo{e.filename, e.absoluteFilePath, 1})
-		}
-
-		sort.SliceStable(e.filesInfo, func(i, j int) bool {
-			return e.filesInfo[i].openCount < e.filesInfo[j].openCount
-		})
-	}
-}
-
-func (e *Editor) drawTabs() {
-	e.COLUMNS, e.ROWS = s.Size()
-
-	if len(e.filesInfo) == 0 { return }
-	if e.filesPanelWidth == 0 { return }
-	if e.filesPanelWidth == 0 { return }
-
-	e.ROWS -= 1
-	at := e.ROWS
-	fromx := 1
-	styleDefault := StyleDefault
-
-	for i := fromx; i < e.COLUMNS; i++ {
-		s.SetContent(0, at, ' ', nil, styleDefault)
-	}
-
-	xpos := 0
-	for _, info := range e.filesInfo {
-		if xpos > e.COLUMNS { break }
-		for _, ch := range info.filename {
-			s.SetContent(xpos + fromx, at, ch, nil, styleDefault)
-			xpos++
-		}
-
-		s.SetContent(xpos + fromx, at, ' ', nil, styleDefault)
-		xpos++
-		s.SetContent(xpos + fromx, at, ' ', nil, styleDefault)
-	}
-}
+//func (e *Editor) addTab() {
+//	if e.filesInfo == nil || len(e.filesInfo) == 0 {
+//		e.filesInfo = append(e.filesInfo, FileInfo{e.filename, e.absoluteFilePath, 1})
+//	} else {
+//		var tabExists = false
+//
+//		for i := 0; i < len(e.filesInfo); i++ {
+//			ti := e.filesInfo[i]
+//			if e.absoluteFilePath == ti.fullfilename {
+//				ti.openCount += 1
+//				e.filesInfo[i] = ti
+//				tabExists = true
+//			}
+//		}
+//
+//		if !tabExists {
+//			e.filesInfo = append(e.filesInfo, FileInfo{e.filename, e.absoluteFilePath, 1})
+//		}
+//
+//		sort.SliceStable(e.filesInfo, func(i, j int) bool {
+//			return e.filesInfo[i].openCount < e.filesInfo[j].openCount
+//		})
+//	}
+//}
+//
+//func (e *Editor) drawTabs() {
+//	e.COLUMNS, e.ROWS = e.screen.Size()
+//
+//	if len(e.filesInfo) == 0 { return }
+//	if e.filesPanelWidth == 0 { return }
+//	if e.filesPanelWidth == 0 { return }
+//
+//	e.ROWS -= 1
+//	at := e.ROWS
+//	fromx := 1
+//	styleDefault := StyleDefault
+//
+//	for i := fromx; i < e.COLUMNS; i++ {
+//		e.screen.SetContent(0, at, ' ', nil, styleDefault)
+//	}
+//
+//	xpos := 0
+//	for _, info := range e.filesInfo {
+//		if xpos > e.COLUMNS { break }
+//		for _, ch := range info.filename {
+//			e.screen.SetContent(xpos + fromx, at, ch, nil, styleDefault)
+//			xpos++
+//		}
+//
+//		e.screen.SetContent(xpos + fromx, at, ' ', nil, styleDefault)
+//		xpos++
+//		e.screen.SetContent(xpos + fromx, at, ' ', nil, styleDefault)
+//	}
+//}
 
 func (e *Editor) overlayFalse() {
 	e.isOverlay = false
@@ -1069,13 +1072,13 @@ func (e *Editor) overlayFalse() {
 func (e *Editor) updateColors() {
 	if !e.isColorize { return }
 	if e.lang == "" { return }
-	if len(content) >= 10000 {
-		line := string(content[r])
+	if len(e.content) >= 10000 {
+		line := string(e.content[e.r])
 		linecolors := highlighter.colorize(line, e.filename)
-		colors[r] = linecolors[0]
+		e.colors[e.r] = linecolors[0]
 	} else {
-		code := convertToString(content)
-		colors = highlighter.colorize(code, e.filename)
+		code := convertToString(e.content)
+		e.colors = highlighter.colorize(code, e.filename)
 	}
 }
 
@@ -1083,25 +1086,25 @@ func (e *Editor) updateColorsFull() {
 	if !e.isColorize { return }
 	if e.lang == "" { return }
 
-	code := convertToString(content)
-	colors = highlighter.colorize(code, e.filename)
+	code := convertToString(e.content)
+	e.colors = highlighter.colorize(code, e.filename)
 }
 
 func (e *Editor) updateColorsAtLine(at int) {
 	if !e.isColorize { return }
 	if e.lang == "" { return }
-	if at >= len(colors) { return }
+	if at >= len(e.colors) { return }
 
-	line := string(content[at])
-	if line == "" { colors[at] = []int{}; return }
+	line := string(e.content[at])
+	if line == "" { e.colors[at] = []int{}; return }
 	linecolors := highlighter.colorize(line, e.filename)
-	colors[at] = linecolors[0]
+	e.colors[at] = linecolors[0]
 }
 
 // todo, get rid of this function, cause updateColors is slow for big files
 func (e *Editor) updateNeeded() {
 	e.update = true
 	e.isContentChanged = true
-	if len(content) <= 10000 { go e.writeFile() }
+	if len(e.content) <= 10000 { go e.writeFile() }
 	e.updateColors()
 }
