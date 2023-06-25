@@ -1,6 +1,15 @@
-package main
+package editor
 
 import (
+	. "edgo/internal/config"
+	. "edgo/internal/highlighter"
+	. "edgo/internal/logger"
+	. "edgo/internal/lsp"
+	. "edgo/internal/operations"
+	. "edgo/internal/search"
+	. "edgo/internal/selection"
+	. "edgo/internal/utils"
+
 	"fmt"
 	"github.com/atotto/clipboard"
 	. "github.com/gdamore/tcell"
@@ -11,6 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+var EditorGlobal = Editor{ }
 
 type Editor struct {
 	COLUMNS     int // terminal size columns
@@ -28,7 +39,7 @@ type Editor struct {
 	Screen Screen // Screen for drawing
 
 	Lang         string // current file language
-	config       Config // config, lsp, tabs, comments, etc
+	Config       Config // config, lsp, tabs, comments, etc
 	langConf     Lang   // current lang conf
 	langTabWidth int    // current lang tabs indentation  '\t' -> "    "
 
@@ -290,18 +301,18 @@ func (e *Editor) OpenFile(fname string) error {
 
 	if newLang != "" && newLang != e.Lang {
 		e.Lang = newLang
-		Lsp.lang = newLang
-		_, found := Lsp.lang2stdin[e.Lang]
-		if !found { go e.InitLsp(e.Lang) }
+		Lsp.Lang = newLang
+		ready := Lsp.IsLangReady(e.Lang)
+		if !ready { go e.InitLsp(e.Lang) }
 	}
 
-	conf, found := e.config.Langs[e.Lang]
+	conf, found := e.Config.Langs[e.Lang]
 	if !found { conf = DefaultLangConfig }
 	e.langConf = conf
 	e.langTabWidth = conf.TabWidth
 
 	code := e.ReadFile(e.AbsoluteFilePath)
-	e.Colors = Highlight.Colorize(code, e.Filename)
+	e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
 
 	e.Undo = []EditOperation{}
 	e.Redo = []EditOperation{}
@@ -415,7 +426,7 @@ func (e *Editor) GetStyle(ry int, cx int) Style {
 
 func (e *Editor) DrawDiagnostic() {
 	//lsp.someMapMutex2.Lock()
-	maybeDiagnostic, found := Lsp.file2diagnostic["file://" + e.AbsoluteFilePath]
+	maybeDiagnostic, found := Lsp.GetDiagnostic("file://" + e.AbsoluteFilePath)
 	//lsp.someMapMutex2.Unlock()
 
 	if found {
@@ -511,19 +522,19 @@ func (e *Editor) InitLsp(lang string) {
 	//Start := time.Now()
 
 	// Getting the lsp command with args for a language:
-	conf, ok := e.config.Langs[strings.ToLower(lang)]
+	conf, ok := e.Config.Langs[strings.ToLower(lang)]
 	if !ok || len(conf.Lsp) == 0 { return }  // lang is not supported.
 
-	started := Lsp.start(lang, strings.Split(conf.Lsp, " "))
+	started := Lsp.Start(lang, strings.Split(conf.Lsp, " "))
 	if !started { return }
 
 	var diagnosticUpdateChan = make(chan string)
-	go Lsp.receiveLoop(diagnosticUpdateChan, lang)
+	go Lsp.ReceiveLoop(diagnosticUpdateChan, lang)
 
 	currentDir, _ := os.Getwd()
 
-	Lsp.init(currentDir)
-	Lsp.didOpen(e.AbsoluteFilePath, lang)
+	Lsp.Init(currentDir)
+	Lsp.DidOpen(e.AbsoluteFilePath, lang)
 
 	//e.DrawEverything()
 	//
@@ -546,7 +557,7 @@ func (e *Editor) InitLsp(lang string) {
 func (e *Editor) OnErrors() {
 	if !Lsp.IsLangReady(e.Lang) { return }
 
-	maybeDiagnostics, found := Lsp.file2diagnostic["file://" + e.AbsoluteFilePath]
+	maybeDiagnostics, found := Lsp.GetDiagnostic("file://" + e.AbsoluteFilePath)
 
 	if !found || len(maybeDiagnostics.Diagnostics) == 0 { return }
 
@@ -704,9 +715,9 @@ func (e *Editor) OnSearch() {
 		if isChanged {
 			var sy, sx = -1, -1
 			if isDownSearch {
-				sy, sx = searchDown(e.Content, string(e.SearchPattern), startline)
+				sy, sx = SearchDown(e.Content, string(e.SearchPattern), startline)
 			} else {
-				sy, sx = searchUp(e.Content, string(e.SearchPattern), startline)
+				sy, sx = SearchUp(e.Content, string(e.SearchPattern), startline)
 			}
 
 			if sx != -1 && sy != -1 {
@@ -1081,11 +1092,11 @@ func (e *Editor) UpdateColors() {
 	if e.Lang == "" { return }
 	if len(e.Content) >= 10000 {
 		line := string(e.Content[e.Row])
-		linecolors := Highlight.Colorize(line, e.Filename)
+		linecolors := HighlighterGlobal.Colorize(line, e.Filename)
 		e.Colors[e.Row] = linecolors[0]
 	} else {
 		code := ConvertContentToString(e.Content)
-		e.Colors = Highlight.Colorize(code, e.Filename)
+		e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
 	}
 }
 
@@ -1094,7 +1105,7 @@ func (e *Editor) UpdateColorsFull() {
 	if e.Lang == "" { return }
 
 	code := ConvertContentToString(e.Content)
-	e.Colors = Highlight.Colorize(code, e.Filename)
+	e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
 }
 
 func (e *Editor) UpdateColorsAtLine(at int) {
@@ -1104,7 +1115,7 @@ func (e *Editor) UpdateColorsAtLine(at int) {
 
 	line := string(e.Content[at])
 	if line == "" { e.Colors[at] = []int{}; return }
-	linecolors := Highlight.Colorize(line, e.Filename)
+	linecolors := HighlighterGlobal.Colorize(line, e.Filename)
 	e.Colors[at] = linecolors[0]
 }
 

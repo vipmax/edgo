@@ -1,6 +1,7 @@
-package main
+package highlighter
 
 import (
+	. "edgo/internal/utils"
 	"fmt"
 	"github.com/alecthomas/chroma"
 	"github.com/alecthomas/chroma/styles"

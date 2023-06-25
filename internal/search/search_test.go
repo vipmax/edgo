@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"testing"
@@ -47,7 +47,7 @@ func TestSearch(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotLine, gotPos := searchDown(tc.text, tc.pattern, tc.startLine)
+			gotLine, gotPos := SearchDown(tc.text, tc.pattern, tc.startLine)
 			if gotLine != tc.wantLine || gotPos != tc.wantPos {
 				t.Errorf("search() got %v, %v; want %v, %v", gotLine, gotPos, tc.wantLine, tc.wantPos)
 			}

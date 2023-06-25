@@ -1,4 +1,4 @@
-package main
+package themes
 
 import "github.com/alecthomas/chroma"
 import "github.com/alecthomas/chroma/styles"

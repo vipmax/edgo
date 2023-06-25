@@ -1,7 +1,10 @@
-package main
+package editor
 
 import (
 	"bufio"
+	. "edgo/internal/highlighter"
+	. "edgo/internal/lsp"
+	. "edgo/internal/utils"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +24,7 @@ func (e *Editor) ReadFile(fileToRead string) string {
 		go func() { // sync?? no need yet
 			code = e.BuildContent(fileToRead, 1000000)
 			code, _ = GetFirstLines(code, 20000)
-			e.Colors = Highlight.Colorize(code, e.Filename);
+			e.Colors = HighlighterGlobal.Colorize(code, e.Filename);
 			e.DrawEverything();
 			e.Screen.Show()
 
@@ -61,7 +64,7 @@ func (e *Editor) WriteFile() {
 	e.IsContentChanged = false
 
 	if e.Lang != "" && Lsp.IsLangReady(e.Lang) {
-		go Lsp.didOpen(e.AbsoluteFilePath, e.Lang) // todo remove it in future
+		go Lsp.DidOpen(e.AbsoluteFilePath, e.Lang) // todo remove it in future
 		//go lsp.didChange(AbsoluteFilePath)
 		//go lsp.didSave(AbsoluteFilePath)
 	}
@@ -103,6 +106,27 @@ func (e *Editor) BuildContent(filename string, limit int) string {
 	return ConvertContentToString(e.Content)
 }
 
+func GetFiles(path string, ignoreDirs []string) ([]string, error) {
+	var files []string
+	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			dir := filepath.Base(path)
+			if IsIgnored(dir, ignoreDirs) {
+				return filepath.SkipDir
+			}
+		} else {
+			if !IsIgnored(path, ignoreDirs) {
+				files = append(files, path)
+			}
+
+		}
+		return nil
+	})
+	return files, err
+}
 
 func (e *Editor) ReadFilesUpdate() {
 	ignoreDirs := []string{
@@ -110,7 +134,7 @@ func (e *Editor) ReadFilesUpdate() {
 		".DS_Store",
 	}
 
-	filesTree, err := getFiles("./", ignoreDirs)
+	filesTree, err := GetFiles("./", ignoreDirs)
 	if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
 
 	if filesTree != nil {

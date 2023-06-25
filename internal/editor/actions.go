@@ -1,6 +1,8 @@
-package main
+package editor
 
 import (
+	. "edgo/internal/operations"
+	. "edgo/internal/utils"
 	"github.com/atotto/clipboard"
 	"strings"
 )

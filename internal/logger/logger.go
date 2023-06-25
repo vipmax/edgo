@@ -1,4 +1,4 @@
-package main
+package logger
 
 import (
 	"log"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 )
+var Log = Logger{ }
 
 type Logger struct {
 	isEnabled bool

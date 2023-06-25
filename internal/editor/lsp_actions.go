@@ -1,6 +1,10 @@
-package main
+package editor
 
 import (
+	. "edgo/internal/highlighter"
+	. "edgo/internal/lsp"
+	. "edgo/internal/utils"
+
 	"fmt"
 	. "github.com/gdamore/tcell"
 	"sort"
@@ -9,7 +13,7 @@ import (
 )
 
 func (e *Editor) OnDefinition() {
-	definition, err := Lsp.definition(e.AbsoluteFilePath, e.Row, e.Col)
+	definition, err := Lsp.Definition(e.AbsoluteFilePath, e.Row, e.Col)
 
 	if err != nil || len(definition.Result) == 0{
 		return
@@ -47,7 +51,7 @@ func (e *Editor) OnHover() {
 	for !hoverEnd {
 
 		start := time.Now()
-		hover, err := Lsp.hover(e.AbsoluteFilePath, e.Row, e.Col)
+		hover, err := Lsp.Hover(e.AbsoluteFilePath, e.Row, e.Col)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp hover, elapsed " + elapsed.String()
@@ -102,7 +106,7 @@ func (e *Editor) OnSignatureHelp() {
 	for !end {
 
 		start := time.Now()
-		signatureHelpResponse, err := Lsp.signatureHelp(e.AbsoluteFilePath, e.Row, e.Col)
+		signatureHelpResponse, err := Lsp.SignatureHelp(e.AbsoluteFilePath, e.Row, e.Col)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp signature help, elapsed " + elapsed.String()
@@ -166,7 +170,7 @@ func (e *Editor) OnReferences() {
 	for !end {
 
 		start := time.Now()
-		referencesResponse, err := Lsp.references(e.AbsoluteFilePath, e.Row, e.Col)
+		referencesResponse, err := Lsp.References(e.AbsoluteFilePath, e.Row, e.Col)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp references, elapsed " + elapsed.String()
@@ -256,7 +260,7 @@ func (e *Editor) OnCompletion() {
 	for !completionEnd {
 
 		start := time.Now()
-		completion, err := Lsp.completion(e.AbsoluteFilePath, e.Row, e.Col)
+		completion, err := Lsp.Completion(e.AbsoluteFilePath, e.Row, e.Col)
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp completion, elapsed " + elapsed.String()
@@ -420,7 +424,7 @@ func (e *Editor) OnRename() {
 	var patternx = 0
 	var prefix = []rune("rename: ")
 
-	prepareRenameResponse, err := Lsp.prepareRename(e.AbsoluteFilePath, e.Row, e.Col)
+	prepareRenameResponse, err := Lsp.PrepareRename(e.AbsoluteFilePath, e.Row, e.Col)
 	if err != nil  { return }
 	placeHolder := prepareRenameResponse.Result.Placeholder
 	renameTo = []rune(placeHolder)
@@ -467,7 +471,7 @@ func (e *Editor) OnRename() {
 			if key == KeyRight && patternx < len(renameTo) { patternx++ }
 			if key == KeyESC  || key == KeyCtrlF { end = true }
 			if key == KeyEnter {
-				renameResponse, err := Lsp.rename(e.AbsoluteFilePath, string(renameTo), e.Row, e.Col)
+				renameResponse, err := Lsp.Rename(e.AbsoluteFilePath, string(renameTo), e.Row, e.Col)
 				if err != nil  { return }
 				e.applyRename(renameResponse)
 				end = true
@@ -518,16 +522,16 @@ func (e *Editor) applyRename(renameResponse RenameResponse) {
 
 
 func (e *Editor) OnCodeAction() {
-	codeAction, err := Lsp.codeAction(e.AbsoluteFilePath, e.Selection.Ssx, e.Selection.Ssy, e.Selection.Sex, e.Selection.Sey)
+	codeAction, err := Lsp.CodeAction(e.AbsoluteFilePath, e.Selection.Ssx, e.Selection.Ssy, e.Selection.Sex, e.Selection.Sey)
 	if err != nil { return }
 	if len(codeAction.Result) == 0 { return }
 	//
-	commandResponse, err := Lsp.command(codeAction.Result[0].Command)
+	commandResponse, err := Lsp.Command(codeAction.Result[0].Command)
 	if err != nil { return }
 	if len(commandResponse.Params.Edit.DocumentChanges) == 0 { return }
 
 	e.handleEdits(commandResponse.Params.Edit.DocumentChanges[0].Edits, commandResponse.Params.Edit.DocumentChanges[0].TextDocument.Version+1)
-	Lsp.applyEdit(commandResponse.ID)
+	Lsp.ApplyEdit(commandResponse.ID)
 }
 
 func (e *Editor) handleEdits(edits []Edit, version int) {

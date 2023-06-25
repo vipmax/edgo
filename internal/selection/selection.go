@@ -1,5 +1,6 @@
-package main
+package selection
 
+import . "edgo/internal/utils"
 type Selection struct {
 	Ssx        int  // selection Start x
 	Ssy        int  // selection Start y

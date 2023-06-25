@@ -1,4 +1,4 @@
-package main
+package operations
 
 type Action string
 

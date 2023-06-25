@@ -1,7 +1,7 @@
 # edgo
 Yet another console text editor, but with lsp support
-![editor](screen.png)
-![editor](screen2.png)
+![editor](assets/screen.png)
+![editor](assets/screen2.png)
 
 Key bindings and features:
 - `Control + s` - save file

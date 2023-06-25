@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -6,11 +6,11 @@ import (
 )
 
 func TestReadConfig(t *testing.T) {
-	// Read config
-	config := GetConfig()
+	// Read conf
+	conf := GetConfig()
 
 	// Print config
-	for _, lang := range config.Langs {
+	for _, lang := range conf.Langs {
 		fmt.Printf("Name: %s, Lsp: %s, Comment: %s, Tab Width: %d\n",
 			lang.Name, lang.Lsp, lang.Comment, lang.TabWidth,
 		)

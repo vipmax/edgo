@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"bufio"
@@ -255,27 +255,7 @@ func IsIgnored(path string, ignorePatterns []string) bool {
 	return false
 }
 
-func getFiles(path string, ignoreDirs []string) ([]string, error) {
-	var files []string
-	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			dir := filepath.Base(path)
-			if IsIgnored(dir, ignoreDirs) {
-				return filepath.SkipDir
-			}
-		} else {
-			if !IsIgnored(path, ignoreDirs) {
-				files = append(files, path)
-			}
 
-		}
-		return nil
-	})
-	return files, err
-}
 
 const Phi = 1.61803398875 // The Golden Ratio
 

@@ -1,6 +1,8 @@
-package main
+package lsp
 
 import (
+	. "edgo/internal/logger"
+
 	"bufio"
 	"fmt"
 	"github.com/goccy/go-json"
@@ -12,6 +14,8 @@ import (
 	"sync"
 	"time"
 )
+
+var Lsp = LspClient{}
 
 // LspClient represents a client for communicating with a Language Server Protocol (LSP) server.
 type LspClient struct {
@@ -29,10 +33,10 @@ type LspClient struct {
 	id        	   int
 	file2diagnostic map[string]DiagnosticParams
 	
-	lang string
+	Lang string
 }
 
-func (this *LspClient) start(language string, lspCmd []string) bool {
+func (this *LspClient) Start(language string, lspCmd []string) bool {
 	//this.isReady = false
 	//this.stopped = true
 	this.someMapMutex = sync.RWMutex{}
@@ -84,7 +88,7 @@ func (this *LspClient) send(o interface{})  {
 	Log.Info("->", string(m))
 
 	message := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(m), m)
-	stdin := this.lang2stdin[this.lang]
+	stdin := this.lang2stdin[this.Lang]
 	_, err = stdin.Write([]byte(message))
 	if err != nil {
 		Log.Error(err.Error())
@@ -92,7 +96,7 @@ func (this *LspClient) send(o interface{})  {
 }
 
 
-func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string, language string) {
+func (this *LspClient) ReceiveLoop(diagnosticUpdateChannel chan string, language string) {
 	for {
 		_, message := this.readStdout(language)
 		Log.Info("<-", message)
@@ -125,7 +129,7 @@ func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string, language
 }
 
 
-func (this *LspClient) init(dir string) {
+func (this *LspClient) Init(dir string) {
 	this.id = 0
 	id := this.id
 
@@ -146,7 +150,7 @@ func (this *LspClient) init(dir string) {
 
 	if response == "" {
 		Log.Info("cant get initialize response from lsp server")
-		this.lang2isReady[this.lang] = false
+		this.lang2isReady[this.Lang] = false
 		return
 	}
 
@@ -156,7 +160,7 @@ func (this *LspClient) init(dir string) {
 	this.send(initializedRequest)
 	Log.Info("lsp initialized ")
 	//this.isReady = true
-	this.lang2isReady[this.lang] = true
+	this.lang2isReady[this.Lang] = true
 }
 
 func (this *LspClient) shutdown() {
@@ -193,7 +197,7 @@ func (this *LspClient) waitForResponse(id, ms int) string {
 	}
 }
 
-func (this *LspClient) didOpen(file string, lang string) {
+func (this *LspClient) DidOpen(file string, lang string) {
 	filecontent, err := os.ReadFile(file)
 	if err != nil { Log.Error(err.Error()); return }
 
@@ -255,7 +259,7 @@ func (this *LspClient) didSave(file string) {
 	this.send(request)
 }
 
-func (this *LspClient) references(file string, line int, character int) (ReferencesResponse, error) {
+func (this *LspClient) References(file string, line int, character int) (ReferencesResponse, error) {
 	this.id++
 	id := this.id
 
@@ -286,7 +290,7 @@ func (this *LspClient) references(file string, line int, character int) (Referen
 
 }
 
-func (this *LspClient) hover(file string, line int, character int) (HoverResponse, error) {
+func (this *LspClient) Hover(file string, line int, character int) (HoverResponse, error) {
 	this.id++
 	id := this.id
 
@@ -308,7 +312,7 @@ func (this *LspClient) hover(file string, line int, character int) (HoverRespons
 	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
-func (this *LspClient) signatureHelp(file string, line int, character int) (SignatureHelpResponse, error) {
+func (this *LspClient) SignatureHelp(file string, line int, character int) (SignatureHelpResponse, error) {
 	this.id++
 	id := this.id
 
@@ -331,7 +335,7 @@ func (this *LspClient) signatureHelp(file string, line int, character int) (Sign
 	return response, err
 }
 
-func (this *LspClient) definition(file string, line int, character int) (DefinitionResponse, error) {
+func (this *LspClient) Definition(file string, line int, character int) (DefinitionResponse, error) {
 	this.id++
 	id := this.id
 
@@ -354,9 +358,7 @@ func (this *LspClient) definition(file string, line int, character int) (Definit
 	return response, err
 }
 
-
-
-func (this *LspClient) completion(file string, line int, character int) (CompletionResponse, error) {
+func (this *LspClient) Completion(file string, line int, character int) (CompletionResponse, error) {
 	this.id++
 	id := this.id
 
@@ -382,7 +384,7 @@ func (this *LspClient) completion(file string, line int, character int) (Complet
 	return completionResponse, err
 }
 
-func (this *LspClient) prepareRename(file string, line int, character int) (PrepareRenameResponse, error) {
+func (this *LspClient) PrepareRename(file string, line int, character int) (PrepareRenameResponse, error) {
 	this.id++
 	id := this.id
 
@@ -405,7 +407,7 @@ func (this *LspClient) prepareRename(file string, line int, character int) (Prep
 	return response, err
 }
 
-func (this *LspClient) rename(file string, newname string, line int, character int) (RenameResponse, error) {
+func (this *LspClient) Rename(file string, newname string, line int, character int) (RenameResponse, error) {
 	this.id++
 	id := this.id
 
@@ -429,7 +431,7 @@ func (this *LspClient) rename(file string, newname string, line int, character i
 	return response, err
 }
 
-func (this *LspClient) codeAction(file string, spc int, spl int, epc int, epl int) (CodeActionResponse, error) {
+func (this *LspClient) CodeAction(file string, spc int, spl int, epc int, epl int) (CodeActionResponse, error) {
 	this.id++
 	id := this.id
 
@@ -456,7 +458,7 @@ func (this *LspClient) codeAction(file string, spc int, spl int, epc int, epl in
 	return response, err
 }
 
-func (this *LspClient) command(command Command) (CommandResponse, error) {
+func (this *LspClient) Command(command Command) (CommandResponse, error) {
 	this.id++
 	id := this.id
 
@@ -501,7 +503,7 @@ func (this *LspClient) command(command Command) (CommandResponse, error) {
 	return response, err
 }
 
-func (this *LspClient) applyEdit(key int) {
+func (this *LspClient) ApplyEdit(key int) {
 	//this.id++
 	//id := this.id
 	request := ApplyEditRequest {
@@ -594,4 +596,8 @@ func (this *LspClient) readStdout(language string) (map[string]interface{}, stri
 func (this *LspClient) IsLangReady(language string) bool {
 	ready, found := this.lang2isReady[language]
 	if !found { return false } else { return ready }
+}
+func (this *LspClient) GetDiagnostic(filename string) (DiagnosticParams, bool) {
+	d, found := this.file2diagnostic[filename]
+	return  d, found
 }

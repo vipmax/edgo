@@ -1,6 +1,7 @@
-package main
+package utils
 
 import (
+	. "edgo/internal/highlighter"
 	"fmt"
 	"testing"
 )
