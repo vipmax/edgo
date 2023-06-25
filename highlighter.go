@@ -35,8 +35,7 @@ var SelectionColor = 246 // gray
 var OverlayColor = -1 // transparent
 var AccentColor = 303 // pink
 
-
-func detectLang(filename string) string {
+func DetectLang(filename string) string {
 	lexer := lexers.Match(filename)
 	if lexer == nil { return "" }
 	config := lexer.Config()
@@ -44,12 +43,12 @@ func detectLang(filename string) string {
 	return strings.ToLower(config.Name)
 }
 
-func (h *Highlighter) setTheme(name string) {
+func (h *Highlighter) SetTheme(name string) {
 	theme = styles.Get(name)
 	AccentColor = int(tcell.GetColor(theme.Get(chroma.Keyword).Colour.String()))
 }
 
-func (h *Highlighter) colorize(code string, filename string) [][]int {
+func (h *Highlighter) Colorize(code string, filename string) [][]int {
 	if code == "" { return [][]int{nil} }
 
 	start := time.Now()
@@ -61,7 +60,7 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 	// get iterator for tokenizing the code
 	iterator, err := lexer.Tokenise(nil, code)
 	if err != nil {
-		logger.info("tokenization error: " + err.Error())
+		Log.Info("tokenization error: " + err.Error())
 		os.Exit(1)
 	}
 
@@ -80,6 +79,6 @@ func (h *Highlighter) colorize(code string, filename string) [][]int {
 		textColors = append(textColors, lineColors)
 	}
 
-	logger.info("colorize end, elapsed: " + time.Since(start).String())
+	Log.Info("colorize end, elapsed: " + time.Since(start).String())
 	return textColors
 }

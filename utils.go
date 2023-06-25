@@ -11,14 +11,14 @@ import (
 	"strings"
 )
 
-func max(x, y int) int {
+func Max(x, y int) int {
 	if x < y {
 		return y
 	}
 	return x
 }
 
-func min(x, y int) int {
+func Min(x, y int) int {
 	if x <= y {
 		return x
 	}
@@ -37,7 +37,7 @@ func maxMany(nums ...int) int {
 	}
 	return maxValue
 }
-func minMany(nums ...int) int {
+func MinMany(nums ...int) int {
 	if len(nums) == 0 {
 		panic("min: no arguments provided")
 	}
@@ -50,7 +50,7 @@ func minMany(nums ...int) int {
 	return minValue
 }
 
-func insert[T any](a []T, index int, value T) []T {
+func InsertTo[T any](a []T, index int, value T) []T {
 	n := len(a)
 	if index < 0 {
 		index = (index%n + n) % n
@@ -87,10 +87,10 @@ var matched = []rune{
 	' ', '.', ',', '=', '+', '-', '[', '(', '{', ']', ')', '}', '"', ':', '&', '?','!',';','\t',
 }
 
-func findNextWord(chars []rune, from int) int {
+func FindNextWord(chars []rune, from int) int {
 	// Find the next word index after the specified index
 	for i := from; i < len(chars); i++ {
-		if contains(matched, chars[i]) {
+		if Contains(matched, chars[i]) {
 			return i
 		}
 	}
@@ -98,10 +98,10 @@ func findNextWord(chars []rune, from int) int {
 	return len(chars)
 }
 
-func findPrevWord(chars []rune, from int) int {
+func FindPrevWord(chars []rune, from int) int {
 	// Find the previous word index before the specified index
 	for i := from - 1; i >= 0; i-- {
-		if contains(matched, chars[i]) {
+		if Contains(matched, chars[i]) {
 			return i + 1
 		}
 	}
@@ -109,7 +109,7 @@ func findPrevWord(chars []rune, from int) int {
 	return 0
 }
 
-func contains[T comparable](slice []T, e T) bool {
+func Contains[T comparable](slice []T, e T) bool {
 	for _, val := range slice {
 		if val == e {
 			return true
@@ -118,13 +118,13 @@ func contains[T comparable](slice []T, e T) bool {
 	return false
 }
 
-func remove[T any](slice []T, s int) []T {
+func Remove[T any](slice []T, s int) []T {
 	return append(slice[:s], slice[s+1:]...)
 }
 
 
 
-func maxString(arr []string) int {
+func MaxString(arr []string) int {
 	maxLength := 0
 	for _, str := range arr {
 		if len(str) > maxLength {
@@ -134,13 +134,13 @@ func maxString(arr []string) int {
 	return maxLength
 }
 
-func readFileToString(filePath string) (string, error) {
+func ReadFileToString(filePath string) (string, error) {
 	filecontent, err := os.ReadFile(filePath)
 	if err != nil { return "", err }
 	return string(filecontent), nil
 }
 
-func convertToString(content [][]rune) string {
+func ConvertContentToString(content [][]rune) string {
 	var result strings.Builder
 	for i, row := range content {
 		for _, ch := range row { result.WriteRune(ch) }
@@ -149,7 +149,7 @@ func convertToString(content [][]rune) string {
 	return result.String()
 }
 
-func countTabs(str []rune, stopIndex int) int {
+func CountTabs(str []rune, stopIndex int) int {
 	if stopIndex == 0 { return 0 }
 
 	count := 0
@@ -159,7 +159,7 @@ func countTabs(str []rune, stopIndex int) int {
 	}
 	return count
 }
-func countTabsTo(str []rune, stopIndex int) int {
+func CountTabsTo(str []rune, stopIndex int) int {
 	if stopIndex == 0 { return 0 }
 
 	count := 0
@@ -169,7 +169,7 @@ func countTabsTo(str []rune, stopIndex int) int {
 	}
 	return count
 }
-func countSpaces(str []rune, stopIndex int) int {
+func CountSpaces(str []rune, stopIndex int) int {
 	if stopIndex == 0 { return 0 }
 
 	count := 0
@@ -180,13 +180,13 @@ func countSpaces(str []rune, stopIndex int) int {
 	return count
 }
 
-func formatText(left, right string, maxWidth int) string {
+func FormatText(left, right string, maxWidth int) string {
 	left = fmt.Sprintf("%-*s", maxWidth, left)
 	right = fmt.Sprintf("%s",  right)
 	return fmt.Sprintf("%s %s", left, right)
 }
 
-func getFileSize(filename string) int64 {
+func GetFileSize(filename string) int64 {
 	file, err := os.Open(filename) // replace with your file name
 	if err != nil { return 0 }
 	defer file.Close()
@@ -198,7 +198,7 @@ func getFileSize(filename string) int64 {
 	return fileSize
 }
 
-func centerNumber(brw int, width int) string {
+func CenterNumber(brw int, width int) string {
 	lineNumber := strconv.Itoa(brw )
 	padding := width - len(lineNumber)
 	leftPad := fmt.Sprintf("%*s", padding/2, "")
@@ -225,7 +225,7 @@ func PadLeft(str string, length int) string {
 	return fmt.Sprintf(format, str)
 }
 
-func getFirstLines(s string, lineNum int) (string, error) {
+func GetFirstLines(s string, lineNum int) (string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(s))
 	count := 0
 	var builder strings.Builder
@@ -246,15 +246,7 @@ func getFirstLines(s string, lineNum int) (string, error) {
 	return builder.String(), nil
 }
 
-//func isIgnored(dir string, ignoreDirs []string) bool {
-//	for _, ignore := range ignoreDirs {
-//		if dir == ignore {
-//			return true
-//		}
-//	}
-//	return false
-//}
-func isIgnored(path string, ignorePatterns []string) bool {
+func IsIgnored(path string, ignorePatterns []string) bool {
 	for _, pattern := range ignorePatterns {
 		match, err := filepath.Match(pattern, filepath.Base(path))
 		if err != nil { log.Println("Invalid pattern:", pattern); continue }
@@ -271,11 +263,11 @@ func getFiles(path string, ignoreDirs []string) ([]string, error) {
 		}
 		if info.IsDir() {
 			dir := filepath.Base(path)
-			if isIgnored(dir, ignoreDirs) {
+			if IsIgnored(dir, ignoreDirs) {
 				return filepath.SkipDir
 			}
 		} else {
-			if !isIgnored(path, ignoreDirs) {
+			if !IsIgnored(path, ignoreDirs) {
 				files = append(files, path)
 			}
 
@@ -291,34 +283,4 @@ func goldenRatioPartition(totalSize int) (a int, b int) {
 	b = int(float64(totalSize) / (Phi + 1))
 	a = totalSize - b
 	return
-}
-
-func findNewAndDeletedFiles(originalFiles []string, newFiles []string) ([]string, []string) {
-     
-	originalFilesMap := make(map[string]bool, len(originalFiles))
-	newFilesMap := make(map[string]bool, len(newFiles))
-
-	// Add original files to map
-	for _, file := range originalFiles { originalFilesMap[file] = true }
-
-	// Add new files to map
-	for _, file := range newFiles { newFilesMap[file] = true }
-
-	// Check for new files
-	var newlyCreated []string
-	for _, file := range newFiles {
-		if !originalFilesMap[file] {
-			newlyCreated = append(newlyCreated, file)
-		}
-	}
-
-	// Check for deleted files
-	var deleted []string
-	for _, file := range originalFiles {
-		if !newFilesMap[file] {
-			deleted = append(deleted, file)
-		}
-	}
-
-	return newlyCreated, deleted
 }

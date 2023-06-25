@@ -1,14 +1,14 @@
 package main
 
-var logger = Logger{}
+var Log = Logger{}
 var editor = Editor{}
-var lsp = LspClient{}
-var highlighter = Highlighter{}
+var Lsp = LspClient{}
+var Highlight = Highlighter{}
 
 func main() {
-	logger.start()
+	Log.Start()
 	config := GetConfig()
 	editor.config = config
-	highlighter.setTheme(config.Theme)
-	editor.start()
+	Highlight.SetTheme(config.Theme)
+	editor.Start()
 }

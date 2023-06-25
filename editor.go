@@ -59,18 +59,18 @@ type Editor struct {
 
 }
 
-func (e *Editor) start() {
-	logger.info("starting edgo")
+func (e *Editor) Start() {
+	Log.Info("starting edgo")
 
-	e.initScreen()
+	e.InitScreen()
 
 	// reading file from cmd args
 	if len(os.Args) == 1 {
-		e.onFiles()
+		e.OnFiles()
 	} else {
 		e.Filename = os.Args[1]
 		e.InputFile = e.Filename
-		err := e.openFile(e.Filename)
+		err := e.OpenFile(e.Filename)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(130)
@@ -80,14 +80,14 @@ func (e *Editor) start() {
 	// main draw cycle
 	for {
 		if e.Update && e.Filename != "" {
-			e.drawEverything()
+			e.DrawEverything()
 			e.Screen.Show()
 		}
-		e.handleEvents()
+		e.HandleEvents()
 	}
 }
 
-func (e *Editor) handleEvents() {
+func (e *Editor) HandleEvents() {
 	e.Update = true
 	ev := e.Screen.PollEvent()
 	switch ev := ev.(type) {
@@ -99,20 +99,20 @@ func (e *Editor) handleEvents() {
 		buttons := ev.Buttons()
 		modifiers := ev.Modifiers()
 
-		e.handleMouse(mx, my, buttons, modifiers)
+		e.HandleMouse(mx, my, buttons, modifiers)
 
 	case *EventKey:
 		key := ev.Key()
 		modifiers := ev.Modifiers()
 
-		e.handleKeyboard(key, ev, modifiers)
+		e.HandleKeyboard(key, ev, modifiers)
 	}
 }
 
-func (e *Editor) handleMouse(mx int, my int, buttons ButtonMask, modifiers ModMask) {
+func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMask) {
 	if !e.IsFilesPanelMoving && buttons & Button1 == 1 &&
 		math.Abs(float64(e.FilesPanelWidth- mx)) <= 2 &&
-		len(e.Selection.getSelectedLines(e.Content)) == 0 {
+		len(e.Selection.GetSelectedLines(e.Content)) == 0 {
 
 		e.FilesPanelWidth = mx - 1
 		e.IsFilesPanelMoving = true
@@ -121,7 +121,7 @@ func (e *Editor) handleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 	if e.IsFilesPanelMoving && buttons & Button1 == 1 { e.FilesPanelWidth = mx; return }
 	if e.IsFilesPanelMoving && buttons & Button1 == 0 { e.IsFilesPanelMoving = false; return }
-	if mx < e.FilesPanelWidth- 2 && buttons & Button1 == 0 { e.onFiles(); return }
+	if mx < e.FilesPanelWidth- 2 && buttons & Button1 == 0 { e.OnFiles(); return }
 
 	if e.Filename == "" { return }
 
@@ -135,96 +135,96 @@ func (e *Editor) handleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 		e.Row = my + e.Y
 		if e.Row > len(e.Content)-1 { e.Row = len(e.Content) - 1 } // fit cursor to e.Content
 
-		e.Col = e.findCursorXPosition(mx)
-		if modifiers & ModAlt != 0 { e.onReferences() }
-		if modifiers & ModCtrl != 0 { e.onDefinition() }
+		e.Col = e.FindCursorXPosition(mx)
+		if modifiers & ModAlt != 0 { e.OnReferences() }
+		if modifiers & ModCtrl != 0 { e.OnDefinition() }
 		return
 	}
 
-	if e.Selection.isSelected && buttons & Button1 == 1 {
+	if e.Selection.IsSelected && buttons & Button1 == 1 {
 		e.Row = my + e.Y
 		if e.Row > len(e.Content)-1 { e.Row = len(e.Content) - 1 } // fit cursor to e.Content
 
-		xPosition := e.findCursorXPosition(mx)
+		xPosition := e.FindCursorXPosition(mx)
 
-		isTripleClick := e.Selection.isUnderSelection(xPosition, e.Row) &&
-			len(e.Selection.getSelectedLines(e.Content)) == 1
+		isTripleClick := e.Selection.IsUnderSelection(xPosition, e.Row) &&
+			len(e.Selection.GetSelectedLines(e.Content)) == 1
 
 		if isTripleClick {
 			e.Row = my + e.Y
 			e.Col = xPosition
 			if e.Row > len(e.Content)-1 { e.Row = len(e.Content) - 1 } // fit cursor to e.Content
 			if e.Col > len(e.Content[e.Row]) { e.Col = len(e.Content[e.Row]) }
-			//if e.Col < 0 { sex = len(e.Content[Row]) }
+			//if e.Col < 0 { Sex = len(e.Content[Row]) }
 
-			e.Selection.ssx = 0
-			e.Selection.sex = len(e.Content[e.Row])
-			e.Selection.ssy = e.Row
-			e.Selection.sey = e.Row
+			e.Selection.Ssx = 0
+			e.Selection.Sex = len(e.Content[e.Row])
+			e.Selection.Ssy = e.Row
+			e.Selection.Sey = e.Row
 
 			return
 		} else {
-			e.Selection.cleanSelection()
+			e.Selection.CleanSelection()
 		}
 	}
 
-	if buttons & WheelDown != 0 { e.onScrollDown(); return }
-	if buttons & WheelUp != 0 { e.onScrollUp(); return }
-	if buttons & Button1 == 0 && e.Selection.ssx == -1 { e.Update = false; return }
+	if buttons & WheelDown != 0 { e.OnScrollDown(); return }
+	if buttons & WheelUp != 0 { e.OnScrollUp(); return }
+	if buttons & Button1 == 0 && e.Selection.Ssx == -1 { e.Update = false; return }
 
 	if buttons & Button1 == 1 {
 		e.Row = my + e.Y
 		if e.Row > len(e.Content)-1 { e.Row = len(e.Content) - 1 } // fit cursor to e.Content
 
-		xPosition := e.findCursorXPosition(mx)
+		xPosition := e.FindCursorXPosition(mx)
 
-		if e.Col == xPosition && len(e.Selection.getSelectedLines(e.Content)) == 0 {
+		if e.Col == xPosition && len(e.Selection.GetSelectedLines(e.Content)) == 0 {
 			// double click
-			prw := findPrevWord(e.Content[e.Row], e.Col)
-			nxw := findNextWord(e.Content[e.Row], e.Col)
-			e.Selection.ssx, e.Selection.ssy = prw, e.Row
-			e.Selection.sex, e.Selection.sey = nxw, e.Row
+			prw := FindPrevWord(e.Content[e.Row], e.Col)
+			nxw := FindNextWord(e.Content[e.Row], e.Col)
+			e.Selection.Ssx, e.Selection.Ssy = prw, e.Row
+			e.Selection.Sex, e.Selection.Sey = nxw, e.Row
 			e.Col = nxw
 			return
 		}
 		e.Col = xPosition
 		if e.Col < 0 { e.Col = 0 }
-		if e.Selection.ssx < 0 { e.Selection.ssx, e.Selection.ssy = e.Col, e.Row
+		if e.Selection.Ssx < 0 { e.Selection.Ssx, e.Selection.Ssy = e.Col, e.Row
 		}
-		if e.Selection.ssx >= 0 { e.Selection.sex, e.Selection.sey = e.Col, e.Row
+		if e.Selection.Ssx >= 0 { e.Selection.Sex, e.Selection.Sey = e.Col, e.Row
 		}
 	}
 
 	if buttons&Button1 == 0 {
-		if e.Selection.ssx != -1 && e.Selection.sex != -1 {
-			e.Selection.isSelected = true
+		if e.Selection.Ssx != -1 && e.Selection.Sex != -1 {
+			e.Selection.IsSelected = true
 		}
 	}
 	return
 }
-func (e *Editor) handleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
+func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if e.Filename == "" && key != KeyCtrlQ { return }
 
 	if ev.Rune() == '/' && modifiers&ModAlt != 0 || int(ev.Rune()) == '÷' {
 		// '÷' on Mac is option + '/'
-		e.onCommentLine(); return
+		e.OnCommentLine(); return
 	}
-	if key == KeyUp && modifiers == 3 { e.onSwapLinesUp(); return } // control + shift + up
-	if key == KeyDown && modifiers == 3 { e.onSwapLinesDown(); return } // control + shift + down
-	if key == KeyBacktab { e.onBackTab(); return }
-	if key == KeyTab { e.onTab(); return }
-	if key == KeyCtrlH { e.onHover(); return }
-	if key == KeyCtrlR { e.onReferences(); return }
-	if key == KeyCtrlW { e.onCodeAction(); return }
-	if key == KeyCtrlP { e.onSignatureHelp(); return }
-	if key == KeyCtrlG { e.onDefinition(); return }
-	if key == KeyCtrlE { e.onErrors(); return }
-	if key == KeyCtrlC { e.onCopy(); return }
-	if key == KeyCtrlV { e.onPaste(); return }
-	if key == KeyEscape { e.Selection.cleanSelection(); return }
-	if key == KeyCtrlA { e.onSelectAll(); return }
-	if key == KeyCtrlX { e.cut() }
-	if key == KeyCtrlD { e.duplicate() }
+	if key == KeyUp && modifiers == 3 { e.OnSwapLinesUp(); return } // control + shift + up
+	if key == KeyDown && modifiers == 3 { e.OnSwapLinesDown(); return } // control + shift + down
+	if key == KeyBacktab { e.OnBackTab(); return }
+	if key == KeyTab { e.OnTab(); return }
+	if key == KeyCtrlH { e.OnHover(); return }
+	if key == KeyCtrlR { e.OnReferences(); return }
+	if key == KeyCtrlW { e.OnCodeAction(); return }
+	if key == KeyCtrlP { e.OnSignatureHelp(); return }
+	if key == KeyCtrlG { e.OnDefinition(); return }
+	if key == KeyCtrlE { e.OnErrors(); return }
+	if key == KeyCtrlC { e.OnCopy(); return }
+	if key == KeyCtrlV { e.OnPaste(); return }
+	if key == KeyEscape { e.Selection.CleanSelection(); return }
+	if key == KeyCtrlA { e.OnSelectAll(); return }
+	if key == KeyCtrlX { e.Cut() }
+	if key == KeyCtrlD { e.Duplicate() }
 
 	if modifiers & ModShift != 0 && (
 		key == KeyRight ||
@@ -232,49 +232,50 @@ func (e *Editor) handleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 			key == KeyUp ||
 			key == KeyDown) {
 
-		if e.Selection.ssx < 0 { e.Selection.ssx, e.Selection.ssy = e.Col, e.Row
+		if e.Selection.Ssx < 0 { e.Selection.Ssx, e.Selection.Ssy = e.Col, e.Row
 		}
-		if key == KeyRight { e.onRight() }
-		if key == KeyLeft { e.onLeft() }
-		if key == KeyUp { e.onUp() }
-		if key == KeyDown { e.onDown() }
-		if e.Selection.ssx >= 0 {
-			e.Selection.sex, e.Selection.sey = e.Col, e.Row
-			e.Selection.isSelected = true
+		if key == KeyRight { e.OnRight() }
+		if key == KeyLeft { e.OnLeft() }
+		if key == KeyUp { e.OnUp() }
+		if key == KeyDown { e.OnDown() }
+		if e.Selection.Ssx >= 0 {
+			e.Selection.Sex, e.Selection.Sey = e.Col, e.Row
+			e.Selection.IsSelected = true
 		}
 		return
 	}
 
-	if key == KeyRune && modifiers & ModAlt != 0 && len(e.Content) > 0 { e.handleSmartMove(ev.Rune()); return }
-	if key == KeyDown && modifiers & ModAlt != 0 { e.handleSmartMoveDown(); return }
-	if key == KeyUp && modifiers & ModAlt != 0 { e.handleSmartMoveUp(); return }
+	if key == KeyRune && modifiers & ModAlt != 0 && len(e.Content) > 0 { e.HandleSmartMove(ev.Rune()); return }
+	if key == KeyDown && modifiers & ModAlt != 0 { e.HandleSmartMoveDown(); return }
+	if key == KeyUp && modifiers & ModAlt != 0 { e.HandleSmartMoveUp(); return }
 
 	if key == KeyRune {
-		e.addChar(ev.Rune())
+		e.AddChar(ev.Rune())
 		if ev.Rune() == '.' {
-			e.drawEverything(); e.Screen.Show()
-			e.onCompletion()
+			e.DrawEverything(); e.Screen.Show()
+			e.OnCompletion()
 		}
-		//if ev.Rune() == '(' { e.drawEverything(); e.Screen.Show(); e.onSignatureHelp(); e.Screen.Clear() }
+		//if ev.Rune() == '(' { e.DrawEverything(); e.Screen.Show(); e.OnSignatureHelp(); e.Screen.Clear() }
 	}
 
 	if /*key == tcell.KeyEscape ||*/ key == KeyCtrlQ { e.Screen.Fini(); os.Exit(1) }
-	if key == KeyCtrlS { e.writeFile() }
-	if key == KeyEnter { e.onEnter() }
-	if key == KeyBackspace || key == KeyBackspace2 { e.onDelete() }
-	if key == KeyDown { e.onDown(); e.Selection.cleanSelection() }
-	if key == KeyUp { e.onUp(); e.Selection.cleanSelection() }
-	if key == KeyLeft { e.onLeft(); e.Selection.cleanSelection() }
-	if key == KeyRight { e.onRight(); e.Selection.cleanSelection() }
-	if key == KeyCtrlT { e.onFiles() }
-	if key == KeyCtrlF { e.onSearch() }
-	if key == KeyF18 { e.onRename() }
-	if key == KeyCtrlU { e.onUndo() }
-	if key == KeyCtrlR { e.onRedo() } // todo: fix it
-	if key == KeyCtrlSpace { e.onCompletion() }
+	if key == KeyCtrlS { e.WriteFile() }
+	if key == KeyEnter { e.OnEnter() }
+	if key == KeyBackspace || key == KeyBackspace2 { e.OnDelete() }
+	if key == KeyDown { e.OnDown(); e.Selection.CleanSelection() }
+	if key == KeyUp { e.OnUp(); e.Selection.CleanSelection() }
+	if key == KeyLeft { e.OnLeft(); e.Selection.CleanSelection() }
+	if key == KeyRight { e.OnRight(); e.Selection.CleanSelection() }
+	if key == KeyCtrlT { e.OnFiles() }
+	if key == KeyCtrlF { e.OnSearch() }
+	if key == KeyF18 { e.OnRename() }
+	if key == KeyCtrlU { e.OnUndo() }
+	if key == KeyCtrlR { e.OnRedo() } // todo: fix it
+	if key == KeyCtrlSpace { e.OnCompletion() }
 
 }
-func (e *Editor) openFile(fname string) error {
+
+func (e *Editor) OpenFile(fname string) error {
 
 	absoluteDir, err := filepath.Abs(path.Dir(fname))
 	if err != nil { return err }
@@ -282,16 +283,16 @@ func (e *Editor) openFile(fname string) error {
 	e.Filename = filepath.Base(fname)
 	e.AbsoluteFilePath = path.Join(absoluteDir, e.Filename)
 
-	logger.info("open", e.AbsoluteFilePath)
+	Log.Info("open", e.AbsoluteFilePath)
 
-	newLang := detectLang(e.Filename)
-	logger.info("new lang is", newLang)
+	newLang := DetectLang(e.Filename)
+	Log.Info("new lang is", newLang)
 
 	if newLang != "" && newLang != e.Lang {
 		e.Lang = newLang
-		lsp.lang = newLang
-		_, found := lsp.lang2stdin[e.Lang]
-		if !found { go e.init_lsp(e.Lang) }
+		Lsp.lang = newLang
+		_, found := Lsp.lang2stdin[e.Lang]
+		if !found { go e.InitLsp(e.Lang) }
 	}
 
 	conf, found := e.config.Langs[e.Lang]
@@ -299,13 +300,13 @@ func (e *Editor) openFile(fname string) error {
 	e.langConf = conf
 	e.langTabWidth = conf.TabWidth
 
-	code := e.readFile(e.AbsoluteFilePath)
-	e.Colors = highlighter.colorize(code, e.Filename)
+	code := e.ReadFile(e.AbsoluteFilePath)
+	e.Colors = Highlight.Colorize(code, e.Filename)
 
 	e.Undo = []EditOperation{}
 	e.Redo = []EditOperation{}
 
-	e.updateFilesOpenStats(fname)
+	e.UpdateFilesOpenStats(fname)
 
     e.Row = 0; e.Col = 0; e.Y = 0; e.X = 0
 	e.Selection = Selection{-1,-1,-1,-1,false }
@@ -313,7 +314,7 @@ func (e *Editor) openFile(fname string) error {
 	return nil
 }
 
-func (e *Editor) initScreen() {
+func (e *Editor) InitScreen() {
 	encoding.Register()
 	screen, err := NewScreen()
 	if err != nil { fmt.Fprintf(os.Stderr, "%v\n", err); os.Exit(1) }
@@ -336,14 +337,14 @@ func (e *Editor) initScreen() {
 	return
 }
 
-func (e *Editor) drawEverything() {
+func (e *Editor) DrawEverything() {
 	if len(e.Content) == 0 { return }
 	e.Screen.Clear()
 
-	if e.FilesPanelWidth != 0 { e.drawFiles("", e.Files, 0) }
+	if e.FilesPanelWidth != 0 { e.DrawFiles("", e.Files, 0) }
 
 	
-	//tabs := countTabsTo(e.Content[Row], e.Col)
+	//tabs := CountTabsTo(e.Content[Row], e.Col)
 	//correction := tabs*(e.langTabWidth)
 
 	if e.Col < e.X { e.X = e.Col
@@ -357,14 +358,14 @@ func (e *Editor) drawEverything() {
 		ry := row + e.Y // index to get right row in characters buffer by scrolling offset Y
 		//e.cleanLineAfter(0, row)
 		if row >= len(e.Content) || ry >= len(e.Content) { break }
-		e.drawLineNumber(ry, row)
+		e.DrawLineNumber(ry, row)
 
 		tabsOffset := 0
 		for col := 0; col <= e.COLUMNS; col++ {
 			cx := col + e.X // index to get right column in characters buffer by scrolling offset x
 			if cx >= len(e.Content[ry]) { break }
 			ch := e.Content[ry][cx]
-			style := e.getStyle(ry, cx)
+			style := e.GetStyle(ry, cx)
 			if ch == '\t'  {
 				//draw big cursor with next symbol color
 				if ry == e.Row && cx == e.Col {
@@ -383,38 +384,38 @@ func (e *Editor) drawEverything() {
 		}
 	}
 
-	e.drawDiagnostic()
+	e.DrawDiagnostic()
 	//e.drawTabs()
 
 	var changes = ""; if e.IsContentChanged { changes = "*" }
 	status := fmt.Sprintf(" %s %d %d %s%s ", e.Lang, e.Row+1, e.Col+1, e.Filename, changes)
-	e.drawStatus(status)
+	e.DrawStatus(status)
 
 	// if tab under cursor, hide cursor because it has already drawn
 	if e.Row < len(e.Content) && e.Col < len(e.Content[e.Row]) && e.Content[e.Row][e.Col] == '\t' {
 		e.Screen.HideCursor()
 	} else  {
-		tabs := countTabsTo(e.Content[e.Row], e.Col) * (e.langTabWidth -1)
+		tabs := CountTabsTo(e.Content[e.Row], e.Col) * (e.langTabWidth -1)
 		e.Screen.ShowCursor(e.Col- e.X+ e.LINES_WIDTH+tabs + e.FilesPanelWidth, e.Row- e.Y) // show cursor
 	}
 
 }
 
-func (e *Editor) getStyle(ry int, cx int) Style {
+func (e *Editor) GetStyle(ry int, cx int) Style {
 	var style = StyleDefault
 	if !e.IsColorize { return style }
 	if ry >= len(e.Colors) || cx >= len(e.Colors[ry])  { return style }
 	color := e.Colors[ry][cx]
 	if color > 0 { style = StyleDefault.Foreground(Color(color)) }
-	if e.Selection.isUnderSelection(cx, ry) {
+	if e.Selection.IsUnderSelection(cx, ry) {
 		style = style.Background(Color(SelectionColor))
 	}
 	return style
 }
 
-func (e *Editor) drawDiagnostic() {
+func (e *Editor) DrawDiagnostic() {
 	//lsp.someMapMutex2.Lock()
-	maybeDiagnostic, found := lsp.file2diagnostic["file://" + e.AbsoluteFilePath]
+	maybeDiagnostic, found := Lsp.file2diagnostic["file://" + e.AbsoluteFilePath]
 	//lsp.someMapMutex2.Unlock()
 
 	if found {
@@ -430,7 +431,7 @@ func (e *Editor) drawDiagnostic() {
 			// iterate over error range and, todo::fix
 			//for i := dline; i <= int(diagnostic.Range.End.Line); i++ {
 			//	if i >= len(e.Content) { continue }
-			//	tabs := countTabs(e.Content[i], dline)
+			//	tabs := CountTabs(e.Content[i], dline)
 			//	for j := int(diagnostic.Range.Start.Character); j <= int(diagnostic.Range.End.Character); j++ {
 			//		if j >= len(e.Content[i]) { continue }
 			//
@@ -440,7 +441,7 @@ func (e *Editor) drawDiagnostic() {
 			//}
 
 
-			tabs := countTabs(e.Content[dline], len(e.Content[dline]))
+			tabs := CountTabs(e.Content[dline], len(e.Content[dline]))
 			var shifty = 0
 			errorMessage := "error: " + diagnostic.Message
 			errorMessage = PadLeft(errorMessage, e.COLUMNS - len(e.Content[dline]) - tabs*e.langTabWidth- 5 - e.LINES_WIDTH- e.FilesPanelWidth)
@@ -450,13 +451,13 @@ func (e *Editor) drawDiagnostic() {
 				ypos :=  dline - e.Y
 				if ypos < 0 || ypos >= len(e.Content) { break }
 
-				tabs = countTabs(e.Content[dline], len(e.Content[dline]))
+				tabs = CountTabs(e.Content[dline], len(e.Content[dline]))
 				xpos := i + e.LINES_WIDTH + e.FilesPanelWidth + len(e.Content[dline+shifty]) + tabs*e.langTabWidth + 5
 
 				//for { // draw ch on the next line if not fit to e.Screen
 				//	if xpos >= COLUMNS {
 				//		shifty++
-				//		tabs = countTabs(e.Content[dline+shifty], len(e.Content[dline+shifty]))
+				//		tabs = CountTabs(e.Content[dline+shifty], len(e.Content[dline+shifty]))
 				//		ypos +=  (i / COLUMNS) + 1
 				//		if ypos >= len(e.Content) { break}
 				//		xpos = len(e.Content[dline+shifty]) + 5 + (xpos % COLUMNS) % COLUMNS
@@ -470,21 +471,21 @@ func (e *Editor) drawDiagnostic() {
 	}
 }
 
-func (e *Editor) drawLineNumber(brw int, row int) {
+func (e *Editor) DrawLineNumber(brw int, row int) {
 	var style = StyleDefault.Foreground(ColorDimGray)
 	if brw == e.Row { style = StyleDefault}
-	lineNumber := centerNumber(brw + 1, e.LINES_WIDTH)
+	lineNumber := CenterNumber(brw + 1, e.LINES_WIDTH)
 	for index, char := range lineNumber {
 		e.Screen.SetContent(index + e.FilesPanelWidth, row, char, nil, style)
 	}
 }
 
-func (e *Editor) drawStatus(text string) {
+func (e *Editor) DrawStatus(text string) {
 	var style = StyleDefault
-	e.drawText(e.ROWS-1, e.COLUMNS - len(text), text, style)
+	e.DrawText(e.ROWS-1, e.COLUMNS - len(text), text, style)
 }
 
-func (e *Editor) drawText(row, col int, text string, style Style) {
+func (e *Editor) DrawText(row, col int, text string, style Style) {
 	e.Screen.SetContent(col-1, row, ' ', nil, style)
 	for _, ch := range []rune(text) {
 		if col > e.COLUMNS { break }
@@ -493,7 +494,7 @@ func (e *Editor) drawText(row, col int, text string, style Style) {
 	}
 }
 
-func (e *Editor) findCursorXPosition(mx int) int {
+func (e *Editor) FindCursorXPosition(mx int) int {
 	count := 0; realCount := 0  // searching x position
 	for _, ch := range e.Content[e.Row] {
 		if count >= mx + e.X { break }
@@ -506,29 +507,29 @@ func (e *Editor) findCursorXPosition(mx int) int {
 	return realCount
 }
 
-func (e *Editor) init_lsp(lang string) {
-	//start := time.Now()
+func (e *Editor) InitLsp(lang string) {
+	//Start := time.Now()
 
 	// Getting the lsp command with args for a language:
 	conf, ok := e.config.Langs[strings.ToLower(lang)]
 	if !ok || len(conf.Lsp) == 0 { return }  // lang is not supported.
 
-	started := lsp.start(lang, strings.Split(conf.Lsp, " "))
+	started := Lsp.start(lang, strings.Split(conf.Lsp, " "))
 	if !started { return }
 
 	var diagnosticUpdateChan = make(chan string)
-	go lsp.receiveLoop(diagnosticUpdateChan, lang)
+	go Lsp.receiveLoop(diagnosticUpdateChan, lang)
 
 	currentDir, _ := os.Getwd()
 
-	lsp.init(currentDir)
-	lsp.didOpen(e.AbsoluteFilePath, lang)
+	Lsp.init(currentDir)
+	Lsp.didOpen(e.AbsoluteFilePath, lang)
 
-	//e.drawEverything()
+	//e.DrawEverything()
 	//
-	//lspStatus := "lsp started, elapsed " + time.Since(start).String()
+	//lspStatus := "lsp started, elapsed " + time.Since(Start).String()
 	//if !lsp.isReady { lspStatus = "lsp is not ready yet" }
-	//logger.info("lsp status", lspStatus)
+	//Log.Info("lsp status", lspStatus)
 	//status := fmt.Sprintf(" %e.Screen %e.Screen %d %d %e.Screen ", lspStatus,  lang, Row+1, Col+1, InputFile)
 	//e.drawText(COLUMNS- len(status), ROWS-1, COLUMNS, ROWS-1, status)
 	//e.Screen.Show()
@@ -536,21 +537,21 @@ func (e *Editor) init_lsp(lang string) {
 	go func() {
 		for range diagnosticUpdateChan {
 			if e.IsOverlay { continue }
-			e.drawEverything()
+			e.DrawEverything()
 			e.Screen.Show()
 		}
 	}()
 }
 
-func (e *Editor) onErrors() {
-	if !lsp.IsLangReady(e.Lang) { return }
+func (e *Editor) OnErrors() {
+	if !Lsp.IsLangReady(e.Lang) { return }
 
-	maybeDiagnostics, found := lsp.file2diagnostic["file://" + e.AbsoluteFilePath]
+	maybeDiagnostics, found := Lsp.file2diagnostic["file://" + e.AbsoluteFilePath]
 
 	if !found || len(maybeDiagnostics.Diagnostics) == 0 { return }
 
 	e.IsOverlay = true
-	defer e.overlayFalse()
+	defer e.OverlayFalse()
 
 	var end = false
 
@@ -567,8 +568,8 @@ func (e *Editor) onErrors() {
 		}
 
 
-		width := max(50, maxString(options))                   // width depends on max option len or 30 at min
-		height := minMany(10, len(options) + 1)                // depends on min option len or 5 at min or how many rows to the end of e.Screen
+		width := Max(50, MaxString(options))                   // width depends on max option len or 30 at min
+		height := MinMany(10, len(options) + 1)                // depends on min option len or 5 at min or how many rows to the end of e.Screen
 		atx := 0 + e.LINES_WIDTH + e.FilesPanelWidth; aty := 0 // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 
@@ -578,7 +579,7 @@ func (e *Editor) onErrors() {
 			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
-			shifty := e.drawErrors(atx, width, aty, height, options, selectedOffset, selected, style)
+			shifty := e.DrawErrors(atx, width, aty, height, options, selectedOffset, selected, style)
 
 			e.Screen.Show()
 
@@ -587,47 +588,47 @@ func (e *Editor) onErrors() {
 				e.COLUMNS, e.ROWS = e.Screen.Size()
 				//ROWS -= 1
 				e.Screen.Sync()
-				e.Screen.Clear(); e.drawEverything(); e.Screen.Show()
+				e.Screen.Clear(); e.DrawEverything(); e.Screen.Show()
 
 			case *EventKey:
 				key := ev.Key()
 				if key == KeyEscape || key == KeyEnter ||
 					key == KeyBackspace || key == KeyBackspace2 ||
 					key == KeyCtrlE { e.Screen.Clear(); selectionEnd = true; end = true }
-				if key == KeyDown { selected = min(len(options)-1, selected+1) }
-				if key == KeyUp { selected = max(0, selected-1) }
+				if key == KeyDown { selected = Min(len(options)-1, selected+1) }
+				if key == KeyUp { selected = Max(0, selected-1) }
 				if key == KeyCtrlC {
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
 					clipboard.WriteAll(diagnostic.Message)
 				}
-				//if key == tcell.KeyRight { e.onRight(); e.Screen.Clear(); e.drawEverything(); selectionEnd = true }
+				//if key == tcell.KeyRight { e.OnRight(); e.Screen.Clear(); e.DrawEverything(); selectionEnd = true }
 				if key == KeyRight {
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
 					e.Row = int(diagnostic.Range.Start.Line)
 					e.Col = int(diagnostic.Range.Start.Character)
-					e.focus();
+					e.Focus();
 					// add space for errors panel
 					if e.Row- e.Y < shifty + height { e.Y -= shifty + height + 1}
 					if e.Y < 0 { e.Y = 0 }
-					e.drawEverything(); e.Screen.Show()
+					e.DrawEverything(); e.Screen.Show()
 				}
-				//if key == tcell.KeyRune { e.addChar(ev.Rune()); e.writeFile(); e.Screen.Clear(); e.drawEverything(); selectionEnd = true  }
+				//if key == tcell.KeyRune { e.AddChar(ev.Rune()); e.WriteFile(); e.Screen.Clear(); e.DrawEverything(); selectionEnd = true  }
 				if key == KeyEnter {
 					selectionEnd = true; end = true
 					diagnostic := maybeDiagnostics.Diagnostics[selected]
 					e.Row = int(diagnostic.Range.Start.Line)
 					e.Col = int(diagnostic.Range.Start.Character)
 
-					e.Selection.ssx = e.Col; e.Selection.ssy = e.Row;
-					e.Selection.sey = int(diagnostic.Range.End.Line)
-					e.Selection.sex = int(diagnostic.Range.End.Character)
-					e.Row = e.Selection.sey; e.Col = e.Selection.sex
-					e.Selection.isSelected = true
-					e.focus()
+					e.Selection.Ssx = e.Col; e.Selection.Ssy = e.Row;
+					e.Selection.Sey = int(diagnostic.Range.End.Line)
+					e.Selection.Sex = int(diagnostic.Range.End.Character)
+					e.Row = e.Selection.Sey; e.Col = e.Selection.Sex
+					e.Selection.IsSelected = true
+					e.Focus()
 					// add space for errors panel
 					if e.Row- e.Y < shifty + height { e.Y -= shifty + height + 1}
 					if e.Y < 0 { e.Y = 0 }
-					e.drawEverything(); e.Screen.Show()
+					e.DrawEverything(); e.Screen.Show()
 				}
 			}
 		}
@@ -635,7 +636,7 @@ func (e *Editor) onErrors() {
 
 }
 
-func (e *Editor) drawErrors(atx int, width int, aty int, height int, options []string,
+func (e *Editor) DrawErrors(atx int, width int, aty int, height int, options []string,
 	selectedOffset int, selected int, style Style) int {
 
 	var shifty = 0
@@ -657,7 +658,7 @@ func (e *Editor) drawErrors(atx int, width int, aty int, height int, options []s
 		runes := []rune(option)
 		for j := 0; j < len(runes); j++ {
 			ch := runes[j]
-			nextWord := findNextWord(runes, j)
+			nextWord := FindNextWord(runes, j)
 			if shiftx == 0 {
 				e.Screen.SetContent(atx, row+aty+shifty, ' ', nil, style)
 			}
@@ -685,7 +686,7 @@ func (e *Editor) drawErrors(atx int, width int, aty int, height int, options []s
 	return shifty
 }
 
-func (e *Editor) onSearch() {
+func (e *Editor) OnSearch() {
 	var end = false
 	if e.SearchPattern == nil { e.SearchPattern = []rune{} }
 	var patternx = len(e.SearchPattern)
@@ -697,7 +698,7 @@ func (e *Editor) onSearch() {
 	// loop until escape or enter pressed
 	for !end {
 
-		e.drawSearch(prefix, e.SearchPattern, patternx)
+		e.DrawSearch(prefix, e.SearchPattern, patternx)
 		e.Screen.Show()
 
 		if isChanged {
@@ -709,19 +710,19 @@ func (e *Editor) onSearch() {
 			}
 
 			if sx != -1 && sy != -1 {
-				e.Row = sy; e.Col = sx; e.focus()
+				e.Row = sy; e.Col = sx; e.Focus()
 				startline = sy;
-				e.Selection.ssx = sx; e.Selection.ssy = sy;
-				e.Selection.sex = sx + len(e.SearchPattern); e.Selection.sey = sy; e.Selection.isSelected = true
-				e.drawEverything()
-				e.drawSearch(prefix, e.SearchPattern, patternx)
+				e.Selection.Ssx = sx; e.Selection.Ssy = sy;
+				e.Selection.Sex = sx + len(e.SearchPattern); e.Selection.Sey = sy; e.Selection.IsSelected = true
+				e.DrawEverything()
+				e.DrawSearch(prefix, e.SearchPattern, patternx)
 				e.Screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1)
 				e.Screen.Show()
 			}else {
-				e.Selection.cleanSelection()
+				e.Selection.CleanSelection()
 				if isDownSearch { startline = 0 } else  { startline = len(e.Content)}
-				e.drawEverything()
-				e.drawSearch(prefix, e.SearchPattern, patternx)
+				e.DrawEverything()
+				e.DrawSearch(prefix, e.SearchPattern, patternx)
 				e.Screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1)
 				e.Screen.Show()
 			}
@@ -737,13 +738,13 @@ func (e *Editor) onSearch() {
 			key := ev.Key()
 
 			if key == KeyRune {
-				e.SearchPattern = insert(e.SearchPattern, patternx, ev.Rune())
+				e.SearchPattern = InsertTo(e.SearchPattern, patternx, ev.Rune())
 				patternx++
 				isChanged = true
 			}
 			if key == KeyBackspace2 && patternx > 0 && len(e.SearchPattern) > 0 {
 				patternx--
-				e.SearchPattern = remove(e.SearchPattern, patternx)
+				e.SearchPattern = Remove(e.SearchPattern, patternx)
 				isChanged = true
 			}
 			if key == KeyLeft && patternx > 0 { patternx-- }
@@ -767,7 +768,7 @@ func (e *Editor) onSearch() {
 		}
 	}
 }
-func (e *Editor) drawSearch(prefix []rune, pattern []rune, patternx int) {
+func (e *Editor) DrawSearch(prefix []rune, pattern []rune, patternx int) {
 	for i := 0; i < len(prefix); i++ {
 		e.Screen.SetContent(i + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1, prefix[i], nil, StyleDefault)
 		//e.Screen.Show()
@@ -790,16 +791,16 @@ func (e *Editor) drawSearch(prefix []rune, pattern []rune, patternx int) {
 	}
 }
 
-func (e *Editor) onFiles() {
+func (e *Editor) OnFiles() {
 	e.IsFileSelection = true
 
 	if e.FilesPanelWidth == 0 {
-		e.readUpdateFiles()
+		e.ReadFilesUpdate()
 		if len(e.Files) == 0 { return }
 		e.FilesPanelWidth = 28
 	}
 
-	if e.Filename != "" { e.drawEverything() }
+	if e.Filename != "" { e.DrawEverything() }
 
 	var end = false
 	var filterPattern = []rune{}
@@ -834,9 +835,9 @@ func (e *Editor) onFiles() {
 					}
 				}
 
-				if isChanged { e.drawFiles(string(filterPattern), filteredFiles, patternx) }
+				if isChanged { e.DrawFiles(string(filterPattern), filteredFiles, patternx) }
 			} else {
-				if isChanged { e.drawFiles(string(filterPattern), e.Files, patternx) }
+				if isChanged { e.DrawFiles(string(filterPattern), e.Files, patternx) }
 			}
 
 			e.Screen.Show()
@@ -847,18 +848,22 @@ func (e *Editor) onFiles() {
 				buttons := ev.Buttons()
 				modifiers := ev.Modifiers()
 
+				//if buttons & Button1 == 1 && math.Abs(float64(FilesPanelWidth - mx)) <= 5  {
+				//	FilesPanelWidth = mx
+				//	return
+				//}
 
 				if mx > e.FilesPanelWidth {
 					selectionEnd = true; end = true; e.IsFilesSearch = false;
 				} else {
 					if buttons & WheelDown != 0  && modifiers & ModCtrl != 0 && e.FilesPanelWidth < e.COLUMNS  {
 						e.FilesPanelWidth++
-						if e.Filename != "" { e.drawEverything(); e.Screen.Show() }
+						if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
 						continue
 					}
 					if buttons & WheelUp != 0  && modifiers & ModCtrl != 0  && e.FilesPanelWidth > 0 {
 						e.FilesPanelWidth--
-						if e.Filename != "" { e.drawEverything(); e.Screen.Show() }
+						if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
 						continue
 					}
 
@@ -880,7 +885,7 @@ func (e *Editor) onFiles() {
 					if my < len(filteredFiles) { e.FileSelectedIndex = my + e.FileScrollingOffset
 					}
 					if buttons & Button1 == 1 {
-						e.readUpdateFiles()
+						e.ReadFilesUpdate()
 						e.FileSelectedIndex = my + e.FileScrollingOffset
 						if e.FileSelectedIndex < 0  { continue }
 						if e.FileSelectedIndex >= len(filteredFiles) { continue }
@@ -888,14 +893,14 @@ func (e *Editor) onFiles() {
 						selectionEnd = true; end = true
 						selectedFile := filteredFiles[e.FileSelectedIndex]
 						e.InputFile = selectedFile.fullfilename
-						e.openFile(e.InputFile)
+						e.OpenFile(e.InputFile)
 						e.IsFilesSearch = false
 					}
 				}
 
 			case *EventResize:
 				e.COLUMNS, e.ROWS = e.Screen.Size()
-				if e.Filename != "" { e.drawEverything(); e.Screen.Show() }
+				if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
 
 			case *EventKey:
 				key := ev.Key()
@@ -904,29 +909,29 @@ func (e *Editor) onFiles() {
 				}
 				if key == KeyEscape && !e.IsFilesSearch { selectionEnd = true; end = true; e.FilesPanelWidth =  0 }
 				if key == KeyEscape  && e.IsFilesSearch {  e.IsFilesSearch = false}
-				if key == KeyDown { e.FileSelectedIndex = min(len(filteredFiles)-1, e.FileSelectedIndex+1) }
-				if key == KeyUp { e.FileSelectedIndex = max(0, e.FileSelectedIndex-1) }
+				if key == KeyDown { e.FileSelectedIndex = Min(len(filteredFiles)-1, e.FileSelectedIndex+1) }
+				if key == KeyUp { e.FileSelectedIndex = Max(0, e.FileSelectedIndex-1) }
 				if key == KeyRune {
 					e.IsFilesSearch = true
-					filterPattern = insert(filterPattern, patternx, ev.Rune())
+					filterPattern = InsertTo(filterPattern, patternx, ev.Rune())
 					patternx++
 					isChanged = true
 					e.FileSelectedIndex = 0
 				}
 				if key == KeyBackspace2  && e.IsFilesSearch && patternx > 0 && len(filterPattern) > 0 {
 					patternx--
-					filterPattern = remove(filterPattern, patternx)
+					filterPattern = Remove(filterPattern, patternx)
 					isChanged = true
 				}
 				if key == KeyLeft && e.IsFilesSearch && patternx > 0 {patternx--; isChanged = true }
 				if key == KeyRight && e.IsFilesSearch && patternx < len(filterPattern) { patternx++; isChanged = true }
 				if key == KeyRight && !e.IsFilesSearch {
 					e.FilesPanelWidth++
-					if e.Filename != "" { e.drawEverything(); e.Screen.Show() }
+					if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
 				}
 				if key == KeyLeft && !e.IsFilesSearch && e.FilesPanelWidth > 0  {
 					e.FilesPanelWidth--
-					if e.Filename != "" { e.drawEverything(); e.Screen.Show() }
+					if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
 				}
 				if key == KeyCtrlT {
 					selectionEnd = true; end = true
@@ -938,7 +943,7 @@ func (e *Editor) onFiles() {
 					e.IsFilesSearch = false
 					selectedFile := filteredFiles[e.FileSelectedIndex]
 					e.InputFile = selectedFile.fullfilename
-					e.openFile(e.InputFile)
+					e.OpenFile(e.InputFile)
 				}
 			}
 		}
@@ -947,7 +952,7 @@ func (e *Editor) onFiles() {
 	e.IsFileSelection = false
 }
 
-func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
+func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int) {
 
 	for row := 0; row < e.ROWS; row++ {
 		for col := 0; col < e.FilesPanelWidth; col++ { // clean
@@ -964,8 +969,8 @@ func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 		//e.Screen.SetContent(FilesPanelWidth, offsety, '│', nil, style)
 
 		if fileIndex >= len(files) || fileIndex >= e.ROWS { break }
-		if fileIndex + max(e.FileScrollingOffset,0) >= len(files) { break }
-		file := files[fileIndex + max(e.FileScrollingOffset,0)]
+		if fileIndex + Max(e.FileScrollingOffset,0) >= len(files) { break }
+		file := files[fileIndex + Max(e.FileScrollingOffset,0)]
 
 
 		isSelectedFile := e.IsFileSelection && e.FileSelectedIndex != -1 && fileIndex + e.FileScrollingOffset == e.FileSelectedIndex
@@ -1067,46 +1072,46 @@ func (e *Editor) drawFiles(pattern string, files []FileInfo, patternx int) {
 //	}
 //}
 
-func (e *Editor) overlayFalse() {
+func (e *Editor) OverlayFalse() {
 	e.IsOverlay = false
 }
 
-func (e *Editor) updateColors() {
+func (e *Editor) UpdateColors() {
 	if !e.IsColorize { return }
 	if e.Lang == "" { return }
 	if len(e.Content) >= 10000 {
 		line := string(e.Content[e.Row])
-		linecolors := highlighter.colorize(line, e.Filename)
+		linecolors := Highlight.Colorize(line, e.Filename)
 		e.Colors[e.Row] = linecolors[0]
 	} else {
-		code := convertToString(e.Content)
-		e.Colors = highlighter.colorize(code, e.Filename)
+		code := ConvertContentToString(e.Content)
+		e.Colors = Highlight.Colorize(code, e.Filename)
 	}
 }
 
-func (e *Editor) updateColorsFull() {
+func (e *Editor) UpdateColorsFull() {
 	if !e.IsColorize { return }
 	if e.Lang == "" { return }
 
-	code := convertToString(e.Content)
-	e.Colors = highlighter.colorize(code, e.Filename)
+	code := ConvertContentToString(e.Content)
+	e.Colors = Highlight.Colorize(code, e.Filename)
 }
 
-func (e *Editor) updateColorsAtLine(at int) {
+func (e *Editor) UpdateColorsAtLine(at int) {
 	if !e.IsColorize { return }
 	if e.Lang == "" { return }
 	if at >= len(e.Colors) { return }
 
 	line := string(e.Content[at])
 	if line == "" { e.Colors[at] = []int{}; return }
-	linecolors := highlighter.colorize(line, e.Filename)
+	linecolors := Highlight.Colorize(line, e.Filename)
 	e.Colors[at] = linecolors[0]
 }
 
-// todo, get rid of this function, cause updateColors is slow for big files
-func (e *Editor) updateNeeded() {
+// todo, get rid of this function, cause UpdateColors is slow for big files
+func (e *Editor) UpdateNeeded() {
 	e.Update = true
 	e.IsContentChanged = true
-	if len(e.Content) <= 10000 { go e.writeFile() }
-	e.updateColors()
+	if len(e.Content) <= 10000 { go e.WriteFile() }
+	e.UpdateColors()
 }

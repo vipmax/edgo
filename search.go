@@ -13,7 +13,7 @@ import (
 */
 func searchDown(text [][]rune, pattern string, startLine int) (int, int) {
 	start := time.Now()
-	defer logger.info("search up end, elapsed:", time.Since(start).String())
+	defer Log.Info("search up end, elapsed:", time.Since(start).String())
 
 	if len(pattern) == 0 { return -1, -1 }
 	if startLine < 0 || startLine >= len(text) { return -1, -1 }
@@ -28,7 +28,7 @@ func searchDown(text [][]rune, pattern string, startLine int) (int, int) {
 
 func searchUp(text [][]rune, pattern string, startLine int) (int, int) {
 	start := time.Now()
-	defer logger.info("search up end, elapsed:", time.Since(start).String())
+	defer Log.Info("search up end, elapsed:", time.Since(start).String())
 
 	if len(pattern) == 0 { return -1, -1 }
 	if startLine < 0 || startLine >= len(text) { return -1, -1 }

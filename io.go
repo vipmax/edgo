@@ -8,32 +8,32 @@ import (
 	"sort"
 )
 
-func (e *Editor) readFile(fileToRead string) string {
+func (e *Editor) ReadFile(fileToRead string) string {
 	/// if file is big, read only first 1000 lines and read rest async
-	fileSize := getFileSize(fileToRead)
+	fileSize := GetFileSize(fileToRead)
 	fileSizeMB := fileSize / (1024 * 1024) // Convert size to megabytes
 
 	var code string
 	if fileSizeMB >= 1 {
 		//colorize = false
-		code = e.buildContent(fileToRead, 1000)
+		code = e.BuildContent(fileToRead, 1000)
 
 		go func() { // sync?? no need yet
-			code = e.buildContent(fileToRead, 1000000)
-			code, _ = getFirstLines(code, 20000)
-			e.Colors = highlighter.colorize(code, e.Filename);
-			e.drawEverything();
+			code = e.BuildContent(fileToRead, 1000000)
+			code, _ = GetFirstLines(code, 20000)
+			e.Colors = Highlight.Colorize(code, e.Filename);
+			e.DrawEverything();
 			e.Screen.Show()
 
 		}()
 
 	} else {
-		code = e.buildContent(fileToRead, 1000000)
+		code = e.BuildContent(fileToRead, 1000000)
 	}
 	return code
 }
 
-func (e *Editor) writeFile() {
+func (e *Editor) WriteFile() {
 
 	// Create a new file, or open it if it exists
 	f, err := os.Create(e.AbsoluteFilePath)
@@ -60,18 +60,18 @@ func (e *Editor) writeFile() {
 
 	e.IsContentChanged = false
 
-	if e.Lang != "" && lsp.IsLangReady(e.Lang) {
-		go lsp.didOpen(e.AbsoluteFilePath, e.Lang) // todo remove it in future
+	if e.Lang != "" && Lsp.IsLangReady(e.Lang) {
+		go Lsp.didOpen(e.AbsoluteFilePath, e.Lang) // todo remove it in future
 		//go lsp.didChange(AbsoluteFilePath)
 		//go lsp.didSave(AbsoluteFilePath)
 	}
 
 }
 
-func (e *Editor) buildContent(filename string, limit int) string {
-	//start := time.Now()
-	//logger.info("read file start", Filename, string(limit))
-	//defer logger.info("read file end",   Filename, string(limit), "elapsed", time.Since(start).String())
+func (e *Editor) BuildContent(filename string, limit int) string {
+	//Start := time.Now()
+	//Log.info("read file Start", Filename, string(limit))
+	//defer Log.info("read file end",   Filename, string(limit), "elapsed", time.Since(Start).String())
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -100,11 +100,11 @@ func (e *Editor) buildContent(filename string, limit int) string {
 		e.Colors = make([][]int, 1)
 	}
 
-	return convertToString(e.Content)
+	return ConvertContentToString(e.Content)
 }
 
 
-func (e *Editor) readUpdateFiles() {
+func (e *Editor) ReadFilesUpdate() {
 	ignoreDirs := []string{
 		".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
 		".DS_Store",
@@ -125,7 +125,7 @@ func (e *Editor) readUpdateFiles() {
 			for i, f := range e.Files {
 				originalFiles[i] = f.filename
 			}
-			newFiles, deletedFiles := findNewAndDeletedFiles(originalFiles, filesTree)
+			newFiles, deletedFiles := FindNewAndDeletedFiles(originalFiles, filesTree)
 			for _, f := range newFiles {
 				abs, _ := filepath.Abs(f)
 				e.Files = append(e.Files, FileInfo{f, abs, 0})
@@ -133,8 +133,8 @@ func (e *Editor) readUpdateFiles() {
 
 			// Remove deleted files from originalFiles
 			for i := 0; i < len(e.Files); i++ {
-				if contains(deletedFiles, e.Files[i].filename) {
-					e.Files = remove(e.Files, i)
+				if Contains(deletedFiles, e.Files[i].filename) {
+					e.Files = Remove(e.Files, i)
 					i-- // Adjust index after removal
 				}
 			}
@@ -142,7 +142,7 @@ func (e *Editor) readUpdateFiles() {
 	}
 }
 
-func (e *Editor) updateFilesOpenStats(file string) {
+func (e *Editor) UpdateFilesOpenStats(file string) {
 	if e.Files == nil || len(e.Files) == 0 { return }
 
 	for i := 0; i < len(e.Files); i++ {
@@ -157,4 +157,35 @@ func (e *Editor) updateFilesOpenStats(file string) {
 	sort.SliceStable(e.Files, func(i, j int) bool {
 		return e.Files[i].openCount > e.Files[j].openCount
 	})
+}
+
+
+func FindNewAndDeletedFiles(originalFiles []string, newFiles []string) ([]string, []string) {
+
+	originalFilesMap := make(map[string]bool, len(originalFiles))
+	newFilesMap := make(map[string]bool, len(newFiles))
+
+	// Add original files to map
+	for _, file := range originalFiles { originalFilesMap[file] = true }
+
+	// Add new files to map
+	for _, file := range newFiles { newFilesMap[file] = true }
+
+	// Check for new files
+	var newlyCreated []string
+	for _, file := range newFiles {
+		if !originalFilesMap[file] {
+			newlyCreated = append(newlyCreated, file)
+		}
+	}
+
+	// Check for deleted files
+	var deleted []string
+	for _, file := range originalFiles {
+		if !newFilesMap[file] {
+			deleted = append(deleted, file)
+		}
+	}
+
+	return newlyCreated, deleted
 }

@@ -9,10 +9,10 @@ import (
 
 func TestColorize(t *testing.T) {
 	file := "highlighter_test.go"
-	filecontent, _ := readFileToString(file)
+	filecontent, _ := ReadFileToString(file)
 
 	h := Highlighter{}
-	characterColors := h.colorize(filecontent, file)
+	characterColors := h.Colorize(filecontent, file)
 
 	for _, color := range characterColors {
 		fmt.Println(color)

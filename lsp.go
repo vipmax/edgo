@@ -44,22 +44,22 @@ func (this *LspClient) start(language string, lspCmd []string) bool {
 	this.lang2isReady[language] = false
 
 	_, lsperr := exec.LookPath(lspCmd[0])
-	if lsperr != nil { logger.info("lsp not found:", lspCmd[0]); return false }
+	if lsperr != nil { Log.Info("lsp not found:", lspCmd[0]); return false }
 
 	this.process = exec.Command(lspCmd[0], lspCmd[1:]...)
 
 	var stdin, err = this.process.StdinPipe()
-	if err != nil { logger.info(err.Error()); return false  }
+	if err != nil { Log.Info(err.Error()); return false  }
 	this.lang2stdin[language] = stdin
 	//this.stdin = stdin
 
 	stdout, err := this.process.StdoutPipe()
-	if err != nil { logger.info(err.Error()); return false }
+	if err != nil { Log.Info(err.Error()); return false }
 	this.lang2stdout[language] = stdout
 	//this.stdout = stdout
 
 	err = this.process.Start()
-	if err != nil { logger.info(err.Error()); return false  }
+	if err != nil { Log.Info(err.Error()); return false  }
 
 	//this.stopped = false
 	this.responsesMap = make(map[int]string)
@@ -75,19 +75,19 @@ func (this *LspClient) stop()  {
 	//this.shutdown()
 	this.exit()
 	//this.stopped = true
-	logger.info("successfully stopped lsp")
+	Log.Info("successfully stopped lsp")
 }
 
 func (this *LspClient) send(o interface{})  {
 	m, err := json.Marshal(o)
 	if err != nil { panic(err) }
-	logger.info("->", string(m))
+	Log.Info("->", string(m))
 
 	message := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(m), m)
 	stdin := this.lang2stdin[this.lang]
 	_, err = stdin.Write([]byte(message))
 	if err != nil {
-		logger.error(err.Error())
+		Log.Error(err.Error())
 	}
 }
 
@@ -95,13 +95,13 @@ func (this *LspClient) send(o interface{})  {
 func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string, language string) {
 	for {
 		_, message := this.readStdout(language)
-		logger.info("<-", message)
+		Log.Info("<-", message)
 
 		if strings.Contains(message,"publishDiagnostics") {
 			var dr DiagnosticResponse
 			errp := json.Unmarshal([]byte(message), &dr)
 			if errp != nil {
-				logger.error(errp.Error()); continue
+				Log.Error(errp.Error()); continue
 			}
 			this.file2diagnostic[dr.Params.Uri] = dr.Params
 			diagnosticUpdateChannel <- "update"
@@ -111,7 +111,7 @@ func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string, language
 		responseJSON := make(map[string]interface{})
 		err := json.Unmarshal([]byte(message), &responseJSON)
 		if err != nil {
-			logger.error(err.Error()); continue
+			Log.Error(err.Error()); continue
 		}
 
 		if value, found := responseJSON["id"]; found {
@@ -145,7 +145,7 @@ func (this *LspClient) init(dir string) {
 	response := this.waitForResponse(id, 30000)
 
 	if response == "" {
-		logger.info("cant get initialize response from lsp server")
+		Log.Info("cant get initialize response from lsp server")
 		this.lang2isReady[this.lang] = false
 		return
 	}
@@ -154,7 +154,7 @@ func (this *LspClient) init(dir string) {
 		JSONRPC: "2.0", Method:  "initialized", Params:  struct{}{},
 	}
 	this.send(initializedRequest)
-	logger.info("lsp initialized ")
+	Log.Info("lsp initialized ")
 	//this.isReady = true
 	this.lang2isReady[this.lang] = true
 }
@@ -167,14 +167,14 @@ func (this *LspClient) shutdown() {
 	}
 	this.send(shutdownRequest)
 	//response := this.waitForResponse(id, 30000)
-	//logger.info("shutdown ", response)
+	//Log.info("shutdown ", response)
 }
 func (this *LspClient) exit() {
 	shutdownRequest := ExitRequest{
 		JSONRPC: "2.0", Method:  "exit",
 	}
 	this.send(shutdownRequest)
-	logger.info("exit")
+	Log.Info("exit")
 }
 
 func (this *LspClient) waitForResponse(id, ms int) string {
@@ -195,7 +195,7 @@ func (this *LspClient) waitForResponse(id, ms int) string {
 
 func (this *LspClient) didOpen(file string, lang string) {
 	filecontent, err := os.ReadFile(file)
-	if err != nil { logger.error(err.Error()); return }
+	if err != nil { Log.Error(err.Error()); return }
 
 
 	didOpenRequest := DidOpenRequest{
@@ -277,11 +277,11 @@ func (this *LspClient) references(file string, line int, character int) (Referen
 	this.send(referencesRequest)
 
 	jsonData := this.waitForResponse(id,10000)
-	if jsonData == "" { logger.error("cant get hover response from lsp server") }
+	if jsonData == "" { Log.Error("cant get hover response from lsp server") }
 
 	var response ReferencesResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 
 }
@@ -301,11 +301,11 @@ func (this *LspClient) hover(file string, line int, character int) (HoverRespons
 	this.send(request)
 
 	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { logger.error("cant get hover response from lsp server") }
+	if jsonData == "" { Log.Error("cant get hover response from lsp server") }
 
 	var response HoverResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 func (this *LspClient) signatureHelp(file string, line int, character int) (SignatureHelpResponse, error) {
@@ -323,11 +323,11 @@ func (this *LspClient) signatureHelp(file string, line int, character int) (Sign
 	this.send(request)
 
 	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { logger.error("cant get signature help response from lsp server") }
+	if jsonData == "" { Log.Error("cant get signature help response from lsp server") }
 
 	var response SignatureHelpResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 
@@ -346,11 +346,11 @@ func (this *LspClient) definition(file string, line int, character int) (Definit
 	this.send(request)
 
 	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { logger.error("cant get definition response from lsp server") }
+	if jsonData == "" { Log.Error("cant get definition response from lsp server") }
 
 	var response DefinitionResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 
@@ -373,12 +373,12 @@ func (this *LspClient) completion(file string, line int, character int) (Complet
 
 
 	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { logger.error("cant get completion response from lsp server") }
+	if jsonData == "" { Log.Error("cant get completion response from lsp server") }
 
 
 	var completionResponse CompletionResponse
 	err := json.Unmarshal([]byte(jsonData), &completionResponse)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return completionResponse, err
 }
 
@@ -397,11 +397,11 @@ func (this *LspClient) prepareRename(file string, line int, character int) (Prep
 	this.send(request)
 
 	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { logger.error("cant get rename response from lsp server") }
+	if jsonData == "" { Log.Error("cant get rename response from lsp server") }
 
 	var response PrepareRenameResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 
@@ -421,11 +421,11 @@ func (this *LspClient) rename(file string, newname string, line int, character i
 	this.send(request)
 
 	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { logger.error("cant get rename response from lsp server") }
+	if jsonData == "" { Log.Error("cant get rename response from lsp server") }
 
 	var response RenameResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 
@@ -448,11 +448,11 @@ func (this *LspClient) codeAction(file string, spc int, spl int, epc int, epl in
 	this.send(request)
 
 	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { logger.error("cant get rename response from lsp server") }
+	if jsonData == "" { Log.Error("cant get rename response from lsp server") }
 
 	var response CodeActionResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 
@@ -493,11 +493,11 @@ func (this *LspClient) command(command Command) (CommandResponse, error) {
 	}
 
 	//jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { logger.error("cant get rename response from lsp server") }
+	if jsonData == "" { Log.Error("cant get rename response from lsp server") }
 
 	var response CommandResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
 
@@ -514,7 +514,7 @@ func (this *LspClient) applyEdit(key int) {
 }
 
 func (this *LspClient) readStdout(language string) (map[string]interface{}, string) {
-	//start := time.Now()
+	//Start := time.Now()
 
 	const LEN_HEADER = "Content-Length: "
 	stdout := this.lang2stdout[language]
@@ -530,7 +530,7 @@ func (this *LspClient) readStdout(language string) (map[string]interface{}, stri
 		if messageSize != 0 && responseMustBeNext {
 			buf := make([]byte, messageSize)
 			_, err = io.ReadFull(reader, buf)
-			if err != nil { logger.error(err.Error()); continue }
+			if err != nil { Log.Error(err.Error()); continue }
 			line = string(buf)
 			messageSize = 0
 			//fmt.Println("response", line)
@@ -538,7 +538,7 @@ func (this *LspClient) readStdout(language string) (map[string]interface{}, stri
 			responseJSON := make(map[string]interface{})
 			err = json.Unmarshal(buf, &responseJSON)
 			if err != nil {
-				logger.error(err.Error()); continue
+				Log.Error(err.Error()); continue
 			}
 
 			method, found := responseJSON["method"]
@@ -546,7 +546,7 @@ func (this *LspClient) readStdout(language string) (map[string]interface{}, stri
 				var dr DiagnosticResponse
 				err := json.Unmarshal(buf, &dr)
 				if err != nil {
-					logger.error("[432 lsp]", err.Error()); continue
+					Log.Error("[432 lsp]", err.Error()); continue
 				}
 
 				return responseJSON, line
@@ -561,14 +561,14 @@ func (this *LspClient) readStdout(language string) (map[string]interface{}, stri
 		} else {
 			line, err = reader.ReadString('\n') // it stuck sometimes
 			//if  err != nil && err.Error() == "EOF" {
-			//	logger.error("[445 lsp] ", err.Error());
+			//	Log.Error("[445 lsp] ", err.Error());
 			//	break
 			//}
 			if err != nil {
 				//if err.Error() == "read |0: file already closed" {
 				//	break
 				//}
-				logger.error("[445 lsp]", err.Error()); continue
+				Log.Error("[445 lsp]", err.Error()); continue
 			}
 			//fmt.Println("line", line)
 		}

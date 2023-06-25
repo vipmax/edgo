@@ -15,7 +15,7 @@ type Logger struct {
 	layout string
 }
 
-func (this *Logger) start() {
+func (this *Logger) Start() {
 	logfilename, exists := os.LookupEnv("EDGO_LOGFILE")
 	if !exists { this.isEnabled = false; return }
 
@@ -52,12 +52,12 @@ func (this *Logger) logint(message int) {
 	this.logger.Printf("%s %d", now, message)
 }
 
-func (this *Logger) info(args ...string) {
+func (this *Logger) Info(args ...string) {
 	if !this.isEnabled { return }
 	message := strings.Join(args, " ")
 	this.stream <- message
 }
-func (this *Logger) error(args ...string) {
+func (this *Logger) Error(args ...string) {
 	if !this.isEnabled { return }
 	message :=  "[error]" + strings.Join(args, " ")
 	this.stream <- message
