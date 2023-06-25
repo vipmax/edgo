@@ -92,7 +92,6 @@ func (this *LspClient) send(o interface{})  {
 
 func (this *LspClient) receiveLoop(diagnosticUpdateChannel chan string, language string) {
 	for {
-		//message := this.receive()
 		_, message := this.readStdout(language)
 		logger.info("<-", message)
 
@@ -212,9 +211,9 @@ func (this *LspClient) didOpen(file string, lang string) {
 
 	this.send(didOpenRequest)
 }
-func (this *LspClient) didChange(file string, startline, startcharacter,endline, endcharacter int, text string) {
-	this.id++
-	id := this.id
+func (this *LspClient) didChange(file string, version int, startline, startcharacter,endline, endcharacter int, text string) {
+	//this.id++
+	//id := this.id
 
 	didChangeRequest := DidChangeRequest{
 		Jsonrpc: "2.0", Method:  "textDocument/didChange",
@@ -225,12 +224,13 @@ func (this *LspClient) didChange(file string, startline, startcharacter,endline,
 						Start: Character{Character: startcharacter, Line: startline},
 						End:   Character{Character: endcharacter, Line: endline},
 					},
+					RangeLength: 0,
 					Text: text,
 				},
 			},
 			TextDocument: TextDocument{
 				URI:     "file://" + file,
-				Version: id,
+				Version: version,
 			},
 		},
 	}
@@ -402,6 +402,7 @@ func (this *LspClient) prepareRename(file string, line int, character int) (Prep
 	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
 	return response, err
 }
+
 func (this *LspClient) rename(file string, newname string, line int, character int) (RenameResponse, error) {
 	this.id++
 	id := this.id
@@ -424,6 +425,90 @@ func (this *LspClient) rename(file string, newname string, line int, character i
 	err := json.Unmarshal([]byte(jsonData), &response)
 	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
 	return response, err
+}
+
+func (this *LspClient) codeAction(file string, spc int, spl int, epc int, epl int) (CodeActionResponse, error) {
+	this.id++
+	id := this.id
+
+	request := CodeActionRequest {
+		ID: id,  Jsonrpc: "2.0", Method: "textDocument/codeAction",
+		Params: CodeActionParams {
+			TextDocument: TextDocument { URI:  "file://" + file },
+			Context: Context{ Only: []string{"refactor"}, TriggerKind: 1 },
+			Range: RequestRange{
+				Start: Position{ Line: spl, Character: spc},
+				End: Position{ Line: epl, Character: epc},
+			},
+		},
+	}
+
+	this.send(request)
+
+	jsonData := this.waitForResponse(id,1000)
+	if jsonData == "" { logger.error("cant get rename response from lsp server") }
+
+	var response CodeActionResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	return response, err
+}
+
+func (this *LspClient) command(command Command) (CommandResponse, error) {
+	this.id++
+	id := this.id
+
+	request := CommandRequest {
+		ID: id,  Jsonrpc: "2.0", Method: "workspace/executeCommand",
+		Params: command,
+	}
+
+	this.send(request)
+
+	jsonData := ""
+	ok := false; key := 0
+	start := time.Now()
+
+	for {
+		if time.Since(start) >= time.Millisecond * time.Duration(3000) { break }
+		this.someMapMutex.RLock()
+		for k, value := range this.responsesMap {
+			if strings.Contains(value, "workspace/applyEdit") {
+				jsonData = value
+				ok = true
+				key = k
+				break
+			}
+		}
+		this.someMapMutex.RUnlock()
+
+		if ok {
+			this.someMapMutex.Lock()
+			delete(this.responsesMap, key)
+			this.someMapMutex.Unlock()
+			break
+		}
+	}
+
+	//jsonData := this.waitForResponse(id,1000)
+	if jsonData == "" { logger.error("cant get rename response from lsp server") }
+
+	var response CommandResponse
+	err := json.Unmarshal([]byte(jsonData), &response)
+	if err != nil { logger.error("Error parsing JSON:" + err.Error()) }
+	return response, err
+}
+
+func (this *LspClient) applyEdit(key int) {
+	//this.id++
+	//id := this.id
+	request := ApplyEditRequest {
+		ID: key,  Jsonrpc: "2.0",
+		Result:  Applied { true } ,
+	}
+
+	this.send(request)
+
 }
 
 func (this *LspClient) readStdout(language string) (map[string]interface{}, string) {

@@ -33,7 +33,9 @@ type Position struct {
 	Character int `json:"character"`
 }
 
+
 type Context struct {
+	Only        []string `json:"only,omitempty"`
 	TriggerKind int `json:"triggerKind,omitempty"`
 }
 
@@ -323,6 +325,7 @@ type ChangeRange struct {
 type ContentChange struct {
 	Range ChangeRange  `json:"range"`
 	Text  string `json:"text"`
+	RangeLength int   `json:"rangeLength"`
 }
 
 type DidChangeParams struct {
@@ -396,12 +399,12 @@ type RenameRequest struct {
 }
 
 type RenameResponse struct {
-	Jsonrpc string `json:"jsonrpc"`
-	Result  Result `json:"result"`
-	ID      int    `json:"id"`
+	Jsonrpc string        `json:"jsonrpc"`
+	Result  ChangesResult `json:"result"`
+	ID      int           `json:"id"`
 }
 
-type Result struct {
+type ChangesResult struct {
 	DocumentChanges []DocumentChange `json:"documentChanges"`
 }
 
@@ -414,4 +417,104 @@ type DocumentChange struct {
 type Edit struct {
 	Range   Range  `json:"range"`
 	NewText string `json:"newText"`
+}
+
+
+type RequestRange struct {
+	Start Position `json:"start"`
+	End   Position `json:"end"`
+}
+
+type CodeActionParams struct {
+	TextDocument TextDocument `json:"textDocument"`
+	Range        RequestRange        `json:"range"`
+	Context      Context      `json:"context"`
+}
+
+type CodeActionRequest struct {
+	ID int `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  CodeActionParams `json:"params"`
+}
+
+type CodeActionResponse struct {
+	Jsonrpc string  `json:"jsonrpc"`
+	Result  []CodeActionResult `json:"result"`
+	ID      int     `json:"id"`
+}
+
+type CodeActionResult struct {
+	Title   string  `json:"title"`
+	Kind    string  `json:"kind"`
+	Edit    struct{} `json:"edit"`
+	Command Command `json:"command"`
+}
+
+type Command struct {
+	//Title     string     `json:"title"`
+	Command   string     `json:"command"`
+	Arguments []Argument `json:"arguments"`
+}
+
+type Argument struct {
+	Fix   string `json:"Fix"`
+	URI   string `json:"URI"`
+	Range Range  `json:"Range"`
+}
+
+type CommandRequest struct {
+	ID int `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  Command `json:"params"`
+}
+
+
+//type CommandResponse struct {
+//	ID      int    `json:"id"`
+//	Jsonrpc string `json:"jsonrpc"`
+//	Method  string `json:"method"`
+//	Params  EditParams `json:"params"`
+//}
+//
+//type EditParams struct {
+//	Edit DocumentEdit `json:"edit"`
+//}
+//
+//type DocumentEdit struct {
+//	DocumentChanges ChangesResult `json:"documentChanges"`
+//}
+
+type DocChange struct {
+	TextDocument struct {
+		Version int    `json:"version"`
+		URI     string `json:"uri"`
+	} `json:"textDocument"`
+	Edits []Edit `json:"edits"`
+}
+
+type CommandResponse struct {
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Params  struct {
+		Edit struct {
+			DocumentChanges []DocChange `json:"documentChanges"`
+		} `json:"edit"`
+	} `json:"params"`
+	ID int `json:"id"`
+}
+
+
+type Applied struct {
+	Applied bool  `json:"applied"`
+}
+type ApplyWorkspaceEditParams struct {
+	Applied Applied  `json:"edit"`
+}
+
+type ApplyEditRequest struct {
+	ID int `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Result  Applied `json:"result"`
 }

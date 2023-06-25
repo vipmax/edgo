@@ -20,6 +20,7 @@ var COLUMNS, ROWS = 0, 0  // term size
 var r, c = 0, 0           // cursor position, row and column
 var y, x = 0, 0           // offset for scrolling for row and column
 var LS = 6                // left shift for line number
+
 var ssx, ssy = -1, -1     // selection start x and y
 var sex, sey = -1, -1     // selection end x and y
 var isSelected = false    // true if selection is active 
@@ -463,6 +464,7 @@ func (e *Editor) handleEvents() {
 		if key == KeyTab { e.onTab(); e.writeFile(); return }
 		if key == KeyCtrlH { e.onHover(); return }
 		if key == KeyCtrlR { e.onReferences(); return }
+		if key == KeyCtrlW { e.onCodeAction(); return }
 		if key == KeyCtrlP { e.onSignatureHelp(); return }
 		if key == KeyCtrlG { e.onDefinition(); return }
 		if key == KeyCtrlE { e.onErrors(); return }
@@ -2480,5 +2482,44 @@ func (e *Editor) redo() {
 
 	e.undo = append(e.undo, lastRedoOperation)
 	e.updateNeeded()
+}
+
+func (e *Editor) onCodeAction() {
+	codeAction, err := lsp.codeAction(absoluteFilePath, ssx, ssy, sex, sey)
+	if err != nil { return }
+	if len(codeAction.Result) == 0 { return }
+	//
+	commandResponse, err := lsp.command(codeAction.Result[0].Command)
+	if err != nil { return }
+	if len(commandResponse.Params.Edit.DocumentChanges) == 0 { return }
+
+	e.handleEdits(commandResponse.Params.Edit.DocumentChanges[0].Edits, commandResponse.Params.Edit.DocumentChanges[0].TextDocument.Version+1)
+	lsp.applyEdit(commandResponse.ID)
+}
+
+func (e *Editor) handleEdits(edits []Edit, version int) {
+	for _, edit := range edits {
+		start := edit.Range.Start
+		//end := edit.Range.End
+
+		// Adjusting because slices are 0-indexed.
+		//startLine, startChar := int(start.Line), int(start.Character)
+		//endLine, endChar := int(end.Line), int(end.Character)
+
+		newLines := strings.Split(edit.NewText, "\n")
+		for i, line := range newLines {
+			index := int(start.Line) + i
+			if index >= len(content) {
+				content = append(content,  []rune(line))
+			} else  {
+				content[index] = []rune(line)
+			}
+		}
+
+		//lsp.didChange(absoluteFilePath, version, startLine, startChar, endLine, endChar, edit.NewText)
+	}
+
+	//e.updateColors()
+    e.updateNeeded()
 }
 
