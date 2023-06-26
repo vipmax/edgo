@@ -219,3 +219,17 @@ type FileInfo struct {
 	FullFilename string
 	OpenCount    int
 }
+
+func findMaxByFilenameLength(files []FileInfo) int {
+	maxLength := 0
+	var maxFile FileInfo
+
+	for _, file := range files {
+		if len(file.Filename) > maxLength {
+			maxLength = len(file.Filename)
+			maxFile = file
+		}
+	}
+
+	return len(maxFile.Filename)
+}

@@ -18,3 +18,11 @@ type Operation struct {
 }
 
 type EditOperation []Operation
+
+
+type CursorMove struct {
+	Filename string
+	Row int
+	Col int
+}
+

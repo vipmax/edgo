@@ -504,6 +504,42 @@ func (e *Editor) Duplicate() {
 	}
 
 }
+
+func (e *Editor) OnCursorBackUndo() {
+	if len(e.CursorHistoryUndo) == 0 { return }
+
+	lastCursor := e.CursorHistoryUndo[len(e.CursorHistoryUndo)-1]
+	e.CursorHistoryUndo = e.CursorHistoryUndo[:len(e.CursorHistoryUndo)-1]
+
+
+	if lastCursor.Filename != e.Filename {
+		e.OpenFile(lastCursor.Filename)
+	}
+
+	e.Row = lastCursor.Row
+	e.Col = lastCursor.Col
+	e.Focus()
+
+	e.CursorHistory = append(e.CursorHistory, lastCursor)
+}
+func (e *Editor) OnCursorBack() {
+	if len(e.CursorHistory) == 0 { return }
+
+	lastCursor := e.CursorHistory[len(e.CursorHistory)-1]
+	e.CursorHistory = e.CursorHistory[:len(e.CursorHistory)-1]
+	e.CursorHistoryUndo = append(e.CursorHistoryUndo, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
+
+	if lastCursor.Filename != e.Filename {
+		e.OpenFile(lastCursor.Filename)
+	}
+
+	e.Row = lastCursor.Row
+	e.Col = lastCursor.Col
+	e.Focus()
+
+
+}
+
 func (e *Editor) OnUndo() {
 	if len(e.Undo) == 0 { return }
 

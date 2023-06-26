@@ -3,6 +3,7 @@ package editor
 import (
 	. "edgo/internal/highlighter"
 	. "edgo/internal/lsp"
+	. "edgo/internal/operations"
 	. "edgo/internal/utils"
 
 	"fmt"
@@ -15,9 +16,9 @@ import (
 func (e *Editor) OnDefinition() {
 	definition, err := Lsp.Definition(e.AbsoluteFilePath, e.Row, e.Col)
 
-	if err != nil || len(definition.Result) == 0{
-		return
-	}
+	if err != nil || len(definition.Result) == 0 { return }
+
+	e.CursorHistory = append(e.CursorHistory, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
 
 	if definition.Result[0].URI != "file://" + e.AbsoluteFilePath {
 		e.InputFile = strings.Split(definition.Result[0].URI, "file://")[1]
@@ -36,6 +37,7 @@ func (e *Editor) OnDefinition() {
 	e.Selection.Sex = int(definition.Result[0].Range.End.Character)
 	e.Row = e.Selection.Sey; e.Col = e.Selection.Sex
 	e.Selection.IsSelected = true
+	if e.Row >= len(e.Content) { e.Row = 0; e.Col = 0; e.Selection.CleanSelection() }
 	e.Focus()
 }
 
@@ -191,6 +193,7 @@ func (e *Editor) OnReferences() {
 		if len(options) == 1 {
 			// if only one option, no need to draw options
 			referencesResult := referencesResponse.Result[0]
+			e.CursorHistory = append(e.CursorHistory, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
 			e.applyReferences(referencesResult)
 			return
 		}
@@ -223,6 +226,7 @@ func (e *Editor) OnReferences() {
 				if key == KeyRune { e.AddChar(ev.Rune()); e.WriteFile(); e.Screen.Clear(); e.DrawEverything(); selectionEnd = true  }
 				if key == KeyEnter {
 					selectionEnd = true
+					e.CursorHistory = append(e.CursorHistory, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
 					referencesResult := referencesResponse.Result[selected]
 					e.applyReferences(referencesResult)
 				}
@@ -271,12 +275,14 @@ func (e *Editor) OnCompletion() {
 		if err != nil || len(options) == 0 { return }
 
 		tabs := CountTabsTo(e.Content[e.Row], e.Col)
-		atx := (e.Col - tabs) + e.LINES_WIDTH + tabs*(e.langTabWidth) + e.FilesPanelWidth; aty := e.Row + 1 - e.Y // Define the window  position and dimensions
-		width := Max(30, MaxString(options))                                                                      // width depends on Max option len or 30 at min
-		height := MinMany(5, len(options), e.ROWS - (e.Row- e.Y))                                                 // depends on min option len or 5 at min or how many rows to the end of e.Screen
+		atx := (e.Col - tabs) + e.LINES_WIDTH + tabs*(e.langTabWidth) + e.FilesPanelWidth
+		if e.X != 0  { atx = (e.Col) + e.LINES_WIDTH + e.FilesPanelWidth - e.X }
+		aty := e.Row + 1 - e.Y // Define the window  position and dimensions
+		width := Max(30, MaxString(options))                            // width depends on Max option len or 30 at min
+		height := MinMany(5, len(options), e.ROWS - (e.Row- e.Y)) // depends on min option len or 5 at min or how many rows to the end of e.Screen
 		style := StyleDefault
 		// if completion on last two rows of the e.Screen - move window up
-		if e.Row- e.Y >= e.ROWS - 1 { aty -= Min(5, len(options)); aty--; height = Min(5, len(options)) }
+		if e.Row - e.Y >= e.ROWS - 1 { aty -= Min(5, len(options)); aty--; height = Min(5, len(options)) }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 

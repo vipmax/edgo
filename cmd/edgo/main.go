@@ -5,12 +5,10 @@ import . "edgo/internal/logger"
 import . "edgo/internal/editor"
 import . "edgo/internal/config"
 
-
-
 func main() {
 	Log.Start()
-	config := GetConfig()
-	EditorGlobal.Config = config
-	HighlighterGlobal.SetTheme(config.Theme)
+	Conf := GetConfig()
+	EditorGlobal.Config = Conf
+	HighlighterGlobal.SetTheme(Conf.Theme)
 	EditorGlobal.Start()
 }

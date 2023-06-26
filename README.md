@@ -14,6 +14,8 @@ Key bindings and features:
 - `Control + f` - find
 - `Control + t` - files selection tree
 - `Option + /` - comment line
+- `Control + o` - cursor back
+- `Control + ]` - cursor forward
 
 
 - `Shift + arrow` - select text
