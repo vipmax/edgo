@@ -24,5 +24,6 @@ type CursorMove struct {
 	Filename string
 	Row int
 	Col int
+	Y int
+	X int
 }
-

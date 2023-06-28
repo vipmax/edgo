@@ -275,6 +275,7 @@ func (this *LspClient) References(file string, line int, character int) (Referen
 				Line:      line,
 				Character: character,
 			},
+			Context: Context{ IncludeDeclaration: true },
 		},
 	}
 

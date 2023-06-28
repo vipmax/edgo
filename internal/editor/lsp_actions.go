@@ -14,14 +14,20 @@ import (
 )
 
 func (e *Editor) OnDefinition() {
+	if !Lsp.IsLangReady(e.Lang) { return }
+
 	definition, err := Lsp.Definition(e.AbsoluteFilePath, e.Row, e.Col)
 
 	if err != nil || len(definition.Result) == 0 { return }
 
-	e.CursorHistory = append(e.CursorHistory, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
-
+	e.CursorHistory = append(e.CursorHistory,
+		 CursorMove{e.AbsoluteFilePath, e.Row, e.Col, e.Y, e.X},
+	)
+		
 	if definition.Result[0].URI != "file://" + e.AbsoluteFilePath {
-		e.InputFile = strings.Split(definition.Result[0].URI, "file://")[1]
+		f := strings.Split(definition.Result[0].URI, "file://")[1]
+		if !IsFileExists(f) { return }
+		e.InputFile = f
 		e.OpenFile(e.InputFile)
 	}
 
@@ -57,7 +63,7 @@ func (e *Editor) OnHover() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp hover, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.Lang, e.Row+ 1, e.Col+ 1, e.InputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.Lang, e.Row+ 1, e.Col+ 1, e.Filename)
 		e.DrawStatus(status)
 
 		if err != nil || len(hover.Result.Contents.Value) == 0 { return }
@@ -112,7 +118,7 @@ func (e *Editor) OnSignatureHelp() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp signature help, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.Lang, e.Row+1, e.Col+ 1, e.InputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.Lang, e.Row+1, e.Col+ 1, e.Filename)
 		e.DrawStatus(status)
 
 		if err != nil || signatureHelpResponse.Result.Signatures == nil ||
@@ -176,7 +182,7 @@ func (e *Editor) OnReferences() {
 		elapsed := time.Since(start)
 
 		lspStatus := "lsp references, elapsed " + elapsed.String()
-		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.Lang, e.Row+ 1, e.Col+ 1, e.InputFile)
+		status := fmt.Sprintf(" %s %s %d %d %s ", lspStatus, e.Lang, e.Row+ 1, e.Col+ 1, e.Filename)
 		e.DrawStatus(status)
 
 		if err != nil || len(referencesResponse.Result) == 0 { return }
@@ -193,7 +199,7 @@ func (e *Editor) OnReferences() {
 		if len(options) == 1 {
 			// if only one option, no need to draw options
 			referencesResult := referencesResponse.Result[0]
-			e.CursorHistory = append(e.CursorHistory, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
+			
 			e.applyReferences(referencesResult)
 			return
 		}
@@ -223,10 +229,11 @@ func (e *Editor) OnReferences() {
 				if key == KeyUp { selected = Max(0, selected-1) }
 				if key == KeyRight { e.OnRight(); e.Screen.Clear(); e.DrawEverything(); selectionEnd = true }
 				if key == KeyLeft { e.OnLeft(); e.Screen.Clear(); e.DrawEverything(); selectionEnd = true }
-				if key == KeyRune { e.AddChar(ev.Rune()); e.WriteFile(); e.Screen.Clear(); e.DrawEverything(); selectionEnd = true  }
+				if key == KeyRune { e.AddChar(ev.Rune());  e.DrawEverything(); selectionEnd = true  }
 				if key == KeyEnter {
 					selectionEnd = true
-					e.CursorHistory = append(e.CursorHistory, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
+					
+					e.CursorHistory = append(e.CursorHistory,  CursorMove{e.AbsoluteFilePath, e.Row, e.Col, e.Y, e.X})
 					referencesResult := referencesResponse.Result[selected]
 					e.applyReferences(referencesResult)
 				}
@@ -237,7 +244,9 @@ func (e *Editor) OnReferences() {
 
 func (e *Editor) applyReferences(referencesResult ReferencesRange) {
 	if referencesResult.URI != "file://"+ e.AbsoluteFilePath { // if another file
-		e.InputFile = strings.Split(referencesResult.URI, "file://")[1]
+		f := strings.Split(referencesResult.URI, "file://")[1]
+		if !IsFileExists(f) { return }
+		e.InputFile = f
 		e.OpenFile(e.InputFile)
 	}
 
@@ -248,7 +257,7 @@ func (e *Editor) applyReferences(referencesResult ReferencesRange) {
 	e.Selection.Sex = referencesResult.Range.End.Character
 	e.Selection.IsSelected = true
 	e.Row = e.Selection.Sey; e.Col = e.Selection.Sex
-	e.Focus();
+	e.Focus()
 	e.DrawEverything()
 }
 

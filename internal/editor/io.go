@@ -128,11 +128,13 @@ func GetFiles(path string, ignoreDirs []string) ([]string, error) {
 	return files, err
 }
 
+var ignoreDirs = []string{
+	".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
+	".DS_Store", ".venv", "venv",
+}
+
 func (e *Editor) ReadFilesUpdate() {
-	ignoreDirs := []string{
-		".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
-		".DS_Store",
-	}
+
 
 	filesTree, err := GetFiles("./", ignoreDirs)
 	if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
@@ -232,4 +234,12 @@ func findMaxByFilenameLength(files []FileInfo) int {
 	}
 
 	return len(maxFile.Filename)
+}
+
+func IsFileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
 }

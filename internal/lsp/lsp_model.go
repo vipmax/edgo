@@ -35,6 +35,7 @@ type Position struct {
 
 
 type Context struct {
+	IncludeDeclaration bool `json:"includeDeclaration,omitempty"`
 	Only        []string `json:"only,omitempty"`
 	TriggerKind int `json:"triggerKind,omitempty"`
 }

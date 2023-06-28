@@ -21,7 +21,6 @@ import (
 	"strings"
 )
 
-var EditorGlobal = Editor{ }
 
 type Editor struct {
 	COLUMNS     int // terminal size columns
@@ -67,7 +66,7 @@ type Editor struct {
 	SearchPattern []rune // pattern for search in a buffer
 
 	//filesInfo []FileInfo
-
+	
 	CursorHistory     []CursorMove
 	CursorHistoryUndo []CursorMove
 
@@ -202,7 +201,9 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 			return
 		}
 		e.Col = xPosition
-		e.CursorHistory = append(e.CursorHistory, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
+		e.CursorHistory = append(e.CursorHistory, 
+			CursorMove{e.AbsoluteFilePath, e.Row, e.Col, e.Y, e.X},
+		)
 
 		if e.Col < 0 { e.Col = 0 }
 		if e.Selection.Ssx < 0 { e.Selection.Ssx, e.Selection.Ssy = e.Col, e.Row }
@@ -228,7 +229,7 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if key == KeyBacktab { e.OnBackTab(); return }
 	if key == KeyTab { e.OnTab(); return }
 	if key == KeyCtrlH { e.OnHover(); return }
-	if key == KeyCtrlR { e.OnReferences(); return }
+	if key == KeyCtrlB { e.OnReferences(); return }
 	if key == KeyCtrlW { e.OnCodeAction(); return }
 	if key == KeyCtrlP { e.OnSignatureHelp(); return }
 	if key == KeyCtrlG { e.OnDefinition(); return }
@@ -237,7 +238,7 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if key == KeyCtrlV { e.OnPaste(); return }
 	if key == KeyEscape { e.Selection.CleanSelection(); return }
 	if key == KeyCtrlA { e.OnSelectAll(); return }
-	if key == KeyCtrlX { e.Cut() }
+	if key == KeyCtrlX { e.Cut(true) }
 	if key == KeyCtrlD { e.Duplicate() }
 
 	if modifiers & ModShift != 0 && (

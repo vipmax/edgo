@@ -8,7 +8,8 @@ import . "edgo/internal/config"
 func main() {
 	Log.Start()
 	Conf := GetConfig()
-	EditorGlobal.Config = Conf
 	HighlighterGlobal.SetTheme(Conf.Theme)
-	EditorGlobal.Start()
+	editor := Editor{}
+	editor.Config = Conf
+	editor.Start()
 }

@@ -117,7 +117,10 @@ func (e *Editor) OnEnter() {
 
 func (e *Editor) OnDelete() {
 
-	if len(e.Selection.GetSelectionString(e.Content)) > 0 { e.Cut(); return }
+	if len(e.Selection.GetSelectionString(e.Content)) > 0 {
+		e.Cut(false)
+		return
+	}
 
 	if e.Col > 0 {
 		e.Col--
@@ -206,7 +209,7 @@ func (e *Editor) OnBackTab() {
 }
 
 func (e *Editor) AddChar(ch rune) {
-	if len(e.Selection.GetSelectionString(e.Content)) != 0 { e.Cut() }
+	if len(e.Selection.GetSelectionString(e.Content)) != 0 { e.Cut(false) }
 
 	e.Focus()
 	e.InsertCharacter(e.Row, e.Col, ch)
@@ -348,7 +351,7 @@ func (e *Editor) OnSelectAll() {
 func (e *Editor) OnPaste() {
 	e.Focus()
 
-	if len(e.Selection.GetSelectionString(e.Content)) > 0 { e.Cut() }
+	if len(e.Selection.GetSelectionString(e.Content)) > 0 { e.Cut(false) }
 
 	text, _ := clipboard.ReadAll()
 	lines := strings.Split(text, "\n")
@@ -367,7 +370,7 @@ func (e *Editor) OnPaste() {
 	e.UpdateNeeded()
 }
 
-func (e *Editor) Cut() {
+func (e *Editor) Cut(isCopySelected bool) {
 	e.Focus()
 
 	if len(e.Content) <= 1 {
@@ -408,8 +411,10 @@ func (e *Editor) Cut() {
 
 	} else { // cut selection
 
-		selectionString := e.Selection.GetSelectionString(e.Content)
-		clipboard.WriteAll(selectionString)
+		if isCopySelected {
+			selectionString := e.Selection.GetSelectionString(e.Content)
+			clipboard.WriteAll(selectionString)
+		}
 
 		ops = append(ops, Operation{MoveCursor, ' ', e.Row, e.Col})
 
@@ -518,6 +523,8 @@ func (e *Editor) OnCursorBackUndo() {
 
 	e.Row = lastCursor.Row
 	e.Col = lastCursor.Col
+	e.Y = lastCursor.Y
+	e.X = lastCursor.X
 	e.Focus()
 
 	e.CursorHistory = append(e.CursorHistory, lastCursor)
@@ -527,7 +534,9 @@ func (e *Editor) OnCursorBack() {
 
 	lastCursor := e.CursorHistory[len(e.CursorHistory)-1]
 	e.CursorHistory = e.CursorHistory[:len(e.CursorHistory)-1]
-	e.CursorHistoryUndo = append(e.CursorHistoryUndo, CursorMove{e.AbsoluteFilePath, e.Row, e.Col})
+	e.CursorHistoryUndo = append(e.CursorHistoryUndo,
+		 CursorMove{e.AbsoluteFilePath, e.Row, e.Col, e.Y, e.X},
+	)
 
 	if lastCursor.Filename != e.Filename {
 		e.OpenFile(lastCursor.Filename)
@@ -535,8 +544,9 @@ func (e *Editor) OnCursorBack() {
 
 	e.Row = lastCursor.Row
 	e.Col = lastCursor.Col
+	e.Y = lastCursor.Y
+	e.X = lastCursor.X
 	e.Focus()
-
 
 }
 
