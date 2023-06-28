@@ -3,12 +3,14 @@ package editor
 import (
 	"bufio"
 	. "edgo/internal/highlighter"
+	. "edgo/internal/logger"
 	. "edgo/internal/lsp"
 	. "edgo/internal/utils"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 func (e *Editor) ReadFile(fileToRead string) string {
@@ -73,8 +75,8 @@ func (e *Editor) WriteFile() {
 
 func (e *Editor) BuildContent(filename string, limit int) string {
 	//Start := time.Now()
-	//Log.info("read file Start", Filename, string(limit))
-	//defer Log.info("read file end",   Filename, string(limit), "elapsed", time.Since(Start).String())
+	//Log.info("read file Start", Name, string(limit))
+	//defer Log.info("read file end",   Name, string(limit), "elapsed", time.Since(Start).String())
 
 	file, err := os.Open(filename)
 	if err != nil {
@@ -144,22 +146,22 @@ func (e *Editor) ReadFilesUpdate() {
 			e.Files = make([]FileInfo, len(filesTree))
 			for i, f := range filesTree {
 				abs, _ := filepath.Abs(f)
-				e.Files[i] = FileInfo{f, abs, 0}
+				e.Files[i] = FileInfo{f, abs, 0, false, false, nil }
 			}
 		} else {
 			originalFiles := make([]string, len(e.Files))
 			for i, f := range e.Files {
-				originalFiles[i] = f.Filename
+				originalFiles[i] = f.Name
 			}
 			newFiles, deletedFiles := FindNewAndDeletedFiles(originalFiles, filesTree)
 			for _, f := range newFiles {
 				abs, _ := filepath.Abs(f)
-				e.Files = append(e.Files, FileInfo{f, abs, 0})
+				e.Files = append(e.Files, FileInfo{f, abs, 0, false, false, nil})
 			}
 
 			// Remove deleted files from originalFiles
 			for i := 0; i < len(e.Files); i++ {
-				if Contains(deletedFiles, e.Files[i].Filename) {
+				if Contains(deletedFiles, e.Files[i].Name) {
 					e.Files = Remove(e.Files, i)
 					i-- // Adjust index after removal
 				}
@@ -173,7 +175,7 @@ func (e *Editor) UpdateFilesOpenStats(file string) {
 
 	for i := 0; i < len(e.Files); i++ {
 		ti := e.Files[i]
-		if file == ti.FullFilename {
+		if file == ti.FullName {
 			ti.OpenCount += 1
 			e.Files[i] = ti
 			break
@@ -217,9 +219,12 @@ func FindNewAndDeletedFiles(originalFiles []string, newFiles []string) ([]string
 }
 
 type FileInfo struct {
-	Filename     string
-	FullFilename string
+	Name         string
+	FullName     string
 	OpenCount    int
+	IsDir        bool
+	IsDirOpen    bool
+	Childs       []FileInfo
 }
 
 func findMaxByFilenameLength(files []FileInfo) int {
@@ -227,13 +232,13 @@ func findMaxByFilenameLength(files []FileInfo) int {
 	var maxFile FileInfo
 
 	for _, file := range files {
-		if len(file.Filename) > maxLength {
-			maxLength = len(file.Filename)
+		if len(file.Name) > maxLength {
+			maxLength = len(file.Name)
 			maxFile = file
 		}
 	}
 
-	return len(maxFile.Filename)
+	return len(maxFile.Name)
 }
 
 func IsFileExists(filename string) bool {
@@ -242,4 +247,96 @@ func IsFileExists(filename string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+
+func ReadDirTree(dirPath string) (FileInfo, error) {
+	fileInfo := FileInfo{
+		Name:      filepath.Base(dirPath),
+		FullName:  dirPath,
+		IsDir:     true,
+		IsDirOpen: false,
+	}
+
+	// Read directory contents
+	files, err := os.ReadDir(dirPath)
+	if err != nil { return fileInfo, err }
+
+	for _, file := range files {
+		childPath := filepath.Join(dirPath, file.Name())
+
+		if file.IsDir() && ! IsIgnored(file.Name(), ignoreDirs) {
+			childInfo, err := ReadDirTree(childPath)
+			if err != nil {
+				Log.Info("Failed to process directory:", err.Error())
+				continue
+			}
+			fileInfo.Childs = append(fileInfo.Childs, childInfo)
+		} else {
+			childInfo := FileInfo{
+				Name:      file.Name(),
+				FullName:  childPath,
+				OpenCount: 0,
+				IsDir:     false,
+				IsDirOpen: false,
+			}
+			fileInfo.Childs = append(fileInfo.Childs, childInfo)
+		}
+	}
+
+	return fileInfo, nil
+}
+
+func PrintTree(fileInfo FileInfo, indent int) {
+	// Print the current file/directory
+	fmt.Printf("%s%s\n", strings.Repeat(" ", indent), fileInfo.Name)
+
+	// Print child files/directories recursively
+	for _, child := range fileInfo.Childs {
+		PrintTree(child, indent+1)
+	}
+}
+
+func TreeSize(fileInfo FileInfo, size int) int {
+	size += 1
+
+	if !fileInfo.IsDirOpen { return size }
+	for _, child := range fileInfo.Childs {
+		size += TreeSize(child, 0)
+	}
+
+	return  size
+}
+
+func GetSelected(fileInfo FileInfo, selected int) (bool, *FileInfo) {
+	var i = 0
+	found, info := countSelected(fileInfo, selected, &i)
+	return found, info
+}
+
+func countSelected(fileInfo FileInfo, selected int, i *int) (bool, *FileInfo) {
+	if selected == *i {
+		return true, &fileInfo
+	}
+
+	*i++
+
+
+	for j := 0; j < len(fileInfo.Childs); j++ {
+		var child = &fileInfo.Childs[j]
+		if selected == *i {
+			return true, child
+		}
+
+		if child.IsDir && child.IsDirOpen {
+			found, fi := countSelected(*child, selected, i)
+			if found {
+				return found, fi
+			}
+		} else {
+			*i++
+		}
+	}
+
+	return false, &FileInfo{}
 }

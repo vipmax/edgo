@@ -62,6 +62,7 @@ type Editor struct {
 	FileSelectedIndex   int        // selected file index
 	IsFilesSearch       bool       // true if in files search mode
 	IsFilesPanelMoving  bool       // true if in files panel moving mode
+	Tree                FileInfo   // files Tree
 
 	SearchPattern []rune // pattern for search in a buffer
 
@@ -79,7 +80,8 @@ func (e *Editor) Start() {
 
 	// reading file from cmd args
 	if len(os.Args) == 1 {
-		e.OnFiles()
+		//e.OnFiles()
+		e.OnFilesTree()
 	} else {
 		e.Filename = os.Args[1]
 		e.InputFile = e.Filename
@@ -134,7 +136,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 	if e.IsFilesPanelMoving && buttons & Button1 == 1 { e.FilesPanelWidth = mx; return }
 	if e.IsFilesPanelMoving && buttons & Button1 == 0 { e.IsFilesPanelMoving = false; return }
-	if mx < e.FilesPanelWidth- 2 && buttons & Button1 == 0 { e.OnFiles(); return }
+	if mx < e.FilesPanelWidth- 2 && buttons & Button1 == 0 { e.OnFilesTree(); return }
 
 	if e.Filename == "" { return }
 
@@ -217,6 +219,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 	}
 	return
 }
+
 func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if e.Filename == "" && key != KeyCtrlQ { return }
 
@@ -281,7 +284,7 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if key == KeyUp { e.OnUp(); e.Selection.CleanSelection() }
 	if key == KeyLeft { e.OnLeft(); e.Selection.CleanSelection() }
 	if key == KeyRight { e.OnRight(); e.Selection.CleanSelection() }
-	if key == KeyCtrlT { e.OnFiles() }
+	if key == KeyCtrlT { e.OnFilesTree() }
 	if key == KeyCtrlF { e.OnSearch() }
 	if key == KeyF18 { e.OnRename() }
 	if key == KeyCtrlU { e.OnUndo() }
@@ -360,7 +363,12 @@ func (e *Editor) DrawEverything() {
 	if len(e.Content) == 0 { return }
 	e.Screen.Clear()
 
-	if e.FilesPanelWidth != 0 { e.DrawFiles("", e.Files, 0, 0) }
+	//if e.FilesPanelWidth != 0 { e.DrawFiles("", e.Files, 0, 0) }
+	if e.FilesPanelWidth != 0 {
+		var aty = 0
+		var fileindex = 0
+		e.DrawTree(e.Tree, 0, &fileindex, &aty)
+	}
 
 	
 	//tabs := CountTabsTo(e.Content[e.Row], e.Col)
@@ -793,6 +801,7 @@ func (e *Editor) OnSearch() {
 		}
 	}
 }
+
 func (e *Editor) DrawSearch(prefix []rune, pattern []rune, patternx int) {
 	for i := 0; i < len(prefix); i++ {
 		e.Screen.SetContent(i + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1, prefix[i], nil, StyleDefault)
@@ -816,6 +825,139 @@ func (e *Editor) DrawSearch(prefix []rune, pattern []rune, patternx int) {
 	}
 }
 
+
+func (e *Editor) OnFilesTree() {
+	e.IsFileSelection = true
+
+	if e.FilesPanelWidth == 0 {
+		dir, _ := os.Getwd()
+		tree, _ := ReadDirTree(dir)
+		e.Tree = tree
+		if len(tree.Childs) == 0 { return }
+		e.FilesPanelWidth = 28
+		// root is always opened
+		e.Tree.IsDirOpen = true
+	}
+
+	var end = false
+
+
+	// loop until escape or enter pressed
+	for !end {
+		if e.FileSelectedIndex != -1 && e.FileSelectedIndex < e.FileScrollingOffset {
+			e.FileScrollingOffset = e.FileSelectedIndex
+		}
+		if e.FileSelectedIndex >= e.FileScrollingOffset + e.ROWS {
+			e.FileScrollingOffset = e.FileSelectedIndex - e.ROWS + 1
+		}
+
+		treeSize := TreeSize(e.Tree, 0)
+		var aty int = 0
+		var fileindex int = 0
+
+		for row := 0; row < e.ROWS; row++ {
+			for col := 0; col < e.FilesPanelWidth; col++ { // clean
+				e.Screen.SetContent(col, row, ' ', nil, StyleDefault)
+			}
+		}
+		//e.Screen.Show()
+
+		e.DrawTree(e.Tree, 0, &fileindex, &aty)
+		e.Screen.Show()
+
+		switch ev := e.Screen.PollEvent().(type) { // poll and handle event
+		case *EventMouse:
+			mx, my := ev.Position()
+			buttons := ev.Buttons()
+			//modifiers := ev.Modifiers()
+
+			if mx > e.FilesPanelWidth { end = true; continue }
+
+			if buttons & WheelDown != 0 && treeSize > e.ROWS {
+				if e.FileScrollingOffset <  treeSize - e.ROWS {
+					e.FileScrollingOffset++
+				}
+			}
+			if buttons & WheelUp != 0 && e.FileScrollingOffset > 0 {
+				e.FileScrollingOffset--
+			}
+
+			if my < treeSize { e.FileSelectedIndex = my + e.FileScrollingOffset }
+			if buttons & Button1 == 1 {
+				e.FileSelectedIndex = my + e.FileScrollingOffset
+				if e.FileSelectedIndex < 0  { continue }
+				if e.FileSelectedIndex >= treeSize { continue }
+				end = e.SelectAndOpenFile()
+			}
+
+		case *EventKey:
+			key := ev.Key()
+
+			if key == KeyCtrlF { e.IsFilesSearch = !e.IsFilesSearch }
+			if key == KeyEscape && !e.IsFilesSearch { end = true; e.FilesPanelWidth =  0 }
+			if key == KeyDown { e.FileSelectedIndex = Min(treeSize-1, e.FileSelectedIndex+1) }
+			if key == KeyUp { e.FileSelectedIndex = Max(0, e.FileSelectedIndex-1) }
+			if key == KeyEnter || key == KeyLeft || key == KeyRight {
+				end = e.SelectAndOpenFile()
+			}
+		}
+	}
+
+	e.IsFileSelection = false
+}
+
+func (e *Editor) DrawTree(fileInfo FileInfo, level int, fileindex *int, aty *int) {
+
+	isNeedToShow := *fileindex >= e.FileScrollingOffset
+
+	if isNeedToShow {
+		style := StyleDefault
+		isSelectedFile := e.IsFileSelection && e.FileSelectedIndex != -1 && *fileindex  == e.FileSelectedIndex
+		if fileInfo.IsDir { style = style.Foreground(Color(AccentColor2)) }
+		if isSelectedFile { style = style.Foreground(Color(AccentColor)) }
+		if e.InputFile != "" && e.InputFile == fileInfo.FullName {
+			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
+		}
+
+		for i := 0; i <= level; i++ {
+			if i+1 > e.FilesPanelWidth-1 { break }
+			e.Screen.SetContent(i + 1, *aty, ' ', nil, StyleDefault)
+		}
+
+		label := []rune(fileInfo.Name)
+		for i := 0; i < len(label); i++ {
+			if i+1 > e.FilesPanelWidth-1 { break }
+			e.Screen.SetContent(i + 1 + level, *aty, label[i], nil, style)
+		}
+		//e.Screen.Show()
+		*aty++
+	}
+
+	*fileindex++
+
+	if fileInfo.IsDir && fileInfo.IsDirOpen {
+		for _, child := range fileInfo.Childs {
+			e.DrawTree(child, level+1, fileindex, aty)
+		}
+	}
+
+}
+
+func (e *Editor) SelectAndOpenFile() bool {
+	found, selectedFile := GetSelected(e.Tree, e.FileSelectedIndex)
+	if found {
+		if selectedFile.IsDir {
+			selectedFile.IsDirOpen = !selectedFile.IsDirOpen
+			return false
+		} else {
+			e.InputFile = selectedFile.FullName
+			e.OpenFile(e.InputFile)
+			e.IsFilesSearch = false
+			return true
+		}
+	}
+	return false
+}
 func (e *Editor) OnFiles() {
 	e.IsFileSelection = true
 
@@ -854,9 +996,9 @@ func (e *Editor) OnFiles() {
 
 				for _, f := range e.Files {
 					var foundMatch = false
-					foundMatch = strings.Contains(f.Filename, pattern)
+					foundMatch = strings.Contains(f.Name, pattern)
 					if foundMatch { filteredFiles = append(filteredFiles, f) } else {
-						matches, err := filepath.Match(pattern, f.Filename)
+						matches, err := filepath.Match(pattern, f.Name)
 						if err != nil { continue }
 						if matches { filteredFiles = append(filteredFiles, f) }
 					}
@@ -920,10 +1062,10 @@ func (e *Editor) OnFiles() {
 						e.FileSelectedIndex = my + e.FileScrollingOffset
 						if e.FileSelectedIndex < 0  { continue }
 						if e.FileSelectedIndex >= len(filteredFiles) { continue }
-						if mx > len(filteredFiles[e.FileSelectedIndex].Filename) { continue}
+						if mx > len(filteredFiles[e.FileSelectedIndex].Name) { continue}
 						selectionEnd = true; end = true
 						selectedFile := filteredFiles[e.FileSelectedIndex]
-						e.InputFile = selectedFile.FullFilename
+						e.InputFile = selectedFile.FullName
 						e.OpenFile(e.InputFile)
 						e.IsFilesSearch = false
 					}
@@ -964,7 +1106,7 @@ func (e *Editor) OnFiles() {
 					isChanged = true
 
 					e.FilesPanelWidth--
-					//if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
+					//if e.Name != "" { e.DrawEverything(); e.Screen.Show() }
 					e.Screen.Clear(); e.DrawEverything(); e.Screen.Show()
 				}
 				if key == KeyCtrlT {
@@ -976,7 +1118,7 @@ func (e *Editor) OnFiles() {
 					selectionEnd = true; end = true
 					e.IsFilesSearch = false
 					selectedFile := filteredFiles[e.FileSelectedIndex]
-					e.InputFile = selectedFile.FullFilename
+					e.InputFile = selectedFile.FullName
 					e.OpenFile(e.InputFile)
 				}
 			}
@@ -1011,20 +1153,20 @@ func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int, shift
 		if isSelectedFile {
 			style = style.Foreground(Color(AccentColor))
 		}
-		if e.InputFile != "" && e.InputFile == file.FullFilename {
+		if e.InputFile != "" && e.InputFile == file.FullName {
 			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
 		}
 
-		//filename := file.Filename
+		//filename := file.Name
 		//dir, f := filepath.Split(filename)
 		//if strings.HasSuffix(dir, "/") { dir = dir[:len(dir)-1] }
 
-		for i := 0; i < len(file.Filename); i++ {
+		for i := 0; i < len(file.Name); i++ {
 			if i+1 > e.FilesPanelWidth-1 { break }
-			if i+shiftx +1 > len(file.Filename) { break }
-			e.Screen.SetContent(i + 1, offsety, rune(file.Filename[i+shiftx]), nil, style)
+			if i+shiftx +1 > len(file.Name) { break }
+			e.Screen.SetContent(i + 1, offsety, rune(file.Name[i+shiftx]), nil, style)
 		}
-		//for j, ch := range file.Filename {
+		//for j, ch := range file.Name {
 		//	if shiftx >= j { continue }
 		//	if j+1 > e.FilesPanelWidth-1 { break }
 		//	e.Screen.SetContent(j + 1, offsety, ch, nil, style)
@@ -1063,13 +1205,13 @@ func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int, shift
 
 //func (e *Editor) addTab() {
 //	if e.filesInfo == nil || len(e.filesInfo) == 0 {
-//		e.filesInfo = append(e.filesInfo, FileInfo{e.Filename, e.AbsoluteFilePath, 1})
+//		e.filesInfo = append(e.filesInfo, FileInfo{e.Name, e.AbsoluteFilePath, 1})
 //	} else {
 //		var tabExists = false
 //
 //		for i := 0; i < len(e.filesInfo); i++ {
 //			ti := e.filesInfo[i]
-//			if e.AbsoluteFilePath == ti.FullFilename {
+//			if e.AbsoluteFilePath == ti.FullName {
 //				ti.OpenCount += 1
 //				e.filesInfo[i] = ti
 //				tabExists = true
@@ -1077,7 +1219,7 @@ func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int, shift
 //		}
 //
 //		if !tabExists {
-//			e.filesInfo = append(e.filesInfo, FileInfo{e.Filename, e.AbsoluteFilePath, 1})
+//			e.filesInfo = append(e.filesInfo, FileInfo{e.Name, e.AbsoluteFilePath, 1})
 //		}
 //
 //		sort.SliceStable(e.filesInfo, func(i, j int) bool {
@@ -1105,7 +1247,7 @@ func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int, shift
 //	xpos := 0
 //	for _, info := range e.filesInfo {
 //		if xpos > e.COLUMNS { break }
-//		for _, ch := range info.Filename {
+//		for _, ch := range info.Name {
 //			e.Screen.SetContent(xpos + fromx, at, ch, nil, styleDefault)
 //			xpos++
 //		}

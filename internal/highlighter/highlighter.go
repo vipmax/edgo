@@ -38,6 +38,7 @@ var theme = EdgoDark
 var SelectionColor = 246 // gray
 var OverlayColor = -1 // transparent
 var AccentColor = 303 // pink
+var AccentColor2 = 30 // pink
 
 func DetectLang(filename string) string {
 	lexer := lexers.Match(filename)
@@ -50,6 +51,7 @@ func DetectLang(filename string) string {
 func (h *Highlighter) SetTheme(name string) {
 	theme = styles.Get(name)
 	AccentColor = int(tcell.GetColor(theme.Get(chroma.Keyword).Colour.String()))
+	AccentColor2 = int(tcell.GetColor(theme.Get(chroma.KeywordType).Colour.String()))
 }
 
 func (h *Highlighter) Colorize(code string, filename string) [][]int {
@@ -57,7 +59,7 @@ func (h *Highlighter) Colorize(code string, filename string) [][]int {
 
 	start := time.Now()
 
-	// get lexer depending on Filename
+	// get lexer depending on Name
 	lexer := lexers.Match(filename)
 	if lexer == nil { lexer = lexers.Fallback }
 
