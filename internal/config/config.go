@@ -10,6 +10,8 @@ type Lang struct {
 	Lsp      string `yaml:"lsp"`
 	Comment  string `yaml:"comment"`
 	TabWidth int    `yaml:"tabwidth"`
+	Cmd      string `yaml:"cmd"`
+	CmdArgs  string `yaml:"cmdargs"`
 }
 
 
@@ -20,10 +22,10 @@ type Config struct {
 
 var DefaultConfig = Config { Langs:
 	map[string]Lang{
-		"go":         { Lsp: "gopls", TabWidth: 4 },
-		"python":     { Lsp: "pylsp", Comment: "#", TabWidth: 4 },
-		"typescript": { Lsp: "typescript-language-server --stdio" },
-		"javascript": { Lsp: "typescript-language-server --stdio" },
+		"go":         { Lsp: "gopls", TabWidth: 4, Cmd: "go", CmdArgs: "run" },
+		"python":     { Lsp: "pylsp", Comment: "#", TabWidth: 4, Cmd: "python3" },
+		"typescript": { Lsp: "typescript-language-server --stdio", Cmd: "ts-node" },
+		"javascript": { Lsp: "typescript-language-server --stdio", Cmd: "ts-node" },
 		"html":       { Lsp: "vscode-html-language-server --stdio" },
 		"vue":        { Lsp: "vscode-html-language-server --stdio" },
 		"rust":       { Lsp: "rust-analyzer", TabWidth: 4 },

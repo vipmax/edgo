@@ -39,6 +39,10 @@ func (e *Editor) ReadFile(fileToRead string) string {
 }
 
 func (e *Editor) WriteFile() {
+	//to much cpu usage for big files
+	//added, removed := Diff(e.LastCommitFileContent, ConvertContentToString(e.Content))
+	//e.Added = added
+	//e.Removed = removed
 
 	// Create a new file, or open it if it exists
 	f, err := os.Create(e.AbsoluteFilePath)
@@ -137,7 +141,6 @@ var ignoreDirs = []string{
 
 func (e *Editor) ReadFilesUpdate() {
 
-
 	filesTree, err := GetFiles("./", ignoreDirs)
 	if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
 
@@ -218,6 +221,9 @@ func FindNewAndDeletedFiles(originalFiles []string, newFiles []string) ([]string
 	return newlyCreated, deleted
 }
 
+
+
+
 type FileInfo struct {
 	Name         string
 	FullName     string
@@ -250,12 +256,12 @@ func IsFileExists(filename string) bool {
 }
 
 
-func ReadDirTree(dirPath string) (FileInfo, error) {
+func ReadDirTree(dirPath string, filter string, isOpen bool) (FileInfo, error) {
 	fileInfo := FileInfo{
 		Name:      filepath.Base(dirPath),
 		FullName:  dirPath,
 		IsDir:     true,
-		IsDirOpen: false,
+		IsDirOpen: isOpen,
 	}
 
 	// Read directory contents
@@ -266,21 +272,24 @@ func ReadDirTree(dirPath string) (FileInfo, error) {
 		childPath := filepath.Join(dirPath, file.Name())
 
 		if file.IsDir() && ! IsIgnored(file.Name(), ignoreDirs) {
-			childInfo, err := ReadDirTree(childPath)
-			if err != nil {
-				Log.Info("Failed to process directory:", err.Error())
+			childInfo, err2 := ReadDirTree(childPath, filter, isOpen)
+			if err2 != nil {
+				Log.Info("Failed to process directory:", err2.Error())
 				continue
 			}
 			fileInfo.Childs = append(fileInfo.Childs, childInfo)
 		} else {
-			childInfo := FileInfo{
-				Name:      file.Name(),
-				FullName:  childPath,
-				OpenCount: 0,
-				IsDir:     false,
-				IsDirOpen: false,
+			foundMatch :=  strings.Contains(file.Name(), filter)
+			if filter == "" || foundMatch {
+				childInfo := FileInfo{
+					Name:      file.Name(),
+					FullName:  childPath,
+					OpenCount: 0,
+					IsDir:     false,
+					IsDirOpen: false,
+				}
+				fileInfo.Childs = append(fileInfo.Childs, childInfo)
 			}
-			fileInfo.Childs = append(fileInfo.Childs, childInfo)
 		}
 	}
 
@@ -321,7 +330,6 @@ func countSelected(fileInfo FileInfo, selected int, i *int) (bool, *FileInfo) {
 
 	*i++
 
-
 	for j := 0; j < len(fileInfo.Childs); j++ {
 		var child = &fileInfo.Childs[j]
 		if selected == *i {
@@ -339,4 +347,43 @@ func countSelected(fileInfo FileInfo, selected int, i *int) (bool, *FileInfo) {
 	}
 
 	return false, &FileInfo{}
+}
+func FilterIfLeafEmpty(fileInfo FileInfo) FileInfo {
+	fileInfo.Childs = filterChilds(fileInfo.Childs)
+	return fileInfo
+}
+
+func filterChilds(childs []FileInfo) []FileInfo {
+	filteredChilds := make([]FileInfo, 0)
+
+	for _, child := range childs {
+		// Leaf node with an empty name, filter it out
+		if !child.IsDir && child.Name == "" { continue }
+
+		if child.IsDir {
+			child.Childs = filterChilds(child.Childs)
+			if len(child.Childs) == 0 { continue }
+		}
+		filteredChilds = append(filteredChilds, child)
+	}
+
+	return filteredChilds
+}
+
+func FindFirstFile(fileInfo FileInfo, index int) (*FileInfo, int) {
+	if !fileInfo.IsDir {
+		// If the current node is a file, return it with the index
+		return &fileInfo, index
+	}
+
+	// Recursively search for the first file in child nodes
+	for i, child := range fileInfo.Childs {
+		foundFile, foundIndex := FindFirstFile(child, index+i+1)
+		if foundFile != nil {
+			return foundFile, foundIndex
+		}
+	}
+
+	// No file found in the hierarchy
+	return nil, -1
 }

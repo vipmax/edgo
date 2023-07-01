@@ -8,22 +8,22 @@ import (
 	"github.com/alecthomas/chroma/lexers"
 	"github.com/alecthomas/chroma/styles"
 	"github.com/gdamore/tcell"
-	"os"
 	"strings"
 	"time"
 )
 
 var HighlighterGlobal = Highlighter{}
-type Highlighter struct {
 
+type Highlighter struct {
 }
 
-//var theme = IdeaLight	
+//var theme = IdeaLight
 //var theme = Edgo
 
-//var theme = IdeaLight
-//var theme = EdgoLight
+// var theme = IdeaLight
+// var theme = EdgoLight
 var theme = EdgoDark
+
 //var theme = Darcula
 //var theme = styles.Get("edgo")
 //var theme = styles.Get("dracula")
@@ -34,19 +34,23 @@ var theme = EdgoDark
 //var theme = styles.Get("witchhazel")
 //var theme = styles.Get("xcode-dark")
 
-
 var SelectionColor = 246 // gray
-var OverlayColor = -1 // transparent
-var AccentColor = 303 // pink
-var AccentColor2 = 30 // pink
+var OverlayColor = -1    // transparent
+var AccentColor = 303    // pink
+var AccentColor2 = 30    // aqua
 
 func DetectLang(filename string) string {
 	lexer := lexers.Match(filename)
-	if lexer == nil { return "" }
+	if lexer == nil {
+		return ""
+	}
 	config := lexer.Config()
-	if config == nil { return "" }
+	if config == nil {
+		return ""
+	}
 	return strings.ToLower(config.Name)
 }
+
 
 func (h *Highlighter) SetTheme(name string) {
 	theme = styles.Get(name)
@@ -54,20 +58,28 @@ func (h *Highlighter) SetTheme(name string) {
 	AccentColor2 = int(tcell.GetColor(theme.Get(chroma.KeywordType).Colour.String()))
 }
 
+func (h *Highlighter) GetRunButtonStyle() int {
+	return int(tcell.GetColor(theme.Get(chroma.String).Colour.String()))
+}
+
 func (h *Highlighter) Colorize(code string, filename string) [][]int {
-	if code == "" { return [][]int{nil} }
+	if code == "" {
+		return [][]int{nil}
+	}
 
 	start := time.Now()
 
 	// get lexer depending on Name
 	lexer := lexers.Match(filename)
-	if lexer == nil { lexer = lexers.Fallback }
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
 
 	// get iterator for tokenizing the code
 	iterator, err := lexer.Tokenise(nil, code)
 	if err != nil {
 		Log.Info("tokenization error: " + err.Error())
-		os.Exit(1)
+		return [][]int{nil}
 	}
 
 	tokensIntoLines := chroma.SplitTokensIntoLines(iterator.Tokens())
@@ -80,7 +92,9 @@ func (h *Highlighter) Colorize(code string, filename string) [][]int {
 			tcellColor := tcell.GetColor(chromaColor)
 			color := int(tcellColor)
 			// copy color for each token character
-			for range token.Value { lineColors = append(lineColors, color) }
+			for range token.Value {
+				lineColors = append(lineColors, color)
+			}
 		}
 		textColors = append(textColors, lineColors)
 	}

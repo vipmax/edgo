@@ -11,9 +11,9 @@ import (
 func (e *Editor) OnDown() {
 	if len(e.Content) == 0 { return }
 	if e.Row+1 >= len(e.Content) {
-		e.Y = e.Row - e.ROWS + 1;
-		if e.Y < 0 { e.Y = 0 };
-		return 
+		e.Y = e.Row - e.ROWS + 1
+		if e.Y < 0 { e.Y = 0 }
+		return
 	}
 	e.Row++
 	if e.Col > len(e.Content[e.Row]) { e.Col = len(e.Content[e.Row]) } // fit to e.Content
@@ -27,8 +27,7 @@ func (e *Editor) OnUp() {
 	if e.Row == 0 { e.Y = 0; return }
 	e.Row--
 	if e.Col > len(e.Content[e.Row]) { e.Col = len(e.Content[e.Row]) } // fit to e.Content
-	if e.Row < e.Y { e.Y = e.Row
-	}
+	if e.Row < e.Y { e.Y = e.Row }
 	if e.Row > e.Y+ e.ROWS { e.Y = e.Row - e.ROWS + 1  }
 }
 
@@ -229,6 +228,7 @@ func (e *Editor) InsertCharacter(line, pos int, ch rune) {
 	e.Content[line] = InsertTo(e.Content[line], pos, ch)
 	//if lsp.isReady { go lsp.didChange(AbsoluteFilePath, Line, pos, Line, pos, string(ch)) }
 	e.Undo = append(e.Undo, EditOperation{{Insert, ch, e.Row, e.Col}})
+	//e.Added.Add(e.Row+1)
 }
 
 func (e *Editor) InsertString(line, pos int, linestring string) {

@@ -211,7 +211,11 @@ type Set map[int]struct{}
 
 // a value to the set.
 func (this Set) Add(value int) { this[value] = struct{}{} }
-
+func (s Set) Delete(value int) { delete(s, value) }
+func (s Set) Contains(value int) bool {
+	_, exists := s[value]
+	return exists
+}
 // returns all keys in the set, sorted.
 func (this Set) GetKeys() []int {
 	keys := make([]int, 0, len(this))
@@ -219,6 +223,22 @@ func (this Set) GetKeys() []int {
 	sort.Ints(keys) // Sort the keys
 	return keys
 }
+func (this Set) Print() {
+	for _, lineNum := range this.GetKeys() {
+		fmt.Println(lineNum)
+	}
+}
+
+func Intersect(set1, set2 Set) Set {
+	intersection := make(Set)
+	for value := range set1 {
+		if _, exists := set2[value]; exists {
+			intersection.Add(value)
+		}
+	}
+	return intersection
+}
+
 
 func PadLeft(str string, length int) string {
 	format := fmt.Sprintf("%%%ds", length)

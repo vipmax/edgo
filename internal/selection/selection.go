@@ -14,6 +14,16 @@ func (this *Selection) CleanSelection() {
 	this.Ssx, this.Ssy, this.Sex, this.Sey = -1, -1, -1, -1
 }
 
+
+func (this *Selection) IsSelectionNonEmpty() bool {
+	if this.Ssx == -1 || this.Ssy == -1  || this.Sex == -1 || this.Sey == -1 { return false }
+	if Equal(this.Ssx, this.Ssy, this.Sex, this.Sey) {
+		return false
+	}
+
+	return true
+}
+
 func (this *Selection) IsUnderSelection(x, y int) bool {
 	// Check if there is an active selection
 	if this.Ssx == -1 || this.Ssy == -1  || this.Sex == -1 || this.Sey == -1 { return false }

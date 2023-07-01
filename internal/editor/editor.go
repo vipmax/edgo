@@ -6,10 +6,10 @@ import (
 	. "edgo/internal/logger"
 	. "edgo/internal/lsp"
 	. "edgo/internal/operations"
+	. "edgo/internal/process"
 	. "edgo/internal/search"
 	. "edgo/internal/selection"
 	. "edgo/internal/utils"
-
 	"fmt"
 	"github.com/atotto/clipboard"
 	. "github.com/gdamore/tcell"
@@ -19,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 
@@ -63,15 +64,33 @@ type Editor struct {
 	IsFilesSearch       bool       // true if in files search mode
 	IsFilesPanelMoving  bool       // true if in files panel moving mode
 	Tree                FileInfo   // files Tree
+	FilterPattern       []rune
 
 	SearchPattern []rune // pattern for search in a buffer
 
 	//filesInfo []FileInfo
-	
 	CursorHistory     []CursorMove
 	CursorHistoryUndo []CursorMove
 
+	//LastCommitFileContent string
+	//Added                 Set
+	//Removed               Set
+
+	// process panel vars
+	ProcessPanelHeight    int
+	ProcessOutLines       [][]rune
+	ProcessPanelScroll    int
+	IsProcessPanelMoving  bool
+	IsProcessPanelFocused bool
+	Process               *Process
+	ProcessPanelSpacing   int
+	ProcessPanelCursorX   int
+	ProcessPanelCursorY   int
+	ProcessPanelSelection  Selection
+
 }
+
+
 
 func (e *Editor) Start() {
 	Log.Info("starting edgo")
@@ -108,6 +127,7 @@ func (e *Editor) HandleEvents() {
 	switch ev := ev.(type) {
 	case *EventResize:
 		e.COLUMNS, e.ROWS = e.Screen.Size()
+		e.ROWS -= e.ProcessPanelHeight
 
 	case *EventMouse:
 		mx, my := ev.Position()
@@ -125,8 +145,101 @@ func (e *Editor) HandleEvents() {
 }
 
 func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMask) {
+	_, screenRows := e.Screen.Size()
+
+
+	// upper play button
+	if mx == e.COLUMNS - 2 && my == 0  && buttons & Button1 == 1 {
+		// do not show if process active
+		if e.Process == nil || (e.Process != nil && e.Process.Stopped){
+			e.OnProcessRun()
+		}
+		return
+	}
+
+	// play button on process panel
+	if mx == e.COLUMNS - 6 && my == e.ROWS  && buttons & Button1 == 1 {
+		e.OnProcessStop()
+		time.Sleep(time.Millisecond * 100) // give a time to show 'kill' message
+		e.OnProcessRun()
+		return
+	}
+
+	// stop button on process panel
+	if mx == e.COLUMNS - 4 && my == e.ROWS  && buttons & Button1 == 1 {
+		e.OnProcessStop()
+		return
+	}
+
+	// close button on process panel
+	if mx == e.COLUMNS - 2 && my == e.ROWS && buttons & Button1 == 1 {
+		e.OnProcessStop()
+		e.ROWS = screenRows
+		e.ProcessPanelHeight = 0
+		return
+	}
+
+	if !e.IsProcessPanelMoving && buttons & Button1 == 1 &&
+		my == e.ROWS && e.ProcessPanelHeight > 0 {
+
+		e.ROWS = my
+		e.ProcessPanelHeight = screenRows - e.ROWS
+		e.IsProcessPanelMoving = true
+		e.Update = true
+		return
+	}
+
+	if e.IsProcessPanelMoving && buttons & Button1 == 1 && screenRows >= my  {
+		e.ROWS = my
+		e.ProcessPanelHeight = screenRows - e.ROWS
+		e.Update = true
+		return
+	}
+
+	if e.IsProcessPanelMoving && buttons & Button1 == 0 {
+		e.IsProcessPanelMoving = false; return
+	}
+
+	if my >= e.ROWS && mx >= e.FilesPanelWidth - 2 {
+		// in process panel
+		e.IsProcessPanelFocused = true
+		if buttons & WheelDown != 0 && e.ProcessPanelScroll <= len(e.ProcessOutLines) - e.ProcessPanelHeight {
+			e.ProcessPanelScroll++
+		}
+		if buttons & WheelUp != 0 && e.ProcessPanelScroll > 0 {
+			e.ProcessPanelScroll--
+		}
+
+		if buttons & Button1 == 1 {
+			e.ProcessPanelCursorX = mx - e.FilesPanelWidth - e.ProcessPanelSpacing
+			e.ProcessPanelCursorY = my + e.ProcessPanelScroll - e.ROWS -1
+			// fit cursor
+			if e.ProcessPanelCursorY > len(e.ProcessOutLines) { e.ProcessPanelCursorY = len(e.ProcessOutLines) }
+			if e.ProcessPanelCursorX > len(e.ProcessOutLines[e.ProcessPanelCursorY]) { e.ProcessPanelCursorX = len(e.ProcessOutLines[e.ProcessPanelCursorY]) }
+
+			if e.ProcessPanelSelection.Ssx < 0 { e.ProcessPanelSelection.Ssx, e.ProcessPanelSelection.Ssy = e.ProcessPanelCursorX, e.ProcessPanelCursorY }
+			if e.ProcessPanelSelection.Ssx >= 0 { e.ProcessPanelSelection.Sex, e.ProcessPanelSelection.Sey = e.ProcessPanelCursorX, e.ProcessPanelCursorY }
+			return
+		}
+
+		if buttons&Button1 == 0 {
+			if e.ProcessPanelSelection.IsSelectionNonEmpty() {
+				selectionString := e.ProcessPanelSelection.GetSelectionString(e.ProcessOutLines)
+				clipboard.WriteAll(selectionString)
+			}
+
+			e.ProcessPanelSelection.CleanSelection()
+		}
+
+		return
+	}
+
+	e.IsProcessPanelFocused = false
+
+
 	if !e.IsFilesPanelMoving && buttons & Button1 == 1 &&
-		math.Abs(float64(e.FilesPanelWidth- mx)) <= 2 &&
+		math.Abs(float64(e.FilesPanelWidth - mx)) <= 2 &&
+		my < e.ROWS &&
 		len(e.Selection.GetSelectedLines(e.Content)) == 0 {
 
 		e.FilesPanelWidth = mx - 1
@@ -287,6 +400,7 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if key == KeyCtrlT { e.OnFilesTree() }
 	if key == KeyCtrlF { e.OnSearch() }
 	if key == KeyF18 { e.OnRename() }
+	if key == KeyF22 { e.OnProcessRun() }
 	if key == KeyCtrlU { e.OnUndo() }
 	//if key == KeyCtrlR { e.OnRedo() } // todo: fix i
 	if key == KeyCtrlO { e.OnCursorBack() }
@@ -323,6 +437,18 @@ func (e *Editor) OpenFile(fname string) error {
 
 	code := e.ReadFile(e.AbsoluteFilePath)
 	e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
+
+	//cwd, _ := os.Getwd()
+	//relativePath, _ := filepath.Rel(cwd, e.AbsoluteFilePath)
+	//
+	//lastCommitFileContent, err := GetLastCommitFileContent(relativePath)
+	//if err != nil { e.LastCommitFileContent = "" } else  {
+	//	e.LastCommitFileContent = lastCommitFileContent
+	//	added, removed := Diff(lastCommitFileContent, ConvertContentToString(e.Content))
+	//	e.Added = added
+	//	e.Removed = removed
+	//}
+
 
 	e.Undo = []EditOperation{}
 	e.Redo = []EditOperation{}
@@ -431,7 +557,76 @@ func (e *Editor) DrawEverything() {
 		}
 	}
 
+	e.DrawProcessPanel()
 }
+func (e *Editor) DrawProcessPanel() {
+
+	sep := '─'
+	//sep := 'x'
+	for i := e.FilesPanelWidth; i < e.COLUMNS-7; i++ {
+		e.Screen.SetContent(i, e.ROWS, sep,nil, StyleDefault)
+	}
+
+	e.Screen.SetContent(e.COLUMNS-7, e.ROWS, ' ',nil, StyleDefault)
+	// do not show if process active
+	//if e.Process == nil || (e.Process == nil && e.Process.Stopped){
+	//	e.Screen.SetContent(e.COLUMNS-6, e.ROWS, '▶', nil, StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
+	//} else {
+	//	e.Screen.SetContent(e.COLUMNS-6, e.ROWS, '↻', nil, StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
+	//}
+
+	e.Screen.SetContent(e.COLUMNS-6, e.ROWS, '▶', nil, StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
+
+	e.Screen.SetContent(e.COLUMNS-5, e.ROWS, ' ',nil, StyleDefault)
+
+	if e.Process != nil && e.Process.Stopped {
+		e.Screen.SetContent(e.COLUMNS-4, e.ROWS, ' ',nil, StyleDefault)
+	} else {
+		e.Screen.SetContent(e.COLUMNS-4, e.ROWS, '■',nil, StyleDefault.Foreground(Color(AccentColor)))
+	}
+	e.Screen.SetContent(e.COLUMNS-3, e.ROWS, ' ',nil, StyleDefault)
+	e.Screen.SetContent(e.COLUMNS-2, e.ROWS, '⏻',nil, StyleDefault)
+
+	if e.langConf.Cmd != "" && (e.Process == nil || e.Process != nil && e.Process.Stopped) {
+		e.Screen.SetContent(e.COLUMNS-2, 0,   '▶',nil, StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
+	}
+
+	//e.Screen.SetContent(e.COLUMNS-1, e.ROWS, '⌫',nil, StyleDefault)
+
+	_, screenRows := e.Screen.Size()
+
+
+	for index := 0; index < len(e.ProcessOutLines); index++ {
+		if index + e.ProcessPanelScroll > len(e.ProcessOutLines) - 1 { break }
+		line := e.ProcessOutLines[index + e.ProcessPanelScroll]
+		y := e.ROWS + index + 1
+		if y > screenRows { break }
+
+		for i, ch := range line {
+			style := StyleDefault
+			if e.ProcessPanelSelection.IsUnderSelection(i, index + e.ProcessPanelScroll ) {
+				style = style.Background(Color(SelectionColor))
+			}
+
+			e.Screen.SetContent(i + e.FilesPanelWidth + e.ProcessPanelSpacing, y, ch,nil, style)
+		}
+		for i := len(line); i < e.COLUMNS; i++ {
+			e.Screen.SetContent(i + e.FilesPanelWidth + e.ProcessPanelSpacing, y, ' ',nil, StyleDefault)
+		}
+	}
+
+	if e.IsProcessPanelFocused {
+		if e.ProcessPanelCursorY - e.ProcessPanelScroll + e.ROWS +1 <= e.ROWS {
+			e.Screen.HideCursor()
+		} else {
+			e.Screen.ShowCursor(e.ProcessPanelCursorX + e.FilesPanelWidth + e.ProcessPanelSpacing, e.ProcessPanelCursorY - e.ProcessPanelScroll + e.ROWS + 1)
+		}
+
+	} else {
+		//e.Screen.HideCursor()
+	}
+}
+
 
 func (e *Editor) GetStyle(ry int, cx int) Style {
 	var style = StyleDefault
@@ -506,6 +701,9 @@ func (e *Editor) DrawDiagnostic() {
 func (e *Editor) DrawLineNumber(brw int, row int) {
 	var style = StyleDefault.Foreground(ColorDimGray)
 	if brw == e.Row { style = StyleDefault}
+	//if e.Added.Contains(brw+1) {
+	//	style = StyleDefault.Foreground(Color(AccentColor))
+	//}
 	lineNumber := CenterNumber(brw + 1, e.LINES_WIDTH)
 	for index, char := range lineNumber {
 		e.Screen.SetContent(index + e.FilesPanelWidth, row, char, nil, style)
@@ -828,41 +1026,46 @@ func (e *Editor) DrawSearch(prefix []rune, pattern []rune, patternx int) {
 
 func (e *Editor) OnFilesTree() {
 	e.IsFileSelection = true
+	dir, _ := os.Getwd()
 
 	if e.FilesPanelWidth == 0 {
-		dir, _ := os.Getwd()
-		tree, _ := ReadDirTree(dir)
+		tree, _ := ReadDirTree(dir, "", false)
 		e.Tree = tree
 		if len(tree.Childs) == 0 { return }
 		e.FilesPanelWidth = 28
 		// root is always opened
 		e.Tree.IsDirOpen = true
 	}
+	if e.Filename != "" { e.DrawEverything() }
 
 	var end = false
-
+	var patternx = len(e.FilterPattern)
 
 	// loop until escape or enter pressed
 	for !end {
+		_, screenRows := e.Screen.Size()
+
 		if e.FileSelectedIndex != -1 && e.FileSelectedIndex < e.FileScrollingOffset {
 			e.FileScrollingOffset = e.FileSelectedIndex
 		}
-		if e.FileSelectedIndex >= e.FileScrollingOffset + e.ROWS {
-			e.FileScrollingOffset = e.FileSelectedIndex - e.ROWS + 1
+		if e.FileSelectedIndex >= e.FileScrollingOffset + screenRows {
+			e.FileScrollingOffset = e.FileSelectedIndex - screenRows + 1
 		}
 
 		treeSize := TreeSize(e.Tree, 0)
 		var aty int = 0
 		var fileindex int = 0
 
-		for row := 0; row < e.ROWS; row++ {
+
+		for row := 0; row < screenRows; row++ {
 			for col := 0; col < e.FilesPanelWidth; col++ { // clean
 				e.Screen.SetContent(col, row, ' ', nil, StyleDefault)
 			}
+			//e.Screen.SetContent(e.FilesPanelWidth-2, row, '│', nil, StyleDefault)
 		}
-		//e.Screen.Show()
 
 		e.DrawTree(e.Tree, 0, &fileindex, &aty)
+		e.DrawTreeSearch(e.FilterPattern, patternx)
 		e.Screen.Show()
 
 		switch ev := e.Screen.PollEvent().(type) { // poll and handle event
@@ -871,10 +1074,10 @@ func (e *Editor) OnFilesTree() {
 			buttons := ev.Buttons()
 			//modifiers := ev.Modifiers()
 
-			if mx > e.FilesPanelWidth { end = true; continue }
+			if mx > e.FilesPanelWidth + 1 { end = true; continue }
 
-			if buttons & WheelDown != 0 && treeSize > e.ROWS {
-				if e.FileScrollingOffset <  treeSize - e.ROWS {
+			if buttons & WheelDown != 0 && treeSize > screenRows {
+				if e.FileScrollingOffset < treeSize - screenRows {
 					e.FileScrollingOffset++
 				}
 			}
@@ -894,11 +1097,46 @@ func (e *Editor) OnFilesTree() {
 			key := ev.Key()
 
 			if key == KeyCtrlF { e.IsFilesSearch = !e.IsFilesSearch }
+			if key == KeyEscape  && e.IsFilesSearch {  end = true; e.IsFilesSearch = false }
 			if key == KeyEscape && !e.IsFilesSearch { end = true; e.FilesPanelWidth =  0 }
-			if key == KeyDown { e.FileSelectedIndex = Min(treeSize-1, e.FileSelectedIndex+1) }
+			if key == KeyDown { e.FileSelectedIndex =  Min(treeSize-1, e.FileSelectedIndex+1) }
 			if key == KeyUp { e.FileSelectedIndex = Max(0, e.FileSelectedIndex-1) }
-			if key == KeyEnter || key == KeyLeft || key == KeyRight {
+			if key == KeyLeft && e.IsFilesSearch && patternx > 0 { patternx-- }
+			if key == KeyRight && e.IsFilesSearch && patternx < len(e.FilterPattern) { patternx++ }
+			if key == KeyCtrlT {
+				end = true
+				e.IsFilesSearch = false
+				e.FilesPanelWidth = 0
+			}
+			if key == KeyBackspace2  && e.IsFilesSearch && patternx > 0 && len(e.FilterPattern) > 0 {
+				patternx--
+				e.FilterPattern = Remove(e.FilterPattern, patternx)
+				tree, _ := ReadDirTree(dir, string(e.FilterPattern), true)
+				tree = FilterIfLeafEmpty(tree)
+				e.Tree = tree
+				e.Tree.IsDirOpen = true
+				e.FileScrollingOffset = 0
+				_, i := FindFirstFile(e.Tree, 0)
+				e.FileSelectedIndex = i
+			}
+			if key == KeyRune {
+				e.IsFilesSearch = true
+				e.FilterPattern = InsertTo(e.FilterPattern, patternx, ev.Rune())
+				patternx++
+				tree, _ := ReadDirTree(dir, string(e.FilterPattern), true)
+				tree = FilterIfLeafEmpty(tree)
+				e.Tree = tree
+				e.Tree.IsDirOpen = true
+				e.FileScrollingOffset = 0
+				_, i := FindFirstFile(e.Tree, 0)
+				e.FileSelectedIndex = i
+			}
+			if key == KeyEnter || !e.IsFilesSearch  && (key == KeyLeft || key == KeyRight) {
 				end = e.SelectAndOpenFile()
+				if end {
+					tree, _ := ReadDirTree(dir, string(e.FilterPattern), true)
+					e.Tree = tree
+				}
 			}
 		}
 	}
@@ -911,6 +1149,8 @@ func (e *Editor) DrawTree(fileInfo FileInfo, level int, fileindex *int, aty *int
 	isNeedToShow := *fileindex >= e.FileScrollingOffset
 
 	if isNeedToShow {
+		//if *aty >= e.ROWS { return }
+
 		style := StyleDefault
 		isSelectedFile := e.IsFileSelection && e.FileSelectedIndex != -1 && *fileindex  == e.FileSelectedIndex
 		if fileInfo.IsDir { style = style.Foreground(Color(AccentColor2)) }
@@ -943,247 +1183,7 @@ func (e *Editor) DrawTree(fileInfo FileInfo, level int, fileindex *int, aty *int
 
 }
 
-func (e *Editor) SelectAndOpenFile() bool {
-	found, selectedFile := GetSelected(e.Tree, e.FileSelectedIndex)
-	if found {
-		if selectedFile.IsDir {
-			selectedFile.IsDirOpen = !selectedFile.IsDirOpen
-			return false
-		} else {
-			e.InputFile = selectedFile.FullName
-			e.OpenFile(e.InputFile)
-			e.IsFilesSearch = false
-			return true
-		}
-	}
-	return false
-}
-func (e *Editor) OnFiles() {
-	e.IsFileSelection = true
-
-	if e.FilesPanelWidth == 0 {
-		e.ReadFilesUpdate()
-		if len(e.Files) == 0 { return }
-		e.FilesPanelWidth = 28
-	}
-
-	if e.Filename == "" { e.FilesPanelWidth = findMaxByFilenameLength(e.Files) + 1 }
-	if e.Filename != "" { e.DrawEverything() }
-
-	var end = false
-	var filterPattern = []rune{}
-	var patternx = 0
-	var isChanged = true
-	var shiftx = 0
-
-	// loop until escape or enter pressed
-	for !end {
-
-		var selectionEnd = false;
-
-		for !selectionEnd {
-			if e.FileSelectedIndex != -1 && e.FileSelectedIndex < e.FileScrollingOffset {
-				e.FileScrollingOffset = e.FileSelectedIndex
-			}
-			if e.FileSelectedIndex >= e.FileScrollingOffset+ e.ROWS {
-				e.FileScrollingOffset = e.FileSelectedIndex - e.ROWS + 1
-			}
-
-			filteredFiles := e.Files
-			if e.IsFilesSearch && len(filterPattern) > 0 {
-				pattern := string(filterPattern)
-				filteredFiles = []FileInfo{}
-
-				for _, f := range e.Files {
-					var foundMatch = false
-					foundMatch = strings.Contains(f.Name, pattern)
-					if foundMatch { filteredFiles = append(filteredFiles, f) } else {
-						matches, err := filepath.Match(pattern, f.Name)
-						if err != nil { continue }
-						if matches { filteredFiles = append(filteredFiles, f) }
-					}
-				}
-
-				if isChanged { e.DrawFiles(string(filterPattern), filteredFiles, patternx, shiftx) }
-			} else {
-				if isChanged { e.DrawFiles(string(filterPattern), e.Files, patternx, shiftx) }
-			}
-
-			e.Screen.Show()
-
-			switch ev := e.Screen.PollEvent().(type) { // poll and handle event
-			case *EventMouse:
-				mx, my := ev.Position()
-				buttons := ev.Buttons()
-				modifiers := ev.Modifiers()
-
-
-				if mx > e.FilesPanelWidth {
-					selectionEnd = true; end = true; e.IsFilesSearch = false;
-				} else {
-					if buttons & WheelDown != 0  && modifiers & ModAlt != 0 && shiftx > 0  {
-						shiftx--
-						continue
-					}
-					if buttons & WheelUp != 0  && modifiers & ModAlt != 0   {
-						shiftx++
-						continue
-					}
-					if buttons & WheelDown != 0  && modifiers & ModCtrl != 0 && e.FilesPanelWidth < e.COLUMNS  {
-						if e.FilesPanelWidth > findMaxByFilenameLength(e.Files) { continue }
-						e.FilesPanelWidth++
-						if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
-						continue
-					}
-					if buttons & WheelUp != 0  && modifiers & ModCtrl != 0  && e.FilesPanelWidth > 0 {
-						e.FilesPanelWidth--
-						if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
-						continue
-					}
-
-					if buttons & WheelDown != 0 &&  len(filteredFiles) > e.ROWS {
-						if len(filteredFiles) > e.ROWS {
-							if !e.IsFilesSearch && e.FileScrollingOffset <  len(filteredFiles) - e.ROWS {
-								e.FileScrollingOffset++
-							}
-							if e.IsFilesSearch && e.FileScrollingOffset <  len(filteredFiles) - e.ROWS +1 {
-								e.FileScrollingOffset++
-							}
-
-						}
-					}
-					if buttons & WheelUp != 0 && e.FileScrollingOffset > 0 {
-						e.FileScrollingOffset--
-					}
-
-					if my < len(filteredFiles) { e.FileSelectedIndex = my + e.FileScrollingOffset }
-					if buttons & Button1 == 1 {
-						e.ReadFilesUpdate()
-						e.FileSelectedIndex = my + e.FileScrollingOffset
-						if e.FileSelectedIndex < 0  { continue }
-						if e.FileSelectedIndex >= len(filteredFiles) { continue }
-						if mx > len(filteredFiles[e.FileSelectedIndex].Name) { continue}
-						selectionEnd = true; end = true
-						selectedFile := filteredFiles[e.FileSelectedIndex]
-						e.InputFile = selectedFile.FullName
-						e.OpenFile(e.InputFile)
-						e.IsFilesSearch = false
-					}
-				}
-
-			case *EventResize:
-				e.COLUMNS, e.ROWS = e.Screen.Size()
-				if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
-
-			case *EventKey:
-				key := ev.Key()
-
-				if key == KeyCtrlF { e.IsFilesSearch = !e.IsFilesSearch }
-				if key == KeyEscape && !e.IsFilesSearch { selectionEnd = true; end = true; e.FilesPanelWidth =  0 }
-				if key == KeyEscape  && e.IsFilesSearch {  e.IsFilesSearch = false}
-				if key == KeyDown { e.FileSelectedIndex = Min(len(filteredFiles)-1, e.FileSelectedIndex+1) }
-				if key == KeyUp { e.FileSelectedIndex = Max(0, e.FileSelectedIndex-1) }
-				if key == KeyRune {
-					e.IsFilesSearch = true
-					filterPattern = InsertTo(filterPattern, patternx, ev.Rune())
-					patternx++
-					isChanged = true
-					e.FileSelectedIndex = 0
-				}
-				if key == KeyBackspace2  && e.IsFilesSearch && patternx > 0 && len(filterPattern) > 0 {
-					patternx--
-					filterPattern = Remove(filterPattern, patternx)
-					isChanged = true
-				}
-				if key == KeyLeft && e.IsFilesSearch && patternx > 0 { patternx--; isChanged = true }
-				if key == KeyRight && e.IsFilesSearch && patternx < len(filterPattern) { patternx++; isChanged = true }
-				if key == KeyRight && !e.IsFilesSearch {
-					isChanged = true
-					e.FilesPanelWidth++
-					if e.Filename != "" { e.DrawEverything(); e.Screen.Show() }
-				}
-				if key == KeyLeft && !e.IsFilesSearch && e.FilesPanelWidth > 0  {
-					isChanged = true
-
-					e.FilesPanelWidth--
-					//if e.Name != "" { e.DrawEverything(); e.Screen.Show() }
-					e.Screen.Clear(); e.DrawEverything(); e.Screen.Show()
-				}
-				if key == KeyCtrlT {
-					selectionEnd = true; end = true
-					e.IsFilesSearch = false
-					e.FilesPanelWidth = 0
-				}
-				if key == KeyEnter && e.FileSelectedIndex < len(filteredFiles) {
-					selectionEnd = true; end = true
-					e.IsFilesSearch = false
-					selectedFile := filteredFiles[e.FileSelectedIndex]
-					e.InputFile = selectedFile.FullName
-					e.OpenFile(e.InputFile)
-				}
-			}
-		}
-	}
-
-	e.IsFileSelection = false
-}
-
-func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int, shiftx int) {
-
-	for row := 0; row < e.ROWS; row++ {
-		for col := 0; col < e.FilesPanelWidth; col++ { // clean
-			e.Screen.SetContent(col, row, ' ', nil, StyleDefault)
-		}
-	}
-
-	var offsety = 0
-
-	for fileIndex := 0; fileIndex < len(files); fileIndex++ {
-		if e.IsFilesSearch && offsety == e.ROWS-1 { continue }
-		style := StyleDefault
-
-		e.Screen.SetContent(e.FilesPanelWidth, offsety, ' ', nil, style)
-
-		if fileIndex >= len(files) || fileIndex >= e.ROWS { break }
-		if fileIndex + Max(e.FileScrollingOffset,0) >= len(files) { break }
-		file := files[fileIndex + Max(e.FileScrollingOffset,0)]
-
-
-		isSelectedFile := e.IsFileSelection && e.FileSelectedIndex != -1 && fileIndex + e.FileScrollingOffset == e.FileSelectedIndex
-		if isSelectedFile {
-			style = style.Foreground(Color(AccentColor))
-		}
-		if e.InputFile != "" && e.InputFile == file.FullName {
-			style = style.Background(Color(AccentColor)).Foreground(ColorWhite)
-		}
-
-		//filename := file.Name
-		//dir, f := filepath.Split(filename)
-		//if strings.HasSuffix(dir, "/") { dir = dir[:len(dir)-1] }
-
-		for i := 0; i < len(file.Name); i++ {
-			if i+1 > e.FilesPanelWidth-1 { break }
-			if i+shiftx +1 > len(file.Name) { break }
-			e.Screen.SetContent(i + 1, offsety, rune(file.Name[i+shiftx]), nil, style)
-		}
-		//for j, ch := range file.Name {
-		//	if shiftx >= j { continue }
-		//	if j+1 > e.FilesPanelWidth-1 { break }
-		//	e.Screen.SetContent(j + 1, offsety, ch, nil, style)
-		//}
-
-		offsety++
-	}
-
-	for row := 0; row <= e.ROWS; row++ {
-		if row >= len(files) {
-			for col := 0; col < e.FilesPanelWidth; col++ { // clean
-				e.Screen.SetContent(col, row, ' ', nil, StyleDefault)
-			}
-		}
-		//e.Screen.SetContent(FilesPanelWidth, row, '│', nil, StyleDefault.Foreground(Color(AccentColor)))
-	}
-
+func (e *Editor) DrawTreeSearch(filterPattern []rune, patternx int) {
 	e.Screen.HideCursor()
 
 	if e.IsFilesSearch {
@@ -1193,15 +1193,32 @@ func (e *Editor) DrawFiles(pattern string, files []FileInfo, patternx int, shift
 			e.Screen.SetContent(i, e.ROWS-1, ch, nil, StyleDefault)
 		}
 
-		for i, ch := range pattern { // draw pattern
+		for i, ch := range filterPattern { // draw pattern
 			e.Screen.SetContent(i+len(pref), e.ROWS-1, ch, nil, StyleDefault)
 		}
-		for col := len(pref) + len(pattern); col < e.FilesPanelWidth- 1; col++ { // clean
+		for col := len(pref) + len(filterPattern); col < e.FilesPanelWidth- 1; col++ { // clean
 			e.Screen.SetContent(col, e.ROWS-1, ' ', nil, StyleDefault)
 		}
 	}
-
 }
+
+func (e *Editor) SelectAndOpenFile() bool {
+	found, selectedFile := GetSelected(e.Tree, e.FileSelectedIndex)
+	if found {
+		if selectedFile.IsDir {
+			selectedFile.IsDirOpen = !selectedFile.IsDirOpen
+			return false
+		} else {
+			e.InputFile = selectedFile.FullName
+			e.OpenFile(e.InputFile)
+			e.FilterPattern = []rune{}
+			e.IsFilesSearch = false
+			return true
+		}
+	}
+	return false
+}
+
 
 //func (e *Editor) addTab() {
 //	if e.filesInfo == nil || len(e.filesInfo) == 0 {
@@ -1292,7 +1309,9 @@ func (e *Editor) UpdateColorsAtLine(at int) {
 	if line == "" { e.Colors[at] = []int{}; return }
 	linecolors := HighlighterGlobal.Colorize(line, e.Filename)
 	e.Colors[at] = linecolors[0]
+
 }
+
 
 // todo, get rid of this function, cause UpdateColors is slow for big files
 func (e *Editor) UpdateNeeded() {
@@ -1300,4 +1319,74 @@ func (e *Editor) UpdateNeeded() {
 	e.IsContentChanged = true
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 	e.UpdateColors()
+}
+
+func (e *Editor) OnProcessRun() {
+	if e.langConf.Cmd == "" { return }
+
+	if e.ProcessPanelHeight == 0 {
+		e.ProcessPanelHeight = 10
+		e.COLUMNS, e.ROWS = e.Screen.Size()
+		e.ROWS -= e.ProcessPanelHeight
+	}
+
+
+	var args []string
+	if e.langConf.CmdArgs == "" {
+		args = append(args, e.AbsoluteFilePath)
+	} else {
+		args = append(strings.Split(e.langConf.CmdArgs, " "), e.AbsoluteFilePath)
+	}
+
+
+	var process = NewProcess(e.langConf.Cmd, args...)
+	process.Cmd.Env = append(os.Environ())
+
+	if e.Lang == "python" {
+		// printing immediately
+		process.Cmd.Env = append(process.Cmd.Env, "PYTHONUNBUFFERED=1")
+	}
+
+	e.ProcessOutLines = [][]rune{}
+	e.ProcessPanelScroll = 0
+	e.ProcessPanelSpacing = 2
+
+	process.Start()
+	e.Process = process
+
+	go func() {
+		for line := range process.Out {
+
+			e.ProcessOutLines = append(e.ProcessOutLines, []rune(line))
+
+			if len(e.ProcessOutLines) > e.ProcessPanelHeight {
+				if e.ProcessPanelScroll >= len(e.ProcessOutLines) - e.ProcessPanelHeight - 1  {
+					e.ProcessPanelScroll = len(e.ProcessOutLines) - e.ProcessPanelHeight + 1 // focusing
+					e.ProcessPanelScroll = Max(0, e.ProcessPanelScroll)
+				}
+			}
+
+			e.DrawProcessPanel()
+			e.Screen.Show()
+
+			if process.Stopped {
+				if len(e.ProcessOutLines) > e.ProcessPanelHeight { // focusing
+					e.ProcessPanelScroll = len(e.ProcessOutLines) - e.ProcessPanelHeight + 1
+				}
+				e.DrawProcessPanel()
+				e.Screen.Show()
+				break
+			}
+		}
+	}()
+
+}
+
+func (e *Editor) OnProcessStop() {
+	e.Process.Stop()
+
+	if len(e.ProcessOutLines) > e.ProcessPanelHeight { // focusing
+		e.ProcessPanelScroll = len(e.ProcessOutLines) - e.ProcessPanelHeight + 2
+	}
+
 }
