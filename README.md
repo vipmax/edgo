@@ -5,7 +5,7 @@ Yet another console text editor, but with lsp support
 
 ### Key bindings and features:
 - `Control + s` - save file
-- `Esc / Control + q` - quit
+- `Control + q` - quit
 - `Control + d` - duplicate line
 - `Control + x` - cut 
 - `Control + c` - copy 
