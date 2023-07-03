@@ -3,7 +3,7 @@ Yet another console text editor, but with lsp support
 ![editor](assets/screen1.png)
 ![editor](assets/screen2.png)
 
-Key bindings and features:
+### Key bindings and features:
 - `Control + s` - save file
 - `Esc / Control + q` - quit
 - `Control + d` - duplicate line
@@ -35,11 +35,13 @@ Key bindings and features:
 - `Control + g / Control + mouse click` - lsp definition
 - `Control + r / Option + mouse click` - lsp references
 - `Control + e` - lsp diagnostic (errors)
+- `Shift + F6` - lsp rename 
+- `Control + w` - method extraction
 
 
 ### Installation:
 
-Install Go for mac os:
+Install Go for MacOS:
 ```
 brew install go 
 echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.zshrc
@@ -47,14 +49,16 @@ echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.zshrc
 Clone:   
 ```shell
 git clone https://github.com/vipmax/edgo && cd edgo
-go build 
-go install .
+make 
 ```
 
 ### Usage:
 ```
 edgo [filename]
 edgo ~/.zshrc 
+
+# with no args it will open current directory
+edgo 
 ```
 
 ### Support
@@ -64,6 +68,24 @@ If you like the project, please support it.
 `USDT` : `0x801b8ecabdd0cf4f6efc3f2624748f9a647987fe`  
 
 
+### Configuration
+
+`edgo` uses yaml file for configuration.  
+Set `EDGO_CONF` env var to conf file path 
+```shell
+export EDGO_CONF="/Users/max/apps/go/edgo/config.yaml"
+```
+
+### Themes
+`edgo` supports themes, set it in config file.  
+- edgo
+- edgo-light
+- dracula
+- darcula
+- idea-light
+- nord
+- monokai
+
 ### Lsp
 
 Following lsp features are supported:
@@ -71,6 +93,10 @@ Following lsp features are supported:
 - hover
 - signature help
 - definition
+- references
+- rename
+- method extraction
+- diagnostic
 
 
 
@@ -139,21 +165,29 @@ ghcup install hls
 
 `zig`
 ```shell  
+npm i -g bash-language-server
+```
+
+`d`
+```shell  
+dub fetch serve-d
+```
+
+`ocaml`
+```shell  
+opam install ocaml-lsp-server
+```
+
+`bash`
+```shell  
 # https://haskell-language-server.readthedocs.io/en/latest/installation.html
 brew install zls
 ```
 
 
 ### Notes:  
-Map `Caps lock` to `Control` button, everything will be easier.
-
-Add alias to  shell environment `nano ~/.zshrc` - `alias edgo="./$pwd./edgo"`
-
-If you are using `tmux` I recommend to add `set-option -g default-terminal "xterm-256color" ` to `~/.tmux.conf`  for shift and option keys. Do not forget apply it as `tmux source-file ~/.tmux.conf`  
-
-If you are using `iterm2` I recommend to use `Natural text editing` preset in `Profiles > Keys > Key Mappings > Presets > Natural text editing > Reset ` 
-
-To get file selection I provided `fzf-edgo.sh` script, add it to your shell  
-``` shell
-echo 'alias e="sh ~/apps/go/edgo/fzf-edgo.sh"' >> ~/.zshrc
-```
+- Map `Caps lock` to `Control` button, everything will be easier.  
+- Use `Alacritty` as default terminal, cause it is fast end easy to config.  
+- Use `edgo ` as `e`, add alias to shell environment - `alias e="edgo"`
+- Use `tmux`. Checkout my `.tmux.conf`(shift and option keys works)
+- For `iterm2` use `Natural text editing` preset at `Profiles > Keys > Key Mappings > Presets > Natural text editing > Reset ` 
