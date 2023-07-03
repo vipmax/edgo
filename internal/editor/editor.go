@@ -565,6 +565,8 @@ func (e *Editor) DrawEverything() {
 		}
 	}
 
+	if e.Row - e.Y >= e.ROWS { e.Screen.HideCursor() }
+
 	e.DrawProcessPanel()
 }
 func (e *Editor) DrawProcessPanel() {
@@ -1081,7 +1083,7 @@ func (e *Editor) OnFilesTree() {
 			buttons := ev.Buttons()
 			//modifiers := ev.Modifiers()
 
-			if mx > e.FilesPanelWidth + 1 { end = true; continue }
+			if mx > e.FilesPanelWidth - 3  { end = true; continue }
 
 			if buttons & WheelDown != 0 && treeSize > screenRows {
 				if e.FileScrollingOffset < treeSize - screenRows {
@@ -1170,13 +1172,13 @@ func (e *Editor) DrawTree(fileInfo FileInfo, level int, fileindex *int, aty *int
 		}
 
 		for i := 0; i <= level; i++ {
-			if i+1 > e.FilesPanelWidth-2 { break }
+			if i+1 >= e.FilesPanelWidth-2 { break }
 			e.Screen.SetContent(i + 1, *aty, ' ', nil, StyleDefault)
 		}
 
 		label := []rune(fileInfo.Name)
 		for i := 0; i < len(label); i++ {
-			if i+1 > e.FilesPanelWidth-4 { break }
+			if i+1 + level >= e.FilesPanelWidth-2 { break }
 			e.Screen.SetContent(i + 1 + level, *aty, label[i], nil, style)
 		}
 		//e.Screen.Show()
