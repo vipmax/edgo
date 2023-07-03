@@ -6,17 +6,17 @@ import (
 )
 
 type Lang struct {
-	Name     string `yaml:"name"`
-	Lsp      string `yaml:"lsp"`
-	Comment  string `yaml:"comment"`
-	TabWidth int    `yaml:"tabwidth"`
-	Cmd      string `yaml:"cmd"`
-	CmdArgs  string `yaml:"cmdargs"`
+	Name     string `yaml:"name,omitempty"`
+	Lsp      string `yaml:"lsp,omitempty"`
+	Comment  string `yaml:"comment,omitempty"`
+	TabWidth int    `yaml:"tabwidth,omitempty"`
+	Cmd      string `yaml:"cmd,omitempty"`
+	CmdArgs  string `yaml:"cmdargs,omitempty"`
 }
 
 
 type Config struct {
-	Langs map[string]Lang `yaml:"lang"`
+	Langs map[string]Lang `yaml:"langs"`
 	Theme string          `yaml:"theme"`
 }
 
@@ -28,14 +28,19 @@ var DefaultConfig = Config { Langs:
 		"javascript": { Lsp: "typescript-language-server --stdio", Cmd: "ts-node" },
 		"html":       { Lsp: "vscode-html-language-server --stdio" },
 		"vue":        { Lsp: "vscode-html-language-server --stdio" },
-		"rust":       { Lsp: "rust-analyzer", TabWidth: 4 },
+		"rust":       { Lsp: "rust-analyzer", TabWidth: 4},
 		"c":          { Lsp: "clangd" },
-		"c++":        { Lsp: "clangd" },
-		"java":       { Lsp: "jdtls", TabWidth: 4 },
-		"swift":      { Lsp: "xcrun sourcekit-lsp" },
+		"c++":        { Lsp: "clangd", Comment: "//"},
+		"d":          { Lsp: "serve-d", Cmd: "dmd", CmdArgs: "-run"},
+		"java":       { Lsp: "jdtls", TabWidth: 4, Cmd: "java" },
+		"swift":      { Lsp: "xcrun sourcekit-lsp", Cmd: "swift" },
 		"haskell":    { Lsp: "haskell-language-server-wrapper --lsp", Comment: "--" },
-		"zig":        { Lsp: "zls", TabWidth: 4 },
+		"zig":        { Lsp: "zls", TabWidth: 4, Cmd: "zig", CmdArgs: "run" },
+		"lua":        { Lsp: "lua-language-server", Cmd: "lua" },
 		"yaml":       { Comment: "#", TabWidth: 4 },
+		"ocaml":      { Lsp: "ocamllsp", },
+		"nim":        { Lsp: "nimlangserver", },
+		"bash":       { Lsp: "bash-language-server start", Cmd: "bash", Comment: "#", TabWidth: 2 },
 	},
 }
 
@@ -53,7 +58,7 @@ func GetConfig() Config {
 
 	DefaultConfig.Theme = "edgo"
 
-	conffilename, exists := os.LookupEnv("EDGO_CONFIG")
+	conffilename, exists := os.LookupEnv("EDGO_CONF")
 	if !exists { conffilename = "config.yaml" }
 
 	data, err := os.ReadFile(conffilename)

@@ -400,7 +400,7 @@ func (e *Editor) Cut(isCopySelected bool) {
 
 		e.Content = Remove(e.Content, e.Row)
 		if e.IsColorize && e.Lang != "" {
-			e.Colors = Remove(e.Colors, e.Row)
+			if e.Row < len(e.Colors) { e.Colors = Remove(e.Colors, e.Row) }
 			e.UpdateColorsAtLine(e.Row)
 		}
 		if e.Row > 0 { e.Row-- }

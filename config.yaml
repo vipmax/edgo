@@ -1,4 +1,9 @@
-theme: "edgo"
+theme: "edgo-light"
 langs:
-  go: { lsp: "gopls", tabwidth: 4, comment: "//" }
-#  python: { lsp: "pyright-langserver --stdio", tabwidth: 4, comment: "#" }
+  c#:
+    name: C#
+    lsp: "dotnet /Users/max/Downloads/omnisharp-osx-arm64-net6.0/OmniSharp.dll --languageserver"
+    comment: "//"
+    tabwidth: 4
+    cmd: "dotnet"
+    cmdargs: "run"

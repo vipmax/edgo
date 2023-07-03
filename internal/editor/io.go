@@ -149,7 +149,7 @@ func (e *Editor) ReadFilesUpdate() {
 			e.Files = make([]FileInfo, len(filesTree))
 			for i, f := range filesTree {
 				abs, _ := filepath.Abs(f)
-				e.Files[i] = FileInfo{f, abs, 0, false, false, nil }
+				e.Files[i] = FileInfo{f, abs, 0, false, false, nil, 0 }
 			}
 		} else {
 			originalFiles := make([]string, len(e.Files))
@@ -159,7 +159,7 @@ func (e *Editor) ReadFilesUpdate() {
 			newFiles, deletedFiles := FindNewAndDeletedFiles(originalFiles, filesTree)
 			for _, f := range newFiles {
 				abs, _ := filepath.Abs(f)
-				e.Files = append(e.Files, FileInfo{f, abs, 0, false, false, nil})
+				e.Files = append(e.Files, FileInfo{f, abs, 0, false, false, nil, 0})
 			}
 
 			// Remove deleted files from originalFiles
@@ -225,12 +225,13 @@ func FindNewAndDeletedFiles(originalFiles []string, newFiles []string) ([]string
 
 
 type FileInfo struct {
-	Name         string
-	FullName     string
-	OpenCount    int
-	IsDir        bool
-	IsDirOpen    bool
-	Childs       []FileInfo
+	Name      string
+	FullName  string
+	OpenCount int
+	IsDir     bool
+	IsDirOpen bool
+	Childs    []FileInfo
+	Level     int
 }
 
 func findMaxByFilenameLength(files []FileInfo) int {
@@ -256,12 +257,13 @@ func IsFileExists(filename string) bool {
 }
 
 
-func ReadDirTree(dirPath string, filter string, isOpen bool) (FileInfo, error) {
+func ReadDirTree(dirPath string, filter string, isOpen bool, level int) (FileInfo, error) {
 	fileInfo := FileInfo{
 		Name:      filepath.Base(dirPath),
 		FullName:  dirPath,
 		IsDir:     true,
 		IsDirOpen: isOpen,
+		Level: level,
 	}
 
 	// Read directory contents
@@ -272,7 +274,7 @@ func ReadDirTree(dirPath string, filter string, isOpen bool) (FileInfo, error) {
 		childPath := filepath.Join(dirPath, file.Name())
 
 		if file.IsDir() && ! IsIgnored(file.Name(), ignoreDirs) {
-			childInfo, err2 := ReadDirTree(childPath, filter, isOpen)
+			childInfo, err2 := ReadDirTree(childPath, filter, isOpen, level + 1)
 			if err2 != nil {
 				Log.Info("Failed to process directory:", err2.Error())
 				continue
@@ -287,6 +289,7 @@ func ReadDirTree(dirPath string, filter string, isOpen bool) (FileInfo, error) {
 					OpenCount: 0,
 					IsDir:     false,
 					IsDirOpen: false,
+					Level:     level+1,
 				}
 				fileInfo.Childs = append(fileInfo.Childs, childInfo)
 			}

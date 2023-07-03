@@ -17,7 +17,7 @@ type Logger struct {
 }
 
 func (this *Logger) Start() {
-	logfilename, exists := os.LookupEnv("EDGO_LOGFILE")
+	logfilename, exists := os.LookupEnv("EDGO_LOG")
 	if !exists { this.isEnabled = false; return }
 
 	this.isEnabled = true

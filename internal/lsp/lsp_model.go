@@ -1,5 +1,9 @@
 package lsp
 
+import (
+	"github.com/goccy/go-json"
+)
+
 type ClientInfo struct {
 	Name    string `json:"name,omitempty"`
 	Version string `json:"version,omitempty"`
@@ -105,6 +109,45 @@ type CompletionResponse struct {
 	JSONRPC string            `json:"jsonrpc"`
 	Result  CompletionResult  `json:"result"`
 	ID      float64           `json:"id"`
+}
+
+type CompletionResponse2 struct {
+	JSONRPC string            `json:"jsonrpc"`
+	Items   []CompletionItem  `json:"result"`
+	ID      float64           `json:"id"`
+}
+
+func unmarshal[T any](source []byte) (T, error) {
+	var target T
+
+	if err := json.Unmarshal(source, &target); err != nil {
+		return target, err
+	}
+
+	return target,  nil
+}
+
+func (m *CompletionResponse) UnmarshalJSON(b []byte) error {
+
+	type TempCompletionResponse CompletionResponse
+	temp := &TempCompletionResponse{}
+
+	// Try to unmarshal into CompletionResponse
+	err := json.Unmarshal(b, temp)
+	if err != nil {
+		// If error, try to unmarshal into CompletionResponse2
+		temp2 := &CompletionResponse2{}
+		err2 := json.Unmarshal(b, temp2)
+		if err2 != nil { return err }
+
+		m.ID = temp2.ID
+		m.JSONRPC = temp2.JSONRPC
+		m.Result = CompletionResult{ false, temp2.Items}
+	} else {
+		*m = CompletionResponse(*temp)
+	}
+
+	return nil
 }
 
 type CompletionResult struct {
@@ -310,7 +353,35 @@ type DefinitionResponse struct {
 	Result  []DefinitionResult `json:"result"`
 	ID      int      `json:"id"`
 }
+type DefinitionResponse2 struct {
+	JSONRPC string           `json:"jsonrpc"`
+	Result  DefinitionResult `json:"result"`
+	ID      int              `json:"id"`
+}
 
+func (m *DefinitionResponse) UnmarshalJSON(b []byte) error {
+	type TempDefinitionResponse DefinitionResponse
+	temp := &TempDefinitionResponse{}
+
+	// Try to unmarshal into DefinitionResponse
+	err := json.Unmarshal(b, temp)
+	if err != nil {
+		// If error, try to unmarshal into DefinitionResponse2
+		temp2 := &DefinitionResponse2{}
+		err2 := json.Unmarshal(b, temp2)
+		if err2 != nil {
+			return err
+		}
+		// If unmarshal into DefinitionResponse2 is successful, map fields to DefinitionResponse
+		m.ID = temp2.ID
+		m.JSONRPC = temp2.JSONRPC
+		m.Result = []DefinitionResult{temp2.Result}
+	} else {
+		*m = DefinitionResponse(*temp)
+	}
+
+	return nil
+}
 
 
 type Character struct {

@@ -39,6 +39,8 @@ var OverlayColor = -1    // transparent
 var AccentColor = 303    // pink
 var AccentColor2 = 30    // aqua
 
+var SeparatorStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
+
 func DetectLang(filename string) string {
 	lexer := lexers.Match(filename)
 	if lexer == nil {

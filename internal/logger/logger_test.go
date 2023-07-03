@@ -7,7 +7,7 @@ import (
 )
 
 func TestLoggerInfo(t *testing.T) {
-	err := os.Setenv("EDGO_LOGFILE", "edgo.log")
+	err := os.Setenv("EDGO_LOG", "edgo.log")
 	if err != nil { fmt.Printf("Failed to set variable: %v", err); return }
 
 	var logger = Logger{ }
