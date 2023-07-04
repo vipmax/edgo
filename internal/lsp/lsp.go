@@ -29,6 +29,14 @@ type LspClient struct {
 	//stdout         io.ReadCloser
 	responsesMap   map[int]string
 	someMapMutex   sync.RWMutex
+
+	message2chan          map[int] chan string
+	completionMessages    chan string
+	definitionMessages    chan string
+	referencesMessages    chan string
+	signatureHelpMessages chan string
+	hoverMessages         chan string
+
 	//isReady   	   bool
 	id        	   int
 	file2diagnostic map[string]DiagnosticParams
@@ -44,6 +52,13 @@ func (this *LspClient) Start(language string, lspCmd []string) bool {
 	if this.lang2stdin == nil { this.lang2stdin = make(map[string]io.WriteCloser) }
 	if this.lang2stdout == nil { this.lang2stdout = make(map[string]io.ReadCloser) }
 	if this.lang2isReady == nil { this.lang2isReady = make(map[string]bool) }
+
+	if this.completionMessages == nil { this.completionMessages = make(chan string) }
+	if this.referencesMessages == nil { this.referencesMessages = make(chan string) }
+	if this.definitionMessages == nil { this.definitionMessages = make(chan string) }
+	if this.signatureHelpMessages == nil { this.signatureHelpMessages = make(chan string) }
+	if this.hoverMessages == nil { this.hoverMessages = make(chan string) }
+	if this.message2chan == nil { this.message2chan = make(map[int]chan string) }
 
 	this.lang2isReady[language] = false
 
@@ -104,9 +119,7 @@ func (this *LspClient) ReceiveLoop(diagnosticUpdateChannel chan string, language
 		if strings.Contains(message,"publishDiagnostics") {
 			var dr DiagnosticResponse
 			errp := json.Unmarshal([]byte(message), &dr)
-			if errp != nil {
-				Log.Error(errp.Error()); continue
-			}
+			if errp != nil { Log.Error(errp.Error()); continue }
 			this.file2diagnostic[dr.Params.Uri] = dr.Params
 			diagnosticUpdateChannel <- "update"
 			continue
@@ -114,17 +127,24 @@ func (this *LspClient) ReceiveLoop(diagnosticUpdateChannel chan string, language
 
 		responseJSON := make(map[string]interface{})
 		err := json.Unmarshal([]byte(message), &responseJSON)
-		if err != nil {
-			Log.Error(err.Error()); continue
-		}
+		if err != nil { Log.Error(err.Error()); continue }
 
-		if value, found := responseJSON["id"]; found {
+		if value, found := responseJSON["id"]; found { // json has id
 			if id, ok := value.(float64); ok {
-				this.someMapMutex.Lock()
-				this.responsesMap[int(id)] = message
-				this.someMapMutex.Unlock()
+
+				channel, foundRequest := this.message2chan[int(id)]
+
+				if foundRequest {
+					channel <- message
+				} else  {
+					this.someMapMutex.Lock()
+					this.responsesMap[int(id)] = message
+					this.someMapMutex.Unlock()
+				}
 			}
 		}
+
+
 	}
 }
 
@@ -203,8 +223,7 @@ func (this *LspClient) DidOpen(file string, lang string) {
 
 
 	didOpenRequest := DidOpenRequest{
-		JSONRPC: "2.0",
-		Method:  "textDocument/didOpen",
+		JSONRPC: "2.0",  Method:  "textDocument/didOpen",
 		Params: DidOpenParams{
 			TextDocument: TextDocument{
 				LanguageID: lang,
@@ -263,32 +282,22 @@ func (this *LspClient) References(file string, line int, character int) (Referen
 	this.id++
 	id := this.id
 
-	referencesRequest := BaseRequest{
-		ID:      id,
-		JSONRPC: "2.0",
-		Method:  "textDocument/references",
+	request := BaseRequest{
+		ID: id, JSONRPC: "2.0", Method:  "textDocument/references",
 		Params: Params{
-			TextDocument: TextDocument{
-				URI: "file://" + file,
-			},
-			Position: Position{
-				Line:      line,
-				Character: character,
-			},
+			TextDocument: TextDocument{ URI: "file://" + file },
+			Position: Position{ Line: line, Character: character },
 			Context: Context{ IncludeDeclaration: true },
 		},
 	}
 
-	this.send(referencesRequest)
+	this.message2chan[id] = this.referencesMessages
+	this.send(request)
 
-	jsonData := this.waitForResponse(id,10000)
-	if jsonData == "" { Log.Error("cant get hover response from lsp server") }
+	response, err := WaitForRequest[ReferencesResponse](this.referencesMessages, 1000)
 
-	var response ReferencesResponse
-	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
+	delete(this.message2chan, id)
 	return response, err
-
 }
 
 func (this *LspClient) Hover(file string, line int, character int) (HoverResponse, error) {
@@ -303,14 +312,12 @@ func (this *LspClient) Hover(file string, line int, character int) (HoverRespons
 		},
 	}
 
+	this.message2chan[id] = this.hoverMessages
 	this.send(request)
 
-	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { Log.Error("cant get hover response from lsp server") }
+	response, err := WaitForRequest[HoverResponse](this.hoverMessages, 1000)
 
-	var response HoverResponse
-	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
+	delete(this.message2chan, id)
 	return response, err
 }
 func (this *LspClient) SignatureHelp(file string, line int, character int) (SignatureHelpResponse, error) {
@@ -325,14 +332,12 @@ func (this *LspClient) SignatureHelp(file string, line int, character int) (Sign
 		},
 	}
 
+	this.message2chan[id] = this.signatureHelpMessages
 	this.send(request)
 
-	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { Log.Error("cant get signature help response from lsp server") }
+	response, err := WaitForRequest[SignatureHelpResponse](this.signatureHelpMessages, 1000)
 
-	var response SignatureHelpResponse
-	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
+	delete(this.message2chan, id)
 	return response, err
 }
 
@@ -348,16 +353,14 @@ func (this *LspClient) Definition(file string, line int, character int) (Definit
 		},
 	}
 
+	this.message2chan[id] = this.definitionMessages
 	this.send(request)
 
-	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { Log.Error("cant get definition response from lsp server") }
-
-	var response DefinitionResponse
-	err := json.Unmarshal([]byte(jsonData), &response)
-	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
+	response, err := WaitForRequest[DefinitionResponse](this.definitionMessages, 1000)
+	delete(this.message2chan, id)
 	return response, err
 }
+
 
 func (this *LspClient) Completion(file string, line int, character int) (CompletionResponse, error) {
 	this.id++
@@ -372,17 +375,15 @@ func (this *LspClient) Completion(file string, line int, character int) (Complet
 		},
 	}
 
+	this.message2chan[id] = this.completionMessages
+
 	this.send(request)
 
+	response, err := WaitForRequest[CompletionResponse](this.completionMessages, 1000)
 
-	jsonData := this.waitForResponse(id,1000)
-	if jsonData == "" { Log.Error("cant get completion response from lsp server") }
+	delete(this.message2chan, id)
+	return response, err
 
-
-	var completionResponse CompletionResponse
-	err := json.Unmarshal([]byte(jsonData), &completionResponse)
-	if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
-	return completionResponse, err
 }
 
 func (this *LspClient) PrepareRename(file string, line int, character int) (PrepareRenameResponse, error) {
@@ -601,4 +602,20 @@ func (this *LspClient) IsLangReady(language string) bool {
 func (this *LspClient) GetDiagnostic(filename string) (DiagnosticParams, bool) {
 	d, found := this.file2diagnostic[filename]
 	return  d, found
+}
+
+func WaitForRequest[T any](channel chan string, timeout int) (T, error) {
+	var response T
+	var err error
+
+	select {
+	case jsonData := <- channel:
+		err = json.Unmarshal([]byte(jsonData), &response)
+		if err != nil { Log.Error("Error parsing JSON:" + err.Error()) }
+
+	case <-time.After(time.Duration(timeout) * time.Millisecond):
+		err = fmt.Errorf("Timeout")
+	}
+
+	return response, err
 }

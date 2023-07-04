@@ -128,3 +128,26 @@ func receive(reader *textproto.Reader) string {
 
 	return string(body)
 }
+
+func TestSelect(t *testing.T) {
+	ch := make(chan int)
+
+	go func() {
+		time.Sleep(10 * time.Second)
+		ch <- 42
+	}()
+
+	select {
+	case i := <-ch:
+		// You can add your if condition here.
+		if i > 40 {
+			fmt.Println("Received:", i, "which is greater than 40.")
+		} else {
+			fmt.Println("Received:", i, "which is not greater than 40.")
+		}
+	case <-time.After(1 * time.Second):
+		fmt.Println("Timeout.")
+	}
+
+	fmt.Println("Done")
+}
