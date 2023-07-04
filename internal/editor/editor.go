@@ -14,6 +14,7 @@ import (
 	"github.com/atotto/clipboard"
 	. "github.com/gdamore/tcell"
 	"github.com/gdamore/tcell/encoding"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -90,7 +91,6 @@ type Editor struct {
 }
 
 
-
 func (e *Editor) Start() {
 	Log.Info("starting edgo")
 
@@ -98,15 +98,24 @@ func (e *Editor) Start() {
 
 	// reading file from cmd args
 	if len(os.Args) == 1 {
-		//e.OnFiles()
+		// if no args, open current dir
 		e.OnFilesTree()
 	} else {
 		e.Filename = os.Args[1]
 		e.InputFile = e.Filename
-		err := e.OpenFile(e.Filename)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(130)
+
+		info, err := os.Stat(e.InputFile)
+		if err != nil { log.Fatal(err) }
+
+		if info.IsDir() {
+			// if arg is dir, go to dir and open
+			err = os.Chdir(e.InputFile)
+			if err != nil { log.Fatal(err) }
+			e.OnFilesTree()
+		} else {
+			// if arg is file, open file
+			err := e.OpenFile(e.InputFile)
+			if err != nil { log.Fatal(err) }
 		}
 	}
 
@@ -241,8 +250,8 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 
 	if !e.IsFilesPanelMoving && buttons & Button1 == 1 &&
-		mx ==  e.FilesPanelWidth-2 && my < e.ROWS &&
-		len(e.Selection.GetSelectedLines(e.Content)) == 0 {
+		(mx == e.FilesPanelWidth-2 || mx == e.FilesPanelWidth-1) &&
+			my < e.ROWS && len(e.Selection.GetSelectedLines(e.Content)) == 0 {
 			e.IsFilesPanelMoving = true
 			return
 	}
@@ -257,6 +266,8 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 	if mx < 0 { return }
 	if my > e.ROWS { return }
+
+	if e.Content == nil { return }
 
 	// if click with control or option, lookup for definition or references
 	if buttons & Button1 == 1 && (modifiers & ModAlt != 0 || modifiers & ModCtrl != 0) {
