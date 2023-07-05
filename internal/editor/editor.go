@@ -939,8 +939,9 @@ func (e *Editor) DrawErrors(atx int, width int, aty int, height int, options []s
 func (e *Editor) OnSearch() {
 	var end = false
 	if e.SearchPattern == nil { e.SearchPattern = []rune{} }
-	selectionString := e.Selection.GetSelectionString(e.Content)
-	if selectionString != "" { e.SearchPattern = []rune(selectionString) }
+	if e.Selection.IsSelectionNonEmpty() {
+		e.SearchPattern = []rune(e.Selection.GetSelectionString(e.Content))
+	}
 
 	var patternx = len(e.SearchPattern)
 	var startline = e.Y
@@ -1002,6 +1003,7 @@ func (e *Editor) OnSearch() {
 			}
 			if key == KeyLeft && patternx > 0 { patternx-- }
 			if key == KeyRight && patternx < len(e.SearchPattern) { patternx++ }
+			if key == KeyRight && patternx < len(e.SearchPattern) { patternx++ }
 			if key == KeyDown  {
 				isDownSearch = true
 				if startline < len(e.Content) {
@@ -1017,14 +1019,17 @@ func (e *Editor) OnSearch() {
 				isChanged = true
 				if startline == 0 { startline = len(e.Content) } else { startline-- }
 			}
+			if key == KeyCtrlX {
+				e.SearchPattern = []rune{}
+				patternx = 0
+			}
 			if key == KeyCtrlG {
 				// global search
-				e.OnGlobalSearch()
+				end = e.OnGlobalSearch()
 
 				e.DrawEverything()
 				e.DrawSearch(prefix, e.SearchPattern, patternx)
 				e.Screen.Show()
-				end = true
 			}
 			if key == KeyESC || key == KeyEnter || key == KeyCtrlF { end = true }
 		}
@@ -1055,7 +1060,7 @@ func (e *Editor) DrawSearch(prefix []rune, pattern []rune, patternx int) {
 }
 
 
-func (e *Editor) OnGlobalSearch()() {
+func (e *Editor) OnGlobalSearch() bool {
 	dir, _ := os.Getwd()
 	searchResults := SearchOnDirParallel(dir, string(e.SearchPattern))
 
@@ -1063,6 +1068,7 @@ func (e *Editor) OnGlobalSearch()() {
 	defer e.OverlayFalse()
 
 	var end = false
+	var isChanged = true
 
 	// loop until escape or enter pressed
 	cwd, _ := os.Getwd()
@@ -1076,13 +1082,13 @@ func (e *Editor) OnGlobalSearch()() {
 			for _, result := range searchResult.Results {
 				relativePath, _ := filepath.Rel(cwd, searchResult.File)
 
-				text := fmt.Sprintf("%d/%d [%d:%d] %s ", len(options), count, result.Line, result.Position, relativePath)
+				text := fmt.Sprintf("%d/%d [%d:%d] %s ", len(options)+1, count, result.Line, result.Position, relativePath)
 				options = append(options, text)
 			}
 
 		}
 
-		height := MinMany(10, len(options) + 1)                // depends on min option len or 5 at min or how many rows to the end of e.Screen
+		height := MinMany(5, len(options) + 1)                // depends on min option len or 5 at min or how many rows to the end of e.Screen
 		atx := 0 + e.FilesPanelWidth; aty := 0 // Define the window  position and dimensions
 		style := StyleDefault
 
@@ -1092,73 +1098,139 @@ func (e *Editor) OnGlobalSearch()() {
 			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
-			//e.DrawErrors(atx,width,aty,height,options,selectedOffset,selected, style)
+			if isChanged {
+				isChanged = false
+				e.DrawGlobalSearch(aty, height, options, selectedOffset, selected, style, atx, searchResults)
 
-			for row := aty; row < aty+height; row++ {
-				if row >= len(options) || row >= height {
-					break
-				}
-
-				var option = options[row+selectedOffset]
-
-				isRowSelected := selected == row+selectedOffset
-				if isRowSelected { style = style.Background(Color(AccentColor)) } else {
-					style = StyleDefault.Background(Color(OverlayColor))
-				}
-
-				for i, ch := range option {
-					e.Screen.SetContent(atx + i , row, ch, nil, style)
-				}
-
-				for i := atx + len(option); i < e.COLUMNS; i++ {
-					e.Screen.SetContent(i , row, ' ', nil, style)
-				}
+				e.Screen.HideCursor()
+				e.Screen.Show()
 			}
-
-			e.Screen.Show()
 
 			switch ev := e.Screen.PollEvent().(type) { // poll and handle event
 			case *EventResize:
 				e.COLUMNS, e.ROWS = e.Screen.Size()
 				e.Screen.Sync()
-				e.Screen.Clear(); e.DrawEverything(); e.Screen.Show()
+				e.Screen.Clear()
+				e.DrawEverything()
+				e.Screen.Show()
+				isChanged = true
 
 			case *EventKey:
 				key := ev.Key()
-				if key == KeyEscape || key == KeyEnter ||
-					key == KeyBackspace || key == KeyBackspace2 ||
-					key == KeyCtrlE { e.Screen.Clear(); selectionEnd = true; end = true }
-
-				if key == KeyDown && selected < len(options)-1 { selected++ }
-				if key == KeyUp && selected > 0 { selected-- }
-				if key == KeyCtrlC {
-
+				if key == KeyEscape || key == KeyBackspace || key == KeyBackspace2 {
+					e.Screen.Clear()
+					selectionEnd = true
+					end = true
 				}
-				//if key == tcell.KeyRight { e.OnRight(); e.Screen.Clear(); e.DrawEverything(); selectionEnd = true }
-				if key == KeyRight {
 
-				}
+				if key == KeyDown && selected < len(options)-1 { selected++; isChanged = true }
+				if key == KeyUp && selected > 0 { selected--; isChanged = true }
+
 				if key == KeyEnter {
 					end = true
 					file, searchResult, found := e.findSearchGlobalOption(searchResults, selected)
 					if found && e.AbsoluteFilePath != file {
 						e.OpenFile(file)
-						e.Row = searchResult.Line-1
+						e.Row = searchResult.Line - 1
 						e.Col = searchResult.Position + len(e.SearchPattern)
-						e.Selection.Ssy = e.Row; e.Selection.Sey = e.Row
-						e.Selection.Ssx = searchResult.Position; e.Selection.Sey = searchResult.Position + len(e.SearchPattern)
+						e.Selection.Ssy = e.Row
+						e.Selection.Sey = e.Row
+						e.Selection.Ssx = searchResult.Position
+						e.Selection.Sey = searchResult.Position + len(e.SearchPattern)
 						e.Selection.IsSelected = true
 						e.Focus()
+
+						return true
 					}
 
 				}
 			}
 		}
 	}
+
+	return false
+}
+
+func (e *Editor) DrawGlobalSearch(aty int, height int, options []string, selectedOffset int, selected int,
+	style Style, atx int, searchResults []FileSearchResult)  {
+
+	// draw options
+	for row := aty; row < aty+height; row++ {
+		if row >= len(options) || row >= height { break }
+
+		var option = options[row+selectedOffset]
+
+		isRowSelected := selected == row + selectedOffset
+		if isRowSelected { style = style.Background(Color(AccentColor)) } else {
+			style = StyleDefault.Background(Color(OverlayColor))
+		}
+
+		for i, ch := range option { e.Screen.SetContent(atx+i, row, ch, nil, style) }
+
+		for i := atx + len(option); i < e.COLUMNS; i++ { e.Screen.SetContent(i, row, ' ', nil, style) }
+	}
+
+	for i := atx; i < e.COLUMNS; i++ {
+		e.Screen.SetContent(i, height, ' ', nil, StyleDefault)
+	}
+
+	file, searchResult, found := e.findSearchGlobalOption(searchResults, selected)
+	if found {
+		rowsToShow := e.ROWS - height
+		previewContent := e.ReadContent(file, searchResult.Line-rowsToShow/2, searchResult.Line+rowsToShow/2)
+		text := ConvertContentToString(previewContent)
+		previewContentColors := HighlighterGlobal.Colorize(text, file)
+
+		// clear
+		for j := height + 2; j < e.ROWS; j++ {
+			for i := atx; i < e.COLUMNS; i++ {
+				e.Screen.SetContent(i, j, ' ', nil, StyleDefault)
+			}
+		}
+
+		linenumber := searchResult.Line - rowsToShow/2
+		// draw preview
+		for row := 0; row < len(previewContent); row++ {
+			var shiftTabs = 0
+
+			for col := 0; col < len(previewContent[row]); col++ {
+
+				chstyle := StyleDefault
+				if row < len(previewContentColors) && col < len(previewContentColors[row]) {
+					color := previewContentColors[row][col]
+					if color > 0 {
+						chstyle = StyleDefault.Foreground(Color(color))
+					}
+				}
+
+				if linenumber == searchResult.Line-1 &&  // color match
+					col >= searchResult.Position && col < searchResult.Position+len(e.SearchPattern) {
+					chstyle = chstyle.Background(Color(SelectionColor))
+				}
+
+				if previewContent[row][col] == '\t' {
+					for i := 0; i < e.langTabWidth; i++ {
+						e.Screen.SetContent(atx+col+shiftTabs, row, ' ', nil, chstyle)
+						if i != e.langTabWidth-1 { shiftTabs++ }
+					}
+				} else {
+					e.Screen.SetContent(atx+col+shiftTabs, row+height+1, previewContent[row][col], nil, chstyle)
+				}
+
+
+			}
+
+			for i := atx + len(previewContent[row]); i < e.COLUMNS; i++ {
+				e.Screen.SetContent(i, row+height+1, ' ', nil, StyleDefault)
+			}
+			linenumber++
+		}
+	}
+
 }
 
 func (e *Editor) findSearchGlobalOption(searchResults []FileSearchResult, selected int) (string, SearchResult, bool) {
-	var i = 1
+	var i = 0
 	for _, searchResult := range searchResults {
 		for _, result := range searchResult.Results {
 			if i == selected {

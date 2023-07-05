@@ -112,6 +112,29 @@ func (e *Editor) BuildContent(filename string, limit int) string {
 	return ConvertContentToString(e.Content)
 }
 
+func (e *Editor) ReadContent(filename string, fromline int, toline int) [][]rune {
+
+	file, err := os.Open(filename)
+	if err != nil { return nil }
+	defer file.Close()
+
+	content := make([][]rune, 0)
+
+	var i = 0
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var line = scanner.Text()
+		if i < fromline { i++; continue }
+		var lineChars = []rune{}
+		for _, char := range line { lineChars = append(lineChars, char) }
+		content = append(content, lineChars)
+		if i > toline { break }
+		i++
+	}
+
+	return content
+}
+
 func GetFiles(path string, ignoreDirs []string) ([]string, error) {
 	var files []string
 	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
