@@ -134,14 +134,14 @@ func GetFiles(path string, ignoreDirs []string) ([]string, error) {
 	return files, err
 }
 
-var ignoreDirs = []string{
+var IgnoreDirs = []string{
 	".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
 	".DS_Store", ".venv", "venv",
 }
 
 func (e *Editor) ReadFilesUpdate() {
 
-	filesTree, err := GetFiles("./", ignoreDirs)
+	filesTree, err := GetFiles("./", IgnoreDirs)
 	if err != nil { fmt.Printf("Unable to get files: %v\n", err); os.Exit(1) }
 
 	if filesTree != nil {
@@ -273,7 +273,7 @@ func ReadDirTree(dirPath string, filter string, isOpen bool, level int) (FileInf
 	for _, file := range files {
 		childPath := filepath.Join(dirPath, file.Name())
 
-		if file.IsDir() && ! IsIgnored(file.Name(), ignoreDirs) {
+		if file.IsDir() && ! IsIgnored(file.Name(), IgnoreDirs) {
 			childInfo, err2 := ReadDirTree(childPath, filter, isOpen, level + 1)
 			if err2 != nil {
 				Log.Info("Failed to process directory:", err2.Error())

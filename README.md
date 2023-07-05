@@ -12,6 +12,7 @@ Yet another console text editor, but with lsp support
 - `Control + v` - paste
 - `Control + u` - undo
 - `Control + f` - find
+- `Control + f, type prefix, Control + g` - global find
 - `Control + t` - files selection tree
 - `Option + /` - comment line
 - `Control + o` - cursor back

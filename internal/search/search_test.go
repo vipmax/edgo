@@ -1,7 +1,10 @@
 package search
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
+	"time"
 )
 
 func TestSearch(t *testing.T) {
@@ -53,4 +56,56 @@ func TestSearch(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSearchOnFile(t *testing.T) {
+	start := time.Now()
+	results, _ := SearchOnFile("search_test.go", "text")
+	elapsed := time.Since(start)
+
+	fmt.Println("SearchOnFile done, elapsed", elapsed.String())
+	fmt.Println("Found", len(results), "results")
+
+	for _, searchResult := range results { fmt.Println(searchResult) }
+}
+
+func TestSearchOnDir(t *testing.T) {
+	start := time.Now()
+	results, _ := SearchOnDir("/Users/max/apps/go/edgo/internal", "text")
+	elapsed := time.Since(start)
+
+	fmt.Println("SearchOnDir done, elapsed", elapsed.String())
+	fmt.Println("Found", len(results), "results")
+
+	for _, searchResult := range results { fmt.Println(searchResult) }
+}
+
+func TestSearchOnDirParallel(t *testing.T) {
+	fmt.Println("CPU", runtime.NumCPU())
+
+	start := time.Now()
+	results := SearchOnDirParallel("/Users/max/apps/go/edgo/internal", "text")
+	elapsed := time.Since(start)
+
+	fmt.Println("SearchOnDirParallel done, elapsed", elapsed.String())
+	fmt.Println("Found", len(results), "results")
+
+	for _, searchResult := range results { fmt.Println(searchResult) }
+}
+
+func TestSearchOnDirParallel2(t *testing.T) {
+	fmt.Println("CPU", runtime.NumCPU())
+
+	start := time.Now()
+	results := SearchOnDirParallel("/Users/max/Downloads/spark-master", "def main")
+	elapsed := time.Since(start)
+
+	//fmt.Println("linesCount", linesCount)
+
+	fmt.Println("SearchOnDirParallel done, elapsed", elapsed.String())
+	fmt.Println("Found", len(results), "results")
+
+	//for _, searchResult := range Results {
+	//	fmt.Println(searchResult)
+	//}
 }
