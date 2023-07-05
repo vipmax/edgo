@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-
 	"os"
 	"strings"
 	"time"
@@ -120,12 +119,27 @@ func SearchOnDirParallel(dir string, pattern string) ([]FileSearchResult, int, i
 		".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
 		".DS_Store", ".venv", "venv",
 	}
+	var IgnoreExts = []string{ "",
+		".doc", ".docx", ".pdf", ".txt", ".rtf", ".odt", ".xlsx", ".pptx",
+		".jpg", ".png", ".gif", ".bmp", ".svg", ".tiff",
+		".mp3", ".wav", ".aac", ".flac", ".ogg",
+		".mp4", ".avi", ".mov", ".wmv", ".mkv",
+		".zip", ".rar", ".tar.gz", ".7z",
+		".exe", ".msi", ".bat", ".sh",
+		".py", ".js", ".php", ".java", ".cpp",
+		".html", ".xml", ".css",
+		".ini", ".cfg", ".yaml", ".json",
+		".ttf", ".otf",
+	}
 
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil { return err }
 		if info.IsDir() && utils.IsIgnored(info.Name(), IgnoreDirs) { return filepath.SkipDir }
-		if !info.IsDir() { files = append(files, path) }
+	
+		if !info.IsDir() && !utils.IsIgnoredExt(info.Name(), IgnoreExts) {
+			files = append(files, path)
+		}
 		return nil
 	})
 

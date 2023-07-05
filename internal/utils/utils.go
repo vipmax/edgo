@@ -275,6 +275,14 @@ func IsIgnored(path string, ignorePatterns []string) bool {
 	return false
 }
 
+func IsIgnoredExt(path string, ignoreExts []string) bool {
+	for _, ignoreExt := range ignoreExts {
+		ext := filepath.Ext(filepath.Base(path))
+		if ext == ignoreExt { return true }
+	}
+	return false
+}
+
 
 
 const Phi = 1.61803398875 // The Golden Ratio
