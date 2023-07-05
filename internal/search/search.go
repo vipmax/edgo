@@ -113,7 +113,7 @@ func SearchOnDir(dir string, pattern string) ([]FileSearchResult, int) {
 }
 
 
-func SearchOnDirParallel(dir string, pattern string) []FileSearchResult{
+func SearchOnDirParallel(dir string, pattern string) ([]FileSearchResult, int, int) {
 	var files []string
 
 	var IgnoreDirs = []string{
@@ -123,25 +123,17 @@ func SearchOnDirParallel(dir string, pattern string) []FileSearchResult{
 
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() && utils.IsIgnored(info.Name(), IgnoreDirs) {
-			return filepath.SkipDir
-		}
-
-		if !info.IsDir() {
-			files = append(files, path)
-		}
-
+		if err != nil { return err }
+		if info.IsDir() && utils.IsIgnored(info.Name(), IgnoreDirs) { return filepath.SkipDir }
+		if !info.IsDir() { files = append(files, path) }
 		return nil
 	})
 
-	if err != nil { return []FileSearchResult{} }
+	if err != nil { return []FileSearchResult{}, 0, 0 }
 
 	var wg sync.WaitGroup
 	resultCh := make(chan FileSearchResult, len(files))
+	rowsProcessedCh := make(chan int, len(files))
 	sem := make(chan struct{}, runtime.NumCPU())
 
 	for _, file := range files {
@@ -149,8 +141,9 @@ func SearchOnDirParallel(dir string, pattern string) []FileSearchResult{
 		sem <- struct{}{}
 		go func(file string) {
 			defer wg.Done()
-			fileResults, _ := SearchOnFile(file, pattern)
+			fileResults, rowsProcessed := SearchOnFile(file, pattern)
 			resultCh <- FileSearchResult{file, fileResults}
+			rowsProcessedCh <- rowsProcessed
 			<-sem
 		}(file)
 	}
@@ -159,14 +152,22 @@ func SearchOnDirParallel(dir string, pattern string) []FileSearchResult{
 	go func() {
 		wg.Wait()
 		close(resultCh)
+		close(rowsProcessedCh)
 	}()
 
 	results := []FileSearchResult{}
+	filesProcessedCount := 0
 	for result := range resultCh {
+		filesProcessedCount++
 		if len(result.Results) > 0 {
 			results = append(results, result)
 		}
 	}
 
-	return results
+	totalRowsProcessed := 0
+	for rows := range rowsProcessedCh {
+		totalRowsProcessed += rows
+	}
+
+	return results, filesProcessedCount, totalRowsProcessed
 }

@@ -1062,7 +1062,10 @@ func (e *Editor) DrawSearch(prefix []rune, pattern []rune, patternx int) {
 
 func (e *Editor) OnGlobalSearch() bool {
 	dir, _ := os.Getwd()
-	searchResults := SearchOnDirParallel(dir, string(e.SearchPattern))
+
+	start := time.Now()
+	searchResults, filesProcessedCount, totalRowsProcessed := SearchOnDirParallel(dir, string(e.SearchPattern))
+	elapsed := time.Since(start).String()
 
 	e.IsOverlay = true
 	defer e.OverlayFalse()
@@ -1074,15 +1077,15 @@ func (e *Editor) OnGlobalSearch() bool {
 	cwd, _ := os.Getwd()
 
 	for !end {
-		var count = 0
-		for _, searchResult := range searchResults { count += len(searchResult.Results) }
+		var resultsCount = 0
+		for _, searchResult := range searchResults { resultsCount += len(searchResult.Results) }
 
 		var options = []string{}
 		for _, searchResult := range searchResults {
 			for _, result := range searchResult.Results {
 				relativePath, _ := filepath.Rel(cwd, searchResult.File)
 
-				text := fmt.Sprintf("%d/%d [%d:%d] %s ", len(options)+1, count, result.Line, result.Position, relativePath)
+				text := fmt.Sprintf("%d/%d [%d:%d] %s ", len(options)+1, resultsCount, result.Line, result.Position, relativePath)
 				options = append(options, text)
 			}
 
@@ -1098,9 +1101,12 @@ func (e *Editor) OnGlobalSearch() bool {
 			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
-			if isChanged {
+			if isChanged && resultsCount > 0 {
 				isChanged = false
-				e.DrawGlobalSearch(aty, height, options, selectedOffset, selected, style, atx, searchResults)
+				e.DrawGlobalSearch(aty, height, options, selectedOffset, selected, style, atx, searchResults,
+					fmt.Sprintf("global search: '%s', %d rows found, processed %d rows in %d files, elapsed %s",
+						string(e.SearchPattern), resultsCount, totalRowsProcessed, filesProcessedCount, elapsed),
+				)
 
 				e.Screen.HideCursor()
 				e.Screen.Show()
@@ -1129,14 +1135,15 @@ func (e *Editor) OnGlobalSearch() bool {
 				if key == KeyEnter {
 					end = true
 					file, searchResult, found := e.findSearchGlobalOption(searchResults, selected)
-					if found && e.AbsoluteFilePath != file {
-						e.OpenFile(file)
+					if found  {
+						if e.AbsoluteFilePath != file { e.OpenFile(file) }
+						e.Selection.CleanSelection()
 						e.Row = searchResult.Line - 1
 						e.Col = searchResult.Position + len(e.SearchPattern)
 						e.Selection.Ssy = e.Row
 						e.Selection.Sey = e.Row
 						e.Selection.Ssx = searchResult.Position
-						e.Selection.Sey = searchResult.Position + len(e.SearchPattern)
+						e.Selection.Sex = searchResult.Position + len(e.SearchPattern)
 						e.Selection.IsSelected = true
 						e.Focus()
 
@@ -1152,7 +1159,7 @@ func (e *Editor) OnGlobalSearch() bool {
 }
 
 func (e *Editor) DrawGlobalSearch(aty int, height int, options []string, selectedOffset int, selected int,
-	style Style, atx int, searchResults []FileSearchResult)  {
+	style Style, atx int, searchResults []FileSearchResult, status string)  {
 
 	// draw options
 	for row := aty; row < aty+height; row++ {
@@ -1182,48 +1189,64 @@ func (e *Editor) DrawGlobalSearch(aty int, height int, options []string, selecte
 		previewContentColors := HighlighterGlobal.Colorize(text, file)
 
 		// clear
-		for j := height + 2; j < e.ROWS; j++ {
+		for j := height + 1; j < e.ROWS; j++ {
 			for i := atx; i < e.COLUMNS; i++ {
 				e.Screen.SetContent(i, j, ' ', nil, StyleDefault)
 			}
 		}
+		//e.Screen.Show()
 
 		linenumber := searchResult.Line - rowsToShow/2
+		if linenumber < 0 { linenumber = 0 }
+
 		// draw preview
 		for row := 0; row < len(previewContent); row++ {
+			y := row + height + 1
+			if y >= e.ROWS { break }
 			var shiftTabs = 0
+
+			var lineNumberStyle = StyleDefault.Foreground(ColorDimGray)
+			for index, char := range CenterNumber(linenumber+1, e.LINES_WIDTH) {
+				e.Screen.SetContent(index + e.FilesPanelWidth, y, char, nil, lineNumberStyle)
+			}
 
 			for col := 0; col < len(previewContent[row]); col++ {
 
 				chstyle := StyleDefault
 				if row < len(previewContentColors) && col < len(previewContentColors[row]) {
 					color := previewContentColors[row][col]
-					if color > 0 {
-						chstyle = StyleDefault.Foreground(Color(color))
-					}
+					if color > 0 { chstyle = StyleDefault.Foreground(Color(color)) }
 				}
 
 				if linenumber == searchResult.Line-1 &&  // color match
-					col >= searchResult.Position && col < searchResult.Position+len(e.SearchPattern) {
+					col >= searchResult.Position && col < searchResult.Position + len(e.SearchPattern) {
 					chstyle = chstyle.Background(Color(SelectionColor))
 				}
 
+				if previewContent[row][col] == '\n' { continue }
 				if previewContent[row][col] == '\t' {
 					for i := 0; i < e.langTabWidth; i++ {
-						e.Screen.SetContent(atx+col+shiftTabs, row, ' ', nil, chstyle)
+						e.Screen.SetContent(atx+e.LINES_WIDTH+col+shiftTabs, y, ' ', nil, chstyle)
 						if i != e.langTabWidth-1 { shiftTabs++ }
 					}
 				} else {
-					e.Screen.SetContent(atx+col+shiftTabs, row+height+1, previewContent[row][col], nil, chstyle)
+					e.Screen.SetContent(atx+e.LINES_WIDTH+col+shiftTabs, y, previewContent[row][col], nil, chstyle)
 				}
 
-
+				if atx+e.LINES_WIDTH+col+shiftTabs >= e.COLUMNS { break }
 			}
 
-			for i := atx + len(previewContent[row]); i < e.COLUMNS; i++ {
-				e.Screen.SetContent(i, row+height+1, ' ', nil, StyleDefault)
+			for i := atx + len(previewContent[row]) + e.LINES_WIDTH + shiftTabs; i < e.COLUMNS; i++ {
+				e.Screen.SetContent(i, y, ' ', nil, StyleDefault)
 			}
+
 			linenumber++
+		}
+
+		label := append([]rune(status), []rune(strings.Repeat(" ", e.COLUMNS - atx))...)
+
+		for i := 0; i < len(label); i++ {
+			e.Screen.SetContent(atx + i, e.ROWS-1, label[i], nil, StyleDefault)
 		}
 	}
 

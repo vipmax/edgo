@@ -84,7 +84,7 @@ func TestSearchOnDirParallel(t *testing.T) {
 	fmt.Println("CPU", runtime.NumCPU())
 
 	start := time.Now()
-	results := SearchOnDirParallel("/Users/max/apps/go/edgo/internal", "text")
+	results, _, _ := SearchOnDirParallel("/Users/max/apps/go/edgo/internal", "text")
 	elapsed := time.Since(start)
 
 	fmt.Println("SearchOnDirParallel done, elapsed", elapsed.String())
@@ -97,15 +97,15 @@ func TestSearchOnDirParallel2(t *testing.T) {
 	fmt.Println("CPU", runtime.NumCPU())
 
 	start := time.Now()
-	results := SearchOnDirParallel("/Users/max/Downloads/spark-master", "def main")
+	results, totalRowsProcessed, _ := SearchOnDirParallel("/Users/max/Downloads/spark-master", "def main")
 	elapsed := time.Since(start)
 
-	//fmt.Println("linesCount", linesCount)
+	fmt.Println("totalRowsProcessed", totalRowsProcessed)
 
 	fmt.Println("SearchOnDirParallel done, elapsed", elapsed.String())
 	fmt.Println("Found", len(results), "results")
 
-	//for _, searchResult := range Results {
-	//	fmt.Println(searchResult)
-	//}
+	for _, searchResult := range results {
+		fmt.Println(searchResult)
+	}
 }
