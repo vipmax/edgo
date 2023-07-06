@@ -2,6 +2,7 @@ package search
 
 import (
 	"fmt"
+	"reflect"
 	"runtime"
 	"testing"
 	"time"
@@ -9,52 +10,62 @@ import (
 
 func TestSearch(t *testing.T) {
 	text := [][]rune{
-		[]rune("This is the first line."),
-		[]rune("This is the second line."),
-	}
-	text2 := [][]rune{
-		[]rune("This is the first line."),
-		[]rune("This is the second line."),
-		[]rune("This is the third line."),
+		[]rune("Hello, World!"),
+		[]rune("This is a test"),
+		[]rune("Another test"),
 	}
 
-	tests := []struct {
-		name   string
-		text   [][]rune
-		pattern string
-		startLine int
-		wantLine int
-		wantPos int
+	testCases := []struct {
+		pattern  string
+		expected []SearchResult
 	}{
 		{
-			name: "Test 1 - Single match",
-			text: text, pattern: "second", startLine: 0, wantLine: 1, wantPos: 12,
+			pattern: "test",
+			expected: []SearchResult{
+				{1, 10},
+				{2, 8},
+			},
 		},
 		{
-			name: "Test 2 - No match",
-			text: text, pattern: "third", startLine: 0, wantLine: -1, wantPos: -1,
+			pattern:  "",
+			expected: []SearchResult{},
 		},
 		{
-			name: "Test 3 - Multiple matches",
-			text: text, pattern: "the", startLine: 0, wantLine: 0, wantPos: 8,
+			pattern:  "foo",
+			expected: []SearchResult{},
 		},
 		{
-			name: "Test 1 - Pattern found after start line",
-			text: text2, pattern: "third", startLine: 1, wantLine: 2, wantPos: 12,
+			pattern: "Hello",
+			expected: []SearchResult{
+				{0, 0},
+			},
 		},
 		{
-			name: "Test 2 - Pattern not found after start line",
-			text: text2, pattern: "first", startLine: 1, wantLine: -1, wantPos: -1,
+			pattern: "is",
+			expected: []SearchResult{
+				{1, 2}, {1, 5},
+			},
+		},
+		{
+			pattern: "o",
+			expected: []SearchResult{
+				{0, 4}, {0, 8}, {2, 2},
+			},
+		},
+		{
+			pattern: "World",
+			expected: []SearchResult{
+				{0, 7},
+			},
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			gotLine, gotPos := SearchDown(tc.text, tc.pattern, tc.startLine)
-			if gotLine != tc.wantLine || gotPos != tc.wantPos {
-				t.Errorf("search() got %v, %v; want %v, %v", gotLine, gotPos, tc.wantLine, tc.wantPos)
-			}
-		})
+	for _, tc := range testCases {
+		results := Search(text, tc.pattern)
+		if !reflect.DeepEqual(results, tc.expected) {
+			t.Errorf("Search did not return the expected results for pattern '%s'. Expected: %v, Got: %v",
+				tc.pattern, tc.expected, results)
+		}
 	}
 }
 

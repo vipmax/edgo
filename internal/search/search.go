@@ -4,11 +4,11 @@ import (
 	"bufio"
 	. "edgo/internal/logger"
 	"edgo/internal/utils"
+	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
-	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,32 +18,22 @@ import (
     Boyer-Moore string search algorithm or its variations, which have much better
     time complexity (nearly linear time in many cases) than the simple linear search.
 */
-func SearchDown(text [][]rune, pattern string, startLine int) (int, int) {
+func SearchDown(text [][]rune, pattern string, startLine int, startcol int) (int, int) {
 	start := time.Now()
 	defer Log.Info("search up end, elapsed:", time.Since(start).String())
 
 	if len(pattern) == 0 { return -1, -1 }
 	if startLine < 0 || startLine >= len(text) { return -1, -1 }
+
 
 	for i := startLine; i < len(text); i++ {
 		line := string(text[i])
+		if startcol < 0 || startcol >= len(line) { continue }
+		if startcol > 0 { line = line[startcol:] }
+
 		pos := strings.Index(line, pattern)
-		if pos != -1 { return i, pos }
-	}
-	return -1, -1
-}
-
-func SearchUp(text [][]rune, pattern string, startLine int) (int, int) {
-	start := time.Now()
-	defer Log.Info("search up end, elapsed:", time.Since(start).String())
-
-	if len(pattern) == 0 { return -1, -1 }
-	if startLine < 0 || startLine >= len(text) { return -1, -1 }
-
-	for i := startLine; i >= 0; i-- {
-		line := string(text[i])
-		pos := strings.Index(line, pattern)
-		if pos != -1 { return i, pos }
+		if pos != -1 { return i, pos+startcol }
+		startcol = 0
 	}
 	return -1, -1
 }
@@ -53,12 +43,30 @@ type SearchResult struct {
 	Position int
 }
 
+func Search(text [][]rune, pattern string) []SearchResult {
+	results := []SearchResult{}
+
+	if len(pattern) == 0 || len(text) == 0 { return results }
+
+	for i := 0; i < len(text); i++ {
+		from := 0
+		line := string(text[i])
+		for {
+			pos := strings.Index(line[from:], pattern)
+			if pos == -1 { break } else {
+				pos = from + pos
+				results = append(results, SearchResult{i, pos})
+				from = pos + 1
+			}
+		}
+	}
+	return results
+}
+
 
 func SearchOnFile(filename string, pattern string) ([]SearchResult, int) {
 	file, err := os.Open(filename)
-	if err != nil {
-		return nil, 0
-	}
+	if err != nil { return nil, 0 }
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)

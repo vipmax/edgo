@@ -64,9 +64,12 @@ type Editor struct {
 	IsFilesSearch       bool       // true if in files search mode
 	IsFilesPanelMoving  bool       // true if in files panel moving mode
 	Tree                FileInfo   // files Tree
-	FilterPattern       []rune
+	FilesSearchPattern []rune
 
-	SearchPattern []rune // pattern for search in a buffer
+	IsContentSearch    bool
+	SearchPattern      []rune // pattern for search in a buffer
+	SearchResults      []SearchResult
+	SearchResultIndex  int
 
 	//filesInfo []FileInfo
 	CursorHistory     []CursorMove
@@ -579,7 +582,15 @@ func (e *Editor) DrawEverything() {
 	if e.Row - e.Y >= e.ROWS { e.Screen.HideCursor() }
 
 	e.DrawProcessPanel()
+
+	if e.IsContentSearch {
+		e.DrawSearch(e.SearchPattern, len(e.SearchPattern))
+	}
+	if e.IsFilesSearch {
+		e.DrawTreeSearch(e.FilesSearchPattern, len(e.FilesSearchPattern))
+	}
 }
+
 func (e *Editor) DrawProcessPanel() {
 
 
@@ -937,50 +948,50 @@ func (e *Editor) DrawErrors(atx int, width int, aty int, height int, options []s
 }
 
 func (e *Editor) OnSearch() {
+	e.IsContentSearch = true
+
 	var end = false
 	if e.SearchPattern == nil { e.SearchPattern = []rune{} }
 	if e.Selection.IsSelectionNonEmpty() {
 		e.SearchPattern = []rune(e.Selection.GetSelectionString(e.Content))
+		e.SearchResults = Search(e.Content, string(e.SearchPattern))
+		e.SearchResultIndex = 0
 	}
 
 	var patternx = len(e.SearchPattern)
-	var startline = e.Y
 	var isChanged = true
-	var isDownSearch = true
-	var prefix = []rune("search: ")
 
 	// loop until escape or enter pressed
 	for !end {
 
-		e.DrawSearch(prefix, e.SearchPattern, patternx)
+		e.DrawSearch(e.SearchPattern, patternx)
 		e.Screen.Show()
 
-		if isChanged {
+		if isChanged && len(e.SearchPattern) > 0 && len(e.SearchResults) > 0 {
+
 			var sy, sx = -1, -1
 			e.X = 0
-			if isDownSearch {
-				sy, sx = SearchDown(e.Content, string(e.SearchPattern), startline)
-			} else {
-				sy, sx = SearchUp(e.Content, string(e.SearchPattern), startline)
-			}
+
+			result := e.SearchResults[e.SearchResultIndex]
+			sy = result.Line; sx = result.Position
 
 			if sx != -1 && sy != -1 {
 				e.Row = sy; e.Col = sx; e.Focus()
-				startline = sy;
-				e.Selection.Ssx = sx; e.Selection.Ssy = sy;
-				e.Selection.Sex = sx + len(e.SearchPattern); e.Selection.Sey = sy; e.Selection.IsSelected = true
+				e.Selection.Ssx = sx;
+				e.Selection.Ssy = sy;
+				e.Selection.Sex = sx + len(e.SearchPattern);
+				e.Selection.Sey = sy;
+				e.Selection.IsSelected = true
 				e.DrawEverything()
-				e.DrawSearch(prefix, e.SearchPattern, patternx)
-				e.Screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1)
+				e.DrawSearch(e.SearchPattern, patternx)
 				e.Screen.Show()
-			}else {
+			} else {
 				e.Selection.CleanSelection()
-				if isDownSearch { startline = 0 } else  { startline = len(e.Content)}
 				e.DrawEverything()
-				e.DrawSearch(prefix, e.SearchPattern, patternx)
-				e.Screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1)
+				e.DrawSearch(e.SearchPattern, patternx)
 				e.Screen.Show()
 			}
+			isChanged = false
 		}
 
 		switch ev := e.Screen.PollEvent().(type) { // poll and handle event
@@ -995,29 +1006,28 @@ func (e *Editor) OnSearch() {
 				e.SearchPattern = InsertTo(e.SearchPattern, patternx, ev.Rune())
 				patternx++
 				isChanged = true
+				e.SearchResults = Search(e.Content, string(e.SearchPattern))
+				e.SearchResultIndex = 0
 			}
 			if key == KeyBackspace2 && patternx > 0 && len(e.SearchPattern) > 0 {
 				patternx--
 				e.SearchPattern = Remove(e.SearchPattern, patternx)
 				isChanged = true
+				e.SearchResults = Search(e.Content, string(e.SearchPattern))
+				e.SearchResultIndex = 0
 			}
 			if key == KeyLeft && patternx > 0 { patternx-- }
 			if key == KeyRight && patternx < len(e.SearchPattern) { patternx++ }
 			if key == KeyRight && patternx < len(e.SearchPattern) { patternx++ }
-			if key == KeyDown  {
-				isDownSearch = true
-				if startline < len(e.Content) {
-					startline++
-					isChanged = true
-				} else {
-					startline = 0
-					isChanged = true
-				}
+			if key == KeyDown {
+				e.SearchResultIndex++
+				if e.SearchResultIndex >= len(e.SearchResults) { e.SearchResultIndex = 0 }
+				isChanged = true
 			}
 			if key == KeyUp {
-				isDownSearch = false
+				e.SearchResultIndex--
+				if e.SearchResultIndex < 0 { e.SearchResultIndex = len(e.SearchResults) - 1}
 				isChanged = true
-				if startline == 0 { startline = len(e.Content) } else { startline-- }
 			}
 			if key == KeyCtrlX {
 				e.SearchPattern = []rune{}
@@ -1028,35 +1038,46 @@ func (e *Editor) OnSearch() {
 				end = e.OnGlobalSearch()
 
 				e.DrawEverything()
-				e.DrawSearch(prefix, e.SearchPattern, patternx)
+				e.DrawSearch(e.SearchPattern, patternx)
 				e.Screen.Show()
 			}
 			if key == KeyESC || key == KeyEnter || key == KeyCtrlF { end = true }
 		}
 	}
+
+	e.IsContentSearch = false
 }
 
-func (e *Editor) DrawSearch(prefix []rune, pattern []rune, patternx int) {
+func (e *Editor) DrawSearch(pattern []rune, patternx int) {
+	var prefix = []rune("search: ")
+
 	for i := 0; i < len(prefix); i++ {
 		e.Screen.SetContent(i + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1, prefix[i], nil, StyleDefault)
-		//e.Screen.Show()
 	}
 
 	e.Screen.SetContent(len(prefix) + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1, ' ', nil, StyleDefault)
-	//e.Screen.Show()
 
 	for i := 0; i < len(pattern); i++ {
 		e.Screen.SetContent(len(prefix) + i + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1, pattern[i], nil, StyleDefault)
-		//e.Screen.Show()
 	}
 
 	e.Screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH+ e.FilesPanelWidth, e.ROWS-1)
-	//e.Screen.Show()
 
 	for i := len(prefix) + len(pattern) + e.LINES_WIDTH + e.FilesPanelWidth; i < e.COLUMNS; i++ {
 		e.Screen.SetContent(i, e.ROWS-1, ' ', nil, StyleDefault)
-		//e.Screen.Show()
 	}
+
+	if len(e.SearchResults) > 0 {
+		status := fmt.Sprintf("  %d/%d", e.SearchResultIndex+1, len(e.SearchResults))
+
+		for i := 0; i < len(status); i++ {
+			e.Screen.SetContent(e.FilesPanelWidth + e.LINES_WIDTH + len(prefix) + len(pattern) + i , e.ROWS-1,
+				rune(status[i]), nil, StyleDefault)
+		}
+	}
+
+
+	e.Screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH + e.FilesPanelWidth, e.ROWS-1)
 }
 
 
@@ -1104,7 +1125,7 @@ func (e *Editor) OnGlobalSearch() bool {
 			if isChanged && resultsCount > 0 {
 				isChanged = false
 				e.DrawGlobalSearch(aty, height, options, selectedOffset, selected, style, atx, searchResults,
-					fmt.Sprintf("global search: '%s', %d rows found, processed %d rows in %d files, elapsed %s",
+					fmt.Sprintf("global search: '%s', %d rows found, processed %d rows, %d files, elapsed %s",
 						string(e.SearchPattern), resultsCount, totalRowsProcessed, filesProcessedCount, elapsed),
 				)
 
@@ -1280,7 +1301,7 @@ func (e *Editor) OnFilesTree() {
 	if e.Filename != "" { e.DrawEverything() }
 
 	var end = false
-	var patternx = len(e.FilterPattern)
+	var patternx = len(e.FilesSearchPattern)
 
 	// loop until escape or enter pressed
 	for !end {
@@ -1306,7 +1327,7 @@ func (e *Editor) OnFilesTree() {
 		}
 
 		e.DrawTree(e.Tree, 0, &fileindex, &aty)
-		e.DrawTreeSearch(e.FilterPattern, patternx)
+		e.DrawTreeSearch(e.FilesSearchPattern, patternx)
 		e.Screen.Show()
 
 		switch ev := e.Screen.PollEvent().(type) { // poll and handle event
@@ -1340,21 +1361,21 @@ func (e *Editor) OnFilesTree() {
 			key := ev.Key()
 
 			if key == KeyCtrlF { e.IsFilesSearch = !e.IsFilesSearch }
-			if key == KeyEscape  && e.IsFilesSearch {  end = true; e.IsFilesSearch = false }
 			if key == KeyEscape && !e.IsFilesSearch { end = true; e.FilesPanelWidth =  0 }
+			if key == KeyEscape && e.IsFilesSearch { end = true; e.IsFilesSearch = false; e.CleanFilesSearch();e.Screen.Show() }
 			if key == KeyDown { e.FileSelectedIndex =  Min(treeSize-1, e.FileSelectedIndex+1) }
 			if key == KeyUp { e.FileSelectedIndex = Max(0, e.FileSelectedIndex-1) }
 			if key == KeyLeft && e.IsFilesSearch && patternx > 0 { patternx-- }
-			if key == KeyRight && e.IsFilesSearch && patternx < len(e.FilterPattern) { patternx++ }
+			if key == KeyRight && e.IsFilesSearch && patternx < len(e.FilesSearchPattern) { patternx++ }
 			if key == KeyCtrlT {
 				end = true
 				e.IsFilesSearch = false
 				e.FilesPanelWidth = 0
 			}
-			if key == KeyBackspace2  && e.IsFilesSearch && patternx > 0 && len(e.FilterPattern) > 0 {
+			if key == KeyBackspace2  && e.IsFilesSearch && patternx > 0 && len(e.FilesSearchPattern) > 0 {
 				patternx--
-				e.FilterPattern = Remove(e.FilterPattern, patternx)
-				tree, _ := ReadDirTree(dir, string(e.FilterPattern), true, 0)
+				e.FilesSearchPattern = Remove(e.FilesSearchPattern, patternx)
+				tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), true, 0)
 				tree = FilterIfLeafEmpty(tree)
 				e.Tree = tree
 				e.Tree.IsDirOpen = true
@@ -1364,9 +1385,9 @@ func (e *Editor) OnFilesTree() {
 			}
 			if key == KeyRune {
 				e.IsFilesSearch = true
-				e.FilterPattern = InsertTo(e.FilterPattern, patternx, ev.Rune())
+				e.FilesSearchPattern = InsertTo(e.FilesSearchPattern, patternx, ev.Rune())
 				patternx++
-				tree, _ := ReadDirTree(dir, string(e.FilterPattern), true, 0)
+				tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), true, 0)
 				tree = FilterIfLeafEmpty(tree)
 				e.Tree = tree
 				e.Tree.IsDirOpen = true
@@ -1377,7 +1398,7 @@ func (e *Editor) OnFilesTree() {
 			if key == KeyEnter || !e.IsFilesSearch  && (key == KeyLeft || key == KeyRight) {
 				end = e.SelectAndOpenFile()
 				if end {
-					tree, _ := ReadDirTree(dir, string(e.FilterPattern), true, 0)
+					tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), true, 0)
 					e.Tree = tree
 				}
 			}
@@ -1446,6 +1467,14 @@ func (e *Editor) DrawTreeSearch(filterPattern []rune, patternx int) {
 	}
 }
 
+
+func (e *Editor) CleanFilesSearch() {
+	e.Screen.HideCursor()
+	for col :=0; col < e.FilesPanelWidth - 1; col++ { // clean
+		e.Screen.SetContent(col, e.ROWS-1, ' ', nil, StyleDefault)
+	}
+}
+
 func (e *Editor) SelectAndOpenFile() bool {
 	found, selectedFile := GetSelected(e.Tree, e.FileSelectedIndex)
 	if found {
@@ -1455,7 +1484,7 @@ func (e *Editor) SelectAndOpenFile() bool {
 		} else {
 			e.InputFile = selectedFile.FullName
 			e.OpenFile(e.InputFile)
-			e.FilterPattern = []rune{}
+			e.FilesSearchPattern = []rune{}
 			e.IsFilesSearch = false
 			return true
 		}
