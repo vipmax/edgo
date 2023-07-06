@@ -1158,13 +1158,14 @@ func (e *Editor) OnGlobalSearch() bool {
 					file, searchResult, found := e.findSearchGlobalOption(searchResults, selected)
 					if found  {
 						if e.AbsoluteFilePath != file { e.OpenFile(file) }
+						searchPattern, _ := ParsePattern(string(e.SearchPattern))
 						e.Selection.CleanSelection()
 						e.Row = searchResult.Line - 1
-						e.Col = searchResult.Position + len(e.SearchPattern)
+						e.Col = searchResult.Position + len(searchPattern)
 						e.Selection.Ssy = e.Row
 						e.Selection.Sey = e.Row
 						e.Selection.Ssx = searchResult.Position
-						e.Selection.Sex = searchResult.Position + len(e.SearchPattern)
+						e.Selection.Sex = searchResult.Position + len(searchPattern)
 						e.Selection.IsSelected = true
 						e.Focus()
 
@@ -1181,6 +1182,8 @@ func (e *Editor) OnGlobalSearch() bool {
 
 func (e *Editor) DrawGlobalSearch(aty int, height int, options []string, selectedOffset int, selected int,
 	style Style, atx int, searchResults []FileSearchResult, status string)  {
+
+	searchPattern, _ := ParsePattern(string(e.SearchPattern))
 
 	// draw options
 	for row := aty; row < aty+height; row++ {
@@ -1240,7 +1243,7 @@ func (e *Editor) DrawGlobalSearch(aty int, height int, options []string, selecte
 				}
 
 				if linenumber == searchResult.Line-1 &&  // color match
-					col >= searchResult.Position && col < searchResult.Position + len(e.SearchPattern) {
+					col >= searchResult.Position && col < searchResult.Position + len(searchPattern) {
 					chstyle = chstyle.Background(Color(SelectionColor))
 				}
 

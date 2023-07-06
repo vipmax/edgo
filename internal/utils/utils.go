@@ -275,10 +275,12 @@ func IsIgnored(path string, ignorePatterns []string) bool {
 	return false
 }
 
-func IsIgnoredExt(path string, ignoreExts []string) bool {
+func IsMatchExt(path string, ignoreExts []string) bool {
 	for _, ignoreExt := range ignoreExts {
 		ext := filepath.Ext(filepath.Base(path))
-		if ext == ignoreExt { return true }
+		if ext == ignoreExt {
+			return true
+		}
 	}
 	return false
 }

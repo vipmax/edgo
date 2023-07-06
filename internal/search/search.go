@@ -93,17 +93,32 @@ type FileSearchResult struct {
 	Results []SearchResult
 }
 
+func ParsePattern(pattern string) (string, []string) {
+	extensions := make([]string, 0)
+
+	if strings.Contains(pattern, " -f ") {
+		split := strings.Split(pattern, " -f ")
+		pattern = strings.TrimSpace(split[0])
+		fileExtensions := split[1]
+		extensionList := strings.Split(fileExtensions, ",")
+		return pattern, extensionList
+	}
+
+	return pattern, extensions
+}
+
 func SearchOnDir(dir string, pattern string) ([]FileSearchResult, int) {
 	var files []string
+
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil { return err }
-		if !info.IsDir() { files = append(files, path) }
+		if !info.IsDir() {
+			files = append(files, path)
+		}
 		return nil
 	})
 
-	if err != nil {
-		return []FileSearchResult{}, 0
-	}
+	if err != nil { return []FileSearchResult{}, 0 }
 
 	results := []FileSearchResult{}
 
@@ -120,33 +135,37 @@ func SearchOnDir(dir string, pattern string) ([]FileSearchResult, int) {
 }
 
 
+var IgnoreDirs = []string{
+	".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
+	".DS_Store", ".venv", "venv",
+}
+var IgnoreExts = []string{ "",
+	".doc", ".docx", ".pdf", ".txt", ".rtf", ".odt", ".xlsx", ".pptx",
+	".jpg", ".png", ".gif", ".bmp", ".svg", ".tiff",
+	".mp3", ".wav", ".aac", ".flac", ".ogg",
+	".mp4", ".avi", ".mov", ".wmv", ".mkv",
+	".zip", ".rar", ".tar.gz", ".7z",
+	".exe", ".msi", ".bat", ".sh",
+	".ttf", ".otf",
+}
+
 func SearchOnDirParallel(dir string, pattern string) ([]FileSearchResult, int, int) {
 	var files []string
 
-	var IgnoreDirs = []string{
-		".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
-		".DS_Store", ".venv", "venv",
-	}
-	var IgnoreExts = []string{ "",
-		".doc", ".docx", ".pdf", ".txt", ".rtf", ".odt", ".xlsx", ".pptx",
-		".jpg", ".png", ".gif", ".bmp", ".svg", ".tiff",
-		".mp3", ".wav", ".aac", ".flac", ".ogg",
-		".mp4", ".avi", ".mov", ".wmv", ".mkv",
-		".zip", ".rar", ".tar.gz", ".7z",
-		".exe", ".msi", ".bat", ".sh",
-		".py", ".js", ".php", ".java", ".cpp",
-		".html", ".xml", ".css",
-		".ini", ".cfg", ".yaml", ".json",
-		".ttf", ".otf",
-	}
-
+	searchPattern, allowedExtensions := ParsePattern(pattern)
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil { return err }
 		if info.IsDir() && utils.IsIgnored(info.Name(), IgnoreDirs) { return filepath.SkipDir }
 	
-		if !info.IsDir() && !utils.IsIgnoredExt(info.Name(), IgnoreExts) {
-			files = append(files, path)
+		if !info.IsDir() && !utils.IsMatchExt(info.Name(), IgnoreExts) {
+			if len(allowedExtensions) > 0 {
+				if utils.IsMatchExt(info.Name(), allowedExtensions) {
+					files = append(files, path)
+				}
+			} else {
+				files = append(files, path)
+			}
 		}
 		return nil
 	})
@@ -163,7 +182,7 @@ func SearchOnDirParallel(dir string, pattern string) ([]FileSearchResult, int, i
 		sem <- struct{}{}
 		go func(file string) {
 			defer wg.Done()
-			fileResults, rowsProcessed := SearchOnFile(file, pattern)
+			fileResults, rowsProcessed := SearchOnFile(file, searchPattern)
 			resultCh <- FileSearchResult{file, fileResults}
 			rowsProcessedCh <- rowsProcessed
 			<-sem

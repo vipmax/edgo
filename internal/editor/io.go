@@ -5,6 +5,7 @@ import (
 	. "edgo/internal/highlighter"
 	. "edgo/internal/logger"
 	. "edgo/internal/lsp"
+	. "edgo/internal/search"
 	. "edgo/internal/utils"
 	"fmt"
 	"os"
@@ -157,10 +158,6 @@ func GetFiles(path string, ignoreDirs []string) ([]string, error) {
 	return files, err
 }
 
-var IgnoreDirs = []string{
-	".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
-	".DS_Store", ".venv", "venv",
-}
 
 func (e *Editor) ReadFilesUpdate() {
 
