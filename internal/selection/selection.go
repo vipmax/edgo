@@ -88,6 +88,10 @@ func (this *Selection) GetSelectedIndices(content [][]rune) [][]int {
 	var inside = false
 	// iterate over Content, starting from selection Start point until out ouf selection
 	for j := starty; j < len(content); j++ {
+		if len(content[j]) == 0 && this.IsUnderSelection(0, j) {
+			selectedIndices = append(selectedIndices, []int{0, j})
+			inside = true
+		}
 		for i := 0; i < len(content[j]); i++ {
 			if this.IsUnderSelection(i, j) {
 				selectedIndices = append(selectedIndices, []int{i, j})

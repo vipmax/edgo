@@ -85,6 +85,7 @@ func InsertTo[T any](a []T, index int, value T) []T {
 
 var matched = []rune{
 	' ', '.', ',', '=', '+', '-', '[', '(', '{', ']', ')', '}', '"', ':', '&', '?','!',';','\t',
+	'/','<','>',
 }
 
 func FindNextWord(chars []rune, from int) int {

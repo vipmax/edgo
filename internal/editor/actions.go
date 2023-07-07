@@ -116,7 +116,7 @@ func (e *Editor) OnEnter() {
 
 func (e *Editor) OnDelete() {
 
-	if len(e.Selection.GetSelectionString(e.Content)) > 0 {
+	if e.Selection.IsSelectionNonEmpty() {
 		e.Cut(false)
 		return
 	}
@@ -427,10 +427,13 @@ func (e *Editor) Cut(isCopySelected bool) {
 			yd := indices[1]
 			e.Col, e.Row = xd, yd
 
-			// Delete the character at index (x, j)
-			ops = append(ops, Operation{Delete, e.Content[yd][xd], yd, xd})
-			e.Content[yd] = append(e.Content[yd][:xd], e.Content[yd][xd+1:]...)
-			e.Colors[yd] = append(e.Colors[yd][:xd], e.Colors[yd][xd+1:]...)
+			if len(e.Content[yd]) > 0 {
+				// Delete the character at index (x, j)
+				ops = append(ops, Operation{Delete, e.Content[yd][xd], yd, xd})
+				e.Content[yd] = append(e.Content[yd][:xd], e.Content[yd][xd+1:]...)
+				e.Colors[yd] = append(e.Colors[yd][:xd], e.Colors[yd][xd+1:]...)
+			}
+
 
 			if len(e.Content[yd]) == 0 { // delete Line
 				if e.Row == 0 { ops = append(ops, Operation{DeleteLine, '\n', 0, 0}) } else {

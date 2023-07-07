@@ -18,6 +18,7 @@ import (
     Boyer-Moore string search algorithm or its variations, which have much better
     time complexity (nearly linear time in many cases) than the simple linear search.
 */
+
 func SearchDown(text [][]rune, pattern string, startLine int, startcol int) (int, int) {
 	start := time.Now()
 	defer Log.Info("search up end, elapsed:", time.Since(start).String())
