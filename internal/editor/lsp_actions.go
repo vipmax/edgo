@@ -14,7 +14,9 @@ import (
 )
 
 func (e *Editor) OnDefinition() {
-	if !Lsp.IsLangReady(e.Lang) { return }
+	if e.Lang == "" { return }
+	Lsp := e.lsp2lang[e.Lang]
+	if !Lsp.IsReady { return }
 
 	definition, err := Lsp.Definition(e.AbsoluteFilePath, e.Row, e.Col)
 
@@ -48,7 +50,9 @@ func (e *Editor) OnDefinition() {
 }
 
 func (e *Editor) OnHover() {
-	if !Lsp.IsLangReady(e.Lang) { return }
+	if e.Lang == "" { return }
+	Lsp := e.lsp2lang[e.Lang]
+	if !Lsp.IsReady { return }
 
 	e.IsOverlay = true
 	defer e.OverlayFalse()
@@ -103,7 +107,9 @@ func (e *Editor) OnHover() {
 }
 
 func (e *Editor) OnSignatureHelp() {
-	if !Lsp.IsLangReady(e.Lang) { return }
+	if e.Lang == "" { return }
+	Lsp := e.lsp2lang[e.Lang]
+	if !Lsp.IsReady { return }
 
 	e.IsOverlay = true
 	defer e.OverlayFalse()
@@ -167,7 +173,9 @@ func (e *Editor) OnSignatureHelp() {
 }
 
 func (e *Editor) OnReferences() {
-	if !Lsp.IsLangReady(e.Lang) { return }
+	if e.Lang == "" { return }
+	Lsp := e.lsp2lang[e.Lang]
+	if !Lsp.IsReady { return }
 
 	e.IsOverlay = true
 	defer e.OverlayFalse()
@@ -263,7 +271,10 @@ func (e *Editor) applyReferences(referencesResult ReferencesRange) {
 
 
 func (e *Editor) OnCompletion() {
-	if !Lsp.IsLangReady(e.Lang) { return }
+	if e.Lang == "" { return }
+	Lsp := e.lsp2lang[e.Lang]
+	if !Lsp.IsReady { return }
+
 	e.IsOverlay = true
 	defer e.OverlayFalse()
 
@@ -434,6 +445,10 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 }
 
 func (e *Editor) OnRename() {
+	if e.Lang == "" { return }
+	Lsp := e.lsp2lang[e.Lang]
+	if !Lsp.IsReady { return }
+
 	var end = false
 	var renameTo = []rune{}
 	var patternx = 0
@@ -535,28 +550,26 @@ func (e *Editor) applyRename(renameResponse RenameResponse) {
 
 }
 
-
 func (e *Editor) OnCodeAction() {
+	if e.Lang == "" { return }
+	Lsp := e.lsp2lang[e.Lang]
+	if !Lsp.IsReady { return }
+
 	codeAction, err := Lsp.CodeAction(e.AbsoluteFilePath, e.Selection.Ssx, e.Selection.Ssy, e.Selection.Sex, e.Selection.Sey)
 	if err != nil { return }
 	if len(codeAction.Result) == 0 { return }
-	//
+
 	commandResponse, err := Lsp.Command(codeAction.Result[0].Command)
 	if err != nil { return }
 	if len(commandResponse.Params.Edit.DocumentChanges) == 0 { return }
 
-	e.handleEdits(commandResponse.Params.Edit.DocumentChanges[0].Edits, commandResponse.Params.Edit.DocumentChanges[0].TextDocument.Version+1)
+	e.handleEdits(commandResponse.Params.Edit.DocumentChanges[0].Edits)
 	Lsp.ApplyEdit(commandResponse.ID)
 }
 
-func (e *Editor) handleEdits(edits []Edit, version int) {
+func (e *Editor) handleEdits(edits []Edit) {
 	for _, edit := range edits {
 		start := edit.Range.Start
-		//end := edit.Range.End
-
-		// Adjusting because slices are 0-indexed.
-		//startLine, startChar := int(Start.Line), int(Start.Character)
-		//endLine, endChar := int(end.Line), int(end.Character)
 
 		newLines := strings.Split(edit.NewText, "\n")
 		for i, line := range newLines {
@@ -567,10 +580,6 @@ func (e *Editor) handleEdits(edits []Edit, version int) {
 				e.Content[index] = []rune(line)
 			}
 		}
-
-		//lsp.didChange(AbsoluteFilePath, version, startLine, startChar, endLine, endChar, edit.NewText)
 	}
-
-	//e.UpdateColors()
 	e.UpdateNeeded()
 }

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	. "edgo/internal/highlighter"
 	. "edgo/internal/logger"
-	. "edgo/internal/lsp"
 	. "edgo/internal/search"
 	. "edgo/internal/utils"
 	"fmt"
@@ -52,15 +51,15 @@ func (e *Editor) WriteFile() {
 	// Create a buffered writer from the file
 	w := bufio.NewWriter(f)
 
-	for i, row := range e.Content {
+	for _, row := range e.Content {
 		for j := 0; j < len(row); {
 			if _, err := w.WriteRune(row[j]); err != nil { panic(err) }
 			j++
 		}
 
-		if i != len(e.Content) - 1 { // do not write \n at the end
+		//if i != len(e.Content) - 1 { // do not write \n at the end
 			if _, err := w.WriteRune('\n'); err != nil { panic(err) }
-		}
+		//}
 
 	}
 
@@ -70,10 +69,14 @@ func (e *Editor) WriteFile() {
 
 	e.IsContentChanged = false
 
-	if e.Lang != "" && Lsp.IsLangReady(e.Lang) {
-		go Lsp.DidOpen(e.AbsoluteFilePath, e.Lang) // todo remove it in future
-		//go lsp.didChange(AbsoluteFilePath)
-		//go lsp.didSave(AbsoluteFilePath)
+	if e.Lang != "" {
+		lsp := e.lsp2lang[e.Lang]
+		if lsp.IsReady {
+			go lsp.DidOpen(e.AbsoluteFilePath, e.Lang) // todo remove it in future
+			//go lsp.didChange(AbsoluteFilePath)
+			//go lsp.didSave(AbsoluteFilePath)
+		}
+
 	}
 
 }

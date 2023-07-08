@@ -91,6 +91,7 @@ type Editor struct {
 	ProcessPanelCursorY   int
 	ProcessPanelSelection  Selection
 
+	lsp2lang map[string]*LspClient
 }
 
 
@@ -439,9 +440,14 @@ func (e *Editor) OpenFile(fname string) error {
 
 	if newLang != "" && newLang != e.Lang {
 		e.Lang = newLang
-		Lsp.Lang = newLang
-		ready := Lsp.IsLangReady(e.Lang)
-		if !ready { go e.InitLsp(e.Lang) }
+
+		_, found := e.lsp2lang[newLang]
+		if !found {
+			lsp := LspClient{Lang: newLang}
+			e.lsp2lang[newLang] = &lsp
+			go e.InitLsp(e.Lang)
+		}
+
 	}
 
 	conf, found := e.Config.Langs[e.Lang]
@@ -495,6 +501,7 @@ func (e *Editor) InitScreen() {
 	e.IsColorize = true
 	e.FileSelectedIndex = -1
 	e.CursorHistory = []CursorMove{}
+	e.lsp2lang = map[string]*LspClient{}
 
 	return
 }
@@ -672,8 +679,12 @@ func (e *Editor) GetStyle(ry int, cx int) Style {
 }
 
 func (e *Editor) DrawDiagnostic() {
+	if e.Lang == "" { return }
+	lsp := e.lsp2lang[e.Lang]
+	if !lsp.IsReady { return }
+
 	//lsp.someMapMutex2.Lock()
-	maybeDiagnostic, found := Lsp.GetDiagnostic("file://" + e.AbsoluteFilePath)
+	maybeDiagnostic, found := lsp.GetDiagnostic("file://" + e.AbsoluteFilePath)
 	//lsp.someMapMutex2.Unlock()
 
 	if found {
@@ -775,16 +786,18 @@ func (e *Editor) InitLsp(lang string) {
 	conf, ok := e.Config.Langs[strings.ToLower(lang)]
 	if !ok || len(conf.Lsp) == 0 { return }  // lang is not supported.
 
-	started := Lsp.Start(lang, strings.Split(conf.Lsp, " "))
+	lsp := e.lsp2lang[lang]
+	split := strings.Split(conf.Lsp, " ")
+	started := lsp.Start(split[0], split[1:]...)
 	if !started { return }
 
-	var diagnosticUpdateChan = make(chan string)
-	go Lsp.ReceiveLoop(diagnosticUpdateChan, lang)
+	//var diagnosticUpdateChan = make(chan string)
+	//go lsp.ReceiveLoop(diagnosticUpdateChan, lang)
 
 	currentDir, _ := os.Getwd()
 
-	Lsp.Init(currentDir)
-	Lsp.DidOpen(e.AbsoluteFilePath, lang)
+	lsp.Init(currentDir)
+	lsp.DidOpen(e.AbsoluteFilePath, ConvertContentToString(e.Content))
 
 	//e.DrawEverything()
 	//
@@ -796,7 +809,7 @@ func (e *Editor) InitLsp(lang string) {
 	//e.Screen.Show()
 
 	go func() {
-		for range diagnosticUpdateChan {
+		for range lsp.DiagnosticsChannel {
 			if e.IsOverlay { continue }
 			e.DrawEverything()
 			e.Screen.Show()
@@ -805,9 +818,11 @@ func (e *Editor) InitLsp(lang string) {
 }
 
 func (e *Editor) OnErrors() {
-	if !Lsp.IsLangReady(e.Lang) { return }
+	if e.Lang == "" { return }
+	lsp := e.lsp2lang[e.Lang]
+	if !lsp.IsReady { return }
 
-	maybeDiagnostics, found := Lsp.GetDiagnostic("file://" + e.AbsoluteFilePath)
+	maybeDiagnostics, found := lsp.GetDiagnostic("file://" + e.AbsoluteFilePath)
 
 	if !found || len(maybeDiagnostics.Diagnostics) == 0 { return }
 
