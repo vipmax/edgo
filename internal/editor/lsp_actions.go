@@ -207,7 +207,6 @@ func (e *Editor) OnReferences() {
 		if len(options) == 1 {
 			// if only one option, no need to draw options
 			referencesResult := referencesResponse.Result[0]
-			
 			e.applyReferences(referencesResult)
 			return
 		}
@@ -217,7 +216,7 @@ func (e *Editor) OnReferences() {
 		height := MinMany(10, len(options))                                                                           // depends on min option len or 5 at min or how many rows to the end of e.Screen
 		atx := (e.Col -tabs) + e.LINES_WIDTH + tabs*(e.langTabWidth) + e.FilesPanelWidth; aty := e.Row - height - e.Y // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
-		if len(options) > e.Row- e.Y { aty = e.Row + 1 }
+		if len(options) > e.Row - e.Y { aty = e.Row + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 

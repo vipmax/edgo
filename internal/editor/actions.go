@@ -70,8 +70,7 @@ func (e *Editor) OnScrollDown() {
 
 func (e *Editor) Focus() {
 	if e.Row > e.Y+ e.ROWS { e.Y = e.Row + e.ROWS }
-	if e.Row < e.Y { e.Y = e.Row
-	}
+	if e.Row < e.Y { e.Y = e.Row }
 }
 
 func (e *Editor) OnEnter() {
@@ -349,9 +348,11 @@ func (e *Editor) OnSelectAll() {
 }
 
 func (e *Editor) OnPaste() {
-	e.Focus()
+	// e.Focus()
 
-	if len(e.Selection.GetSelectionString(e.Content)) > 0 { e.Cut(false) }
+	if e.Selection.IsSelectionNonEmpty() {
+		e.Cut(false)
+	}
 
 	text, _ := clipboard.ReadAll()
 	lines := strings.Split(text, "\n")
@@ -365,7 +366,7 @@ func (e *Editor) OnPaste() {
 	if len(lines) > 1 { // multiple Line paste
 		e.InsertLines(e.Row, e.Col, lines)
 	}
-
+	
 	e.Update = true
 	e.UpdateNeeded()
 }
@@ -373,7 +374,7 @@ func (e *Editor) OnPaste() {
 func (e *Editor) Cut(isCopySelected bool) {
 	e.Focus()
 
-	if len(e.Content) <= 1 {
+	if len(e.Content) < 1 {
 		e.Content[0] = []rune{};
 		e.Row, e.Col = 0, 0
 		return

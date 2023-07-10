@@ -84,7 +84,7 @@ func TestLspClientHover(t *testing.T) {
 	text, _ := os.ReadFile(file)
 	lsp.DidOpen(file, string(text))
 
-	response, err := lsp.Hover(file, 77-1, 7)
+	response, err := lsp.Hover(file, 75-1, 7)
 
 	fmt.Println(response, err)
 
