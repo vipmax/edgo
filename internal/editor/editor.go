@@ -2,6 +2,7 @@ package editor
 
 import (
 	. "edgo/internal/config"
+	"edgo/internal/dap"
 	. "edgo/internal/highlighter"
 	. "edgo/internal/logger"
 	. "edgo/internal/lsp"
@@ -27,6 +28,8 @@ type Editor struct {
 	COLUMNS     int // terminal size columns
 	ROWS        int // terminal size rows
 	LINES_WIDTH int // draw file lines number
+
+	TERMINAL_HEIGHT int
 
 	Row int // cursor position row
 	Col int // cursor position column
@@ -80,9 +83,9 @@ type Editor struct {
 	//Removed               Set
 
 	// process panel vars
-	ProcessPanelHeight    int
-	ProcessOutLines       [][]rune
-	ProcessPanelScroll    int
+	ProcessPanelHeight int
+	ProcessContent     [][]rune
+	ProcessPanelScroll int
 	IsProcessPanelMoving  bool
 	IsProcessPanelFocused bool
 	Process               *Process
@@ -92,6 +95,10 @@ type Editor struct {
 	ProcessPanelSelection  Selection
 
 	lsp2lang map[string]*LspClient
+
+	Dap dap.DapClient
+	DebugInfo DebugInfo
+	stopline int
 }
 
 
@@ -139,6 +146,7 @@ func (e *Editor) HandleEvents() {
 	switch ev := ev.(type) {
 	case *EventResize:
 		e.COLUMNS, e.ROWS = e.Screen.Size()
+		e.TERMINAL_HEIGHT = e.ROWS
 		e.ROWS -= e.ProcessPanelHeight
 
 	case *EventMouse:
@@ -151,8 +159,9 @@ func (e *Editor) HandleEvents() {
 	case *EventKey:
 		key := ev.Key()
 		modifiers := ev.Modifiers()
-
+		if e.Dap.IsStarted { e.OnDebugKeyHandle(key, ev, 1); return }
 		e.HandleKeyboard(key, ev, modifiers)
+
 	}
 }
 
@@ -193,7 +202,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 	if !e.IsProcessPanelMoving && buttons & Button1 == 1 &&
 		my == e.ROWS && e.ProcessPanelHeight > 0 &&
-		len(e.ProcessPanelSelection.GetSelectedLines(e.ProcessOutLines)) == 0 {
+		len(e.ProcessPanelSelection.GetSelectedLines(e.ProcessContent)) == 0 {
 
 		e.ROWS = my
 		e.ProcessPanelHeight = screenRows - e.ROWS
@@ -216,7 +225,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 	if my >= e.ROWS && mx >= e.FilesPanelWidth - 2 {
 		// in process panel
 		e.IsProcessPanelFocused = true
-		if buttons & WheelDown != 0 && e.ProcessPanelScroll <= len(e.ProcessOutLines) - e.ProcessPanelHeight {
+		if buttons & WheelDown != 0 && e.ProcessPanelScroll <= len(e.ProcessContent) - e.ProcessPanelHeight {
 			e.ProcessPanelScroll++
 		}
 		if buttons & WheelUp != 0 && e.ProcessPanelScroll > 0 {
@@ -230,8 +239,8 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 			if e.ProcessPanelCursorY < 0 { e.ProcessPanelCursorY = 0 }
 			// fit cursor
-			if e.ProcessPanelCursorY >= len(e.ProcessOutLines) { e.ProcessPanelCursorY = len(e.ProcessOutLines)-1 }
-			if e.ProcessPanelCursorX > len(e.ProcessOutLines[e.ProcessPanelCursorY]) { e.ProcessPanelCursorX = len(e.ProcessOutLines[e.ProcessPanelCursorY]) }
+			if e.ProcessPanelCursorY >= len(e.ProcessContent) { e.ProcessPanelCursorY = len(e.ProcessContent)-1 }
+			if e.ProcessPanelCursorX > len(e.ProcessContent[e.ProcessPanelCursorY]) { e.ProcessPanelCursorX = len(e.ProcessContent[e.ProcessPanelCursorY]) }
 
 			if e.ProcessPanelSelection.Ssx < 0 { e.ProcessPanelSelection.Ssx, e.ProcessPanelSelection.Ssy = e.ProcessPanelCursorX, e.ProcessPanelCursorY }
 			if e.ProcessPanelSelection.Ssx >= 0 { e.ProcessPanelSelection.Sex, e.ProcessPanelSelection.Sey = e.ProcessPanelCursorX, e.ProcessPanelCursorY }
@@ -240,7 +249,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 		if buttons&Button1 == 0 {
 			if e.ProcessPanelSelection.IsSelectionNonEmpty() {
-				selectionString := e.ProcessPanelSelection.GetSelectionString(e.ProcessOutLines)
+				selectionString := e.ProcessPanelSelection.GetSelectionString(e.ProcessContent)
 				clipboard.WriteAll(selectionString)
 			}
 
@@ -262,7 +271,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 	if e.IsFilesPanelMoving && buttons & Button1 == 1 { e.FilesPanelWidth = mx; return }
 	if e.IsFilesPanelMoving && buttons & Button1 == 0 { e.IsFilesPanelMoving = false; return }
-	if mx < e.FilesPanelWidth-3 && buttons & Button1 == 0 { e.OnFilesTree(); return }
+	if mx < e.FilesPanelWidth-3 && buttons & Button1 == 0 && !e.Dap.IsStarted { e.OnFilesTree(); return }
 
 	if e.Filename == "" { return }
 
@@ -348,7 +357,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 	return
 }
 
-func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
+func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 	if e.Filename == "" && key != KeyCtrlQ { return }
 
 	if ev.Rune() == '/' && modifiers&ModAlt != 0 || int(ev.Rune()) == '÷' {
@@ -371,6 +380,7 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if key == KeyCtrlA { e.OnSelectAll(); return }
 	if key == KeyCtrlX { e.Cut(true) }
 	if key == KeyCtrlD { e.Duplicate() }
+	if key == KeyCtrlB { e.Breakpoint() }
 
 	if modifiers & ModShift != 0 && (
 		key == KeyRight ||
@@ -416,6 +426,7 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey,  modifiers ModMask) {
 	if key == KeyCtrlF { e.OnSearch() }
 	if key == KeyF18 { e.OnRename() }
 	if key == KeyF22 { e.OnProcessRun(true) }
+	if key == KeyF23 { e.OnDebug() }
 	if key == KeyCtrlU { e.OnUndo() }
 	//if key == KeyCtrlR { e.OnRedo() } // todo: fix i
 	if key == KeyCtrlO { e.OnCursorBack() }
@@ -448,6 +459,7 @@ func (e *Editor) OpenFile(fname string) error {
 			go e.InitLsp(e.Lang)
 		}
 
+		e.Dap = dap.DapClient{Lang: newLang, Conntype: "tcp", Port: 54752}
 	}
 
 	conf, found := e.Config.Langs[e.Lang]
@@ -494,14 +506,15 @@ func (e *Editor) InitScreen() {
 	e.Screen.Clear()
 
 	e.COLUMNS, e.ROWS = e.Screen.Size()
-	//ROWS -= 1
-	
+	e.TERMINAL_HEIGHT = e.ROWS
 	e.LINES_WIDTH = 6
 	e.Update = true
 	e.IsColorize = true
 	e.FileSelectedIndex = -1
 	e.CursorHistory = []CursorMove{}
 	e.lsp2lang = map[string]*LspClient{}
+	e.DebugInfo = DebugInfo{}
+	e.stopline = -1
 
 	return
 }
@@ -593,8 +606,11 @@ func (e *Editor) DrawEverything() {
 	if e.IsContentSearch {
 		e.DrawSearch(e.SearchPattern, len(e.SearchPattern))
 	}
-	if e.IsFilesSearch {
+	if e.IsFilesSearch && !e.Dap.IsStarted {
 		e.DrawTreeSearch(e.FilesSearchPattern, len(e.FilesSearchPattern))
+	}
+	if e.Dap.IsStarted {
+		e.DrawDebugPanel()
 	}
 }
 
@@ -634,9 +650,9 @@ func (e *Editor) DrawProcessPanel() {
 	_, screenRows := e.Screen.Size()
 
 
-	for index := 0; index < len(e.ProcessOutLines); index++ {
-		if index + e.ProcessPanelScroll > len(e.ProcessOutLines) - 1 { break }
-		line := e.ProcessOutLines[index + e.ProcessPanelScroll]
+	for index := 0; index < len(e.ProcessContent); index++ {
+		if index + e.ProcessPanelScroll > len(e.ProcessContent) - 1 { break }
+		line := e.ProcessContent[index + e.ProcessPanelScroll]
 		y := e.ROWS + index + 1
 		if y > screenRows { break }
 
@@ -673,6 +689,9 @@ func (e *Editor) GetStyle(ry int, cx int) Style {
 	color := e.Colors[ry][cx]
 	if color > 0 { style = StyleDefault.Foreground(Color(color)) }
 	if e.Selection.IsUnderSelection(cx, ry) {
+		style = style.Background(Color(SelectionColor))
+	}
+	if e.stopline == ry {
 		style = style.Background(Color(SelectionColor))
 	}
 	return style
@@ -746,6 +765,15 @@ func (e *Editor) DrawLineNumber(brw int, row int) {
 	//if e.Added.Contains(brw+1) {
 	//	style = StyleDefault.Foreground(Color(AccentColor))
 	//}
+
+	bps, found := e.Dap.Breakpoints[e.AbsoluteFilePath]
+	if found && Contains(bps, brw+1){
+		style = StyleDefault.Foreground(Color(AccentColor))
+		e.Screen.SetContent(e.FilesPanelWidth + e.LINES_WIDTH/2 -1, row, '●', nil, style)
+		return
+	}
+
+
 	lineNumber := CenterNumber(brw + 1, e.LINES_WIDTH)
 	for index, char := range lineNumber {
 		e.Screen.SetContent(index + e.FilesPanelWidth, row, char, nil, style)
@@ -1658,7 +1686,7 @@ func (e *Editor) OnProcessRun(newRun bool) {
 
 
 
-	e.ProcessOutLines = [][]rune{}
+	e.ProcessContent = [][]rune{}
 	e.ProcessPanelScroll = 0
 	e.ProcessPanelSpacing = 2
 
@@ -1668,11 +1696,11 @@ func (e *Editor) OnProcessRun(newRun bool) {
 	go func() {
 		for line := range process.Out {
 
-			e.ProcessOutLines = append(e.ProcessOutLines, []rune(line))
+			e.ProcessContent = append(e.ProcessContent, []rune(line))
 
-			if len(e.ProcessOutLines) > e.ProcessPanelHeight {
-				if e.ProcessPanelScroll >= len(e.ProcessOutLines) - e.ProcessPanelHeight - 1  {
-					e.ProcessPanelScroll = len(e.ProcessOutLines) - e.ProcessPanelHeight + 1 // focusing
+			if len(e.ProcessContent) > e.ProcessPanelHeight {
+				if e.ProcessPanelScroll >= len(e.ProcessContent) - e.ProcessPanelHeight - 1  {
+					e.ProcessPanelScroll = len(e.ProcessContent) - e.ProcessPanelHeight + 1 // focusing
 					e.ProcessPanelScroll = Max(0, e.ProcessPanelScroll)
 				}
 			}
@@ -1681,8 +1709,8 @@ func (e *Editor) OnProcessRun(newRun bool) {
 			e.Screen.Show()
 
 			if process.Stopped {
-				if len(e.ProcessOutLines) > e.ProcessPanelHeight { // focusing
-					e.ProcessPanelScroll = len(e.ProcessOutLines) - e.ProcessPanelHeight + 1
+				if len(e.ProcessContent) > e.ProcessPanelHeight { // focusing
+					e.ProcessPanelScroll = len(e.ProcessContent) - e.ProcessPanelHeight + 1
 				}
 				e.DrawProcessPanel()
 				e.Screen.Show()
@@ -1694,10 +1722,15 @@ func (e *Editor) OnProcessRun(newRun bool) {
 }
 
 func (e *Editor) OnProcessStop() {
-	e.Process.Stop()
-
-	if len(e.ProcessOutLines) > e.ProcessPanelHeight { // focusing
-		e.ProcessPanelScroll = len(e.ProcessOutLines) - e.ProcessPanelHeight + 2
+	if e.Process != nil && e.Process.Cmd != nil {
+		e.Process.Stop()
 	}
 
+	if e.Dap.IsStarted {
+		e.OnDebugStop()
+	}
+
+	if len(e.ProcessContent) > e.ProcessPanelHeight { // focusing
+		e.ProcessPanelScroll = len(e.ProcessContent) - e.ProcessPanelHeight + 2
+	}
 }

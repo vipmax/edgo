@@ -27,7 +27,8 @@ type DapClient struct {
 	reader *bufio.Reader
 
 	IsReady   bool
-	isStopped bool
+	IsStopped bool
+	IsStarted bool
 
 	Breakpoints  map[string][]int
 
@@ -38,9 +39,9 @@ type DapClient struct {
 
 	id   int
 
-	conntype string
-	port int
-	conn net.Conn
+	Conntype string
+	Port     int
+	conn     net.Conn
 }
 
 func (this *DapClient) Start(cmd string, args ...string) bool {
@@ -77,18 +78,20 @@ func (this *DapClient) Start(cmd string, args ...string) bool {
 		case startError := <- errorsChannel:
 			if startError != nil {
 				Log.Error("error starting dap." + startError.Error())
-				this.isStopped = true
+				this.IsStopped = true
+				this.IsStarted = false
 				return false
 			}
 
 		case <-time.After(time.Duration(100) * time.Millisecond):
 			Log.Info("dap started.", cmd, strings.Join(args," "))
 			end = true
+
 		}
 	}
 
-	if this.conntype == "tcp" {
-		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", this.port))
+	if this.Conntype == "tcp" {
+		conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", this.Port))
 		if err != nil {
 			Log.Error("Error connecting:", err.Error())
 			return false
@@ -98,17 +101,21 @@ func (this *DapClient) Start(cmd string, args ...string) bool {
 		this.conn = conn
 	}
 
-	if this.conntype == "stdio" {
+	if this.Conntype == "stdio" {
 		this.reader = bufio.NewReader(stdout)
 	}
 
-	this.Breakpoints = make(map[string][]int)
+	if this.Breakpoints == nil {
+		this.Breakpoints = make(map[string][]int)
+	}
+
 
 	this.message2chan = make(map[int]chan string)
 	this.otherMessages = make(chan string)
 	this.StdoutMessages = make(chan string)
 	this.EventMessages = make(chan string)
 	this.IsReady = true
+	this.IsStarted = true
 
 	go this.readStdout()
 	go this.readTcp()
@@ -117,9 +124,13 @@ func (this *DapClient) Start(cmd string, args ...string) bool {
 }
 
 func (this *DapClient) Stop() {
-	if this.isStopped { return }
+	if this.IsStopped { return }
 	this.stop()
-	this.isStopped = true
+	//close(this.StdoutMessages)
+	//close(this.EventMessages)
+	this.IsStopped = true
+	this.IsStarted = false
+	this.IsReady = false
 }
 
 
@@ -127,6 +138,7 @@ func (this *DapClient) readStdout() {
 	scanner := bufio.NewScanner(this.stdout)
 	for scanner.Scan() {
 		message := scanner.Text()
+		if this.IsStopped  { break }
 		this.StdoutMessages <- message
 	}
 	close(this.StdoutMessages)
@@ -182,7 +194,7 @@ func (this *DapClient) receive() string {
 
 		} else {
 			line, err = this.reader.ReadString('\n') // it stuck sometimes
-			if err != nil { Log.Error(err.Error()); continue }
+			if err != nil { Log.Error(err.Error()); break }
 		}
 
 		line = strings.TrimSuffix(line, "\r\n")
@@ -200,12 +212,15 @@ func (this *DapClient) receive() string {
 			continue
 		}
 	}
+	return ""
 }
 
 func (this *DapClient) readTcp() {
 	for {
+		if this.IsStopped  { break }
 		message := this.receive()
 		Log.Info("<-", message)
+		if this.IsStopped  { break }
 
 		responseJson := make(map[string]interface{})
 		err := json.Unmarshal([]byte(message), &responseJson)
@@ -227,6 +242,8 @@ func (this *DapClient) readTcp() {
 			}
 		}
 	}
+
+	close(this.EventMessages)
 }
 
 func WaitForRequest[T any](channel chan string, timeout int) (T, error) {
@@ -292,13 +309,15 @@ func (this *DapClient) Launch(program string) bool {
 	
 	this.id++
 	id := this.id
+
+	name := filepath.Base(program)
 		
 	launchRequest := LaunchRequest{
 		Seq:     id,
 		Type:    "request",
 		Command: "launch",
 		Arguments: LaunchRequestArguments{
-			Name:    "Launch debug " + program,
+			Name:    "Launch debug " + name,
 			Type:    this.Lang,
 			Request: "launch",
 			Mode:    "debug",
@@ -330,17 +349,23 @@ func (this *DapClient) SetBreakpoint(file string, line int) bool {
 	name := filepath.Base(file)
 
 	bps := this.Breakpoints[file]
-	bps = append(bps, line)
+	if line != -1 {
+		bps = append(bps, line)
+	}
+
 	this.Breakpoints[file] = bps
+
+	breakpoints := []Breakpoint{}
+	for _, b := range bps {
+		breakpoints = append(breakpoints, Breakpoint{Line: b})
+	}
 
 	request := SetBreakpointsRequest{
 		Seq: id, Type:    "request", Command: "setBreakpoints",
 		Arguments: SetBreakpointsArguments{
 			Source: Source{ Name: name,  Path: file },
-			Breakpoints: []Breakpoint{
-				{Line: line},
-			},
-			Lines: []int{line},
+			Breakpoints: breakpoints,
+			Lines: bps,
 		},
 	}
 	
@@ -348,15 +373,15 @@ func (this *DapClient) SetBreakpoint(file string, line int) bool {
 	this.send(request)
 
 	response, err := WaitForRequest[SetBreakpointsResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
 
 	delete(this.message2chan, id)
-
-	if err != nil || response.Success != true {
-		Log.Error("launch response from dap server error")
-		this.IsReady = false
-	}
-
 	return response.Success
+}
+func (this *DapClient) SetAllBreakpoints() {
+	for file := range this.Breakpoints {
+		this.SetBreakpoint(file, -1)
+	}
 }
 
 func (this *DapClient) Continue(threadID int) bool {
@@ -373,14 +398,9 @@ func (this *DapClient) Continue(threadID int) bool {
 	this.send(request)
 
 	response, err := WaitForRequest[ContinueResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
 
 	delete(this.message2chan, id)
-
-	if err != nil || response.Success != true {
-		Log.Error("launch response from dap server error")
-		this.IsReady = false
-	}
-
 	return response.Success
 }
 
@@ -398,16 +418,12 @@ func (this *DapClient) Next(threadID int) bool {
 	this.send(request)
 
 	response, err := WaitForRequest[ContinueResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
 
 	delete(this.message2chan, id)
-
-	if err != nil || response.Success != true {
-		Log.Error("launch response from dap server error")
-		this.IsReady = false
-	}
-
 	return response.Success
 }
+
 func (this *DapClient) StepIn(threadID int) bool {
 
 	this.id++
@@ -422,14 +438,129 @@ func (this *DapClient) StepIn(threadID int) bool {
 	this.send(request)
 
 	response, err := WaitForRequest[ContinueResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
 
 	delete(this.message2chan, id)
+	return response.Success
+}
 
-	if err != nil || response.Success != true {
-		Log.Error("launch response from dap server error")
-		this.IsReady = false
+
+func (this *DapClient) Pause(threadID int) bool {
+
+	this.id++
+	id := this.id
+
+	request := ContinueRequest{
+		Seq: id, Type: "request", Command: "pause",
+		Arguments: ContinueArguments{ threadID },
 	}
 
+	this.message2chan[id] = this.otherMessages
+	this.send(request)
+
+	response, err := WaitForRequest[ContinueResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
+
+	delete(this.message2chan, id)
+	return response.Success
+}
+
+
+func (this *DapClient) Threads(threadID int) ThreadsResponse {
+
+	this.id++
+	id := this.id
+
+	request := ContinueRequest{
+		Seq: id, Type: "request", Command: "threads",
+		Arguments: ContinueArguments{ threadID },
+	}
+
+	this.message2chan[id] = this.otherMessages
+	this.send(request)
+
+	response, err := WaitForRequest[ThreadsResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
+
+	delete(this.message2chan, id)
+	return response
+}
+
+func (this *DapClient) Stacktrace(threadID int, levels int) StackTraceResponse {
+
+	this.id++
+	id := this.id
+
+	request := StacktraceRequest{
+		Seq: id, Type: "request", Command: "stackTrace",
+		Arguments: StacktraceArguments{ ThreadID: threadID, Levels: levels  },
+	}
+
+	this.message2chan[id] = this.otherMessages
+	this.send(request)
+
+	response, err := WaitForRequest[StackTraceResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
+
+	delete(this.message2chan, id)
+	return response
+}
+
+func (this *DapClient) Scopes(frameId int) ScopesResponse {
+
+	this.id++
+	id := this.id
+
+	request := ScopeRequest{
+		Seq: id, Type: "request", Command: "scopes",
+		Arguments: ScopeArguments{ frameId },
+	}
+
+	this.message2chan[id] = this.otherMessages
+	this.send(request)
+
+	response, err := WaitForRequest[ScopesResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
+
+	delete(this.message2chan, id)
+	return response
+}
+
+func (this *DapClient) Variables(variablesReference int) VariablesResponse {
+
+	this.id++
+	id := this.id
+
+	request := VariablesRequest{
+		Seq: id, Type: "request", Command: "variables",
+		Arguments: VariablesArguments{ variablesReference },
+	}
+
+	this.message2chan[id] = this.otherMessages
+	this.send(request)
+
+	response, err := WaitForRequest[VariablesResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
+
+	delete(this.message2chan, id)
+	return response
+}
+
+func (this *DapClient) Disconnect() bool {
+	this.id++
+	id := this.id
+
+	request := ContinueRequest{
+		Seq: id, Type: "request", Command: "disconnect",
+	}
+
+	this.message2chan[id] = this.otherMessages
+	this.send(request)
+
+	response, err := WaitForRequest[ContinueResponse](this.otherMessages, 3000)
+	if err != nil { Log.Error(err.Error()) }
+
+	delete(this.message2chan, id)
 	return response.Success
 }
 

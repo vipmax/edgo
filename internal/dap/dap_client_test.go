@@ -30,7 +30,7 @@ func TestDapClientStart(t *testing.T) {
 	process, err := os.FindProcess(pid)
 	if err != nil { t.Errorf("Error finding cmd with id %d: %s\n", process.Pid, err) }
 
-	if dap.isStopped { t.Errorf("Expected lsp not to be stopped") }
+	if dap.IsStopped { t.Errorf("Expected lsp not to be stopped") }
 }
 
 func TestDapClientInitialize(t *testing.T) {
@@ -39,7 +39,7 @@ func TestDapClientInitialize(t *testing.T) {
 	os.Setenv("EDGO_LOG", "edgo.log")
 	Log.Start()
 
-	dap := DapClient{Lang: "go", conntype: "tcp", port: 54752}
+	dap := DapClient{Lang: "go", Conntype: "tcp", Port: 54752}
 	args := "dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
 
 	dap.Start("dlv", strings.Split(args, " ")...)
@@ -62,7 +62,7 @@ func TestDapClientLaunch(t *testing.T) {
 	os.Setenv("EDGO_LOG", "edgo.log")
 	Log.Start()
 
-	dap := DapClient{Lang: "go", conntype: "tcp", port: 54752}
+	dap := DapClient{Lang: "go", Conntype: "tcp", Port: 54752}
 	args := "dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
 
 	dap.Start("dlv", strings.Split(args, " ")...)
@@ -82,7 +82,7 @@ func TestDapClientBreakpoint(t *testing.T) {
 	os.Setenv("EDGO_LOG", "edgo.log")
 	Log.Start()
 
-	dap := DapClient{Lang: "go", conntype: "tcp", port: 54752}
+	dap := DapClient{Lang: "go", Conntype: "tcp", Port: 54752}
 	args := "dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
 
 	dap.Start("dlv", strings.Split(args, " ")...)
@@ -94,6 +94,12 @@ func TestDapClientBreakpoint(t *testing.T) {
 	if setBreakpointResult == false {
 		t.Errorf("Expected setBreakpointResult to be true, got false")
 	}
+
+	setBreakpointResult2 := dap.SetBreakpoint("/Users/max/apps/go/edgo/cmd/test/main.go", 10)
+
+	if setBreakpointResult2 == false {
+		t.Errorf("Expected setBreakpointResult to be true, got false")
+	}
 }
 
 func TestDapClientContinue(t *testing.T) {
@@ -103,7 +109,7 @@ func TestDapClientContinue(t *testing.T) {
 	os.Setenv("EDGO_LOG", "edgo.log")
 	Log.Start()
 
-	dap := DapClient{Lang: "go", conntype: "tcp", port: 54752}
+	dap := DapClient{Lang: "go", Conntype: "tcp", Port: 54752}
 	args := "dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
 
 	dap.Start("dlv", strings.Split(args, " ")...)
@@ -126,7 +132,7 @@ func TestDapClientContinueWithEvents(t *testing.T) {
 	os.Setenv("EDGO_LOG", "edgo.log")
 	Log.Start()
 
-	dap := DapClient{Lang: "go", conntype: "tcp", port: 54752}
+	dap := DapClient{Lang: "go", Conntype: "tcp", Port: 54752}
 	args := "dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
 
 	dap.Start("dlv", strings.Split(args, " ")...)
@@ -150,6 +156,112 @@ func TestDapClientContinueWithEvents(t *testing.T) {
 	dap.SetBreakpoint("/Users/max/apps/go/edgo/cmd/test/main.go", 9)
 
 	threadId := 1
+	dap.Continue(threadId)
+	time.Sleep(time.Second)
+	dap.Continue(threadId)
+	time.Sleep(time.Second)
+
+}
+func TestDapClientDisconnect(t *testing.T) {
+	os.Chdir("../..")
+	currentDir, _ := os.Getwd()
+
+	os.Setenv("EDGO_LOG", "edgo.log")
+	Log.Start()
+
+	dap := DapClient{Lang: "go", Conntype: "tcp", Port: 54752}
+	args := "dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
+
+	dap.Start("dlv", strings.Split(args, " ")...)
+
+	go func() {
+		for eventMessage := range dap.EventMessages {
+			fmt.Println("eventMessage", eventMessage)
+		}
+	}()
+
+	go func() {
+		for stdoutMessage := range dap.StdoutMessages {
+			fmt.Println("stdoutMessage", stdoutMessage)
+		}
+	}()
+
+	dap.Init(currentDir)
+	time.Sleep(time.Second)
+	dap.Launch("./cmd/test/main.go")
+	time.Sleep(time.Second)
+	dap.SetBreakpoint("/Users/max/apps/go/edgo/cmd/test/main.go", 9)
+
+	threadId := 1
+	dap.Continue(threadId)
+	time.Sleep(time.Second)
+	dap.Continue(threadId)
+	time.Sleep(time.Second)
+
+	dap.Disconnect()
+
+}
+
+func TestDapClientContinueWithEventsRwice(t *testing.T) {
+	os.Chdir("../..")
+	currentDir, _ := os.Getwd()
+
+	os.Setenv("EDGO_LOG", "edgo.log")
+	Log.Start()
+
+	dap := DapClient{Lang: "go", Conntype: "tcp", Port: 54752}
+	args := "dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
+
+	dap.Start("dlv", strings.Split(args, " ")...)
+
+	go func() {
+		for eventMessage := range dap.EventMessages {
+			fmt.Println("eventMessage", eventMessage)
+		}
+	}()
+
+	go func() {
+		for stdoutMessage := range dap.StdoutMessages {
+			fmt.Println("stdoutMessage", stdoutMessage)
+		}
+	}()
+
+	dap.Init(currentDir)
+	time.Sleep(time.Second)
+	dap.Launch("./cmd/test/main.go")
+	time.Sleep(time.Second)
+	dap.SetBreakpoint("/Users/max/apps/go/edgo/cmd/test/main.go", 9)
+
+	threadId := 1
+	dap.Continue(threadId)
+	time.Sleep(time.Second)
+	dap.Continue(threadId)
+	time.Sleep(time.Second)
+
+	dap.Stop()
+	time.Sleep(time.Second)
+
+	dap.Start("dlv", strings.Split(args, " ")...)
+
+	go func() {
+		for eventMessage := range dap.EventMessages {
+			fmt.Println("eventMessage", eventMessage)
+		}
+	}()
+
+	go func() {
+		for stdoutMessage := range dap.StdoutMessages {
+			fmt.Println("stdoutMessage", stdoutMessage)
+		}
+	}()
+
+	dap.Init(currentDir)
+	time.Sleep(time.Second)
+	dap.Launch("./cmd/test/main.go")
+	time.Sleep(time.Second)
+	dap.SetBreakpoint("/Users/max/apps/go/edgo/cmd/test/main.go", 9)
+
+	threadId = 1
 	dap.Continue(threadId)
 	time.Sleep(time.Second)
 	dap.Continue(threadId)

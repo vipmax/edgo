@@ -123,6 +123,22 @@ func Remove[T any](slice []T, s int) []T {
 	return append(slice[:s], slice[s+1:]...)
 }
 
+func FindAndRemove[T comparable](slice []T, element T) []T {
+	// Find the index of the element
+	index := -1
+	for i, value := range slice {
+		if value == element {
+			index = i
+			break
+		}
+	}
+
+	// Check if the element was found
+	if index == -1 { return slice }
+
+	// Remove the element by slicing the original slice
+	return append(slice[:index], slice[index+1:]...)
+}
 
 
 func MaxString(arr []string) int {

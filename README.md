@@ -186,6 +186,22 @@ brew install zls
 ```
 
 
+### Debug
+
+Added Debug first implementation
+
+Debug is working only for go lang (dlv) via dap    
+WIP for other langs 
+
+Usage:
+- `control + b` - set/delete breakpoint  
+- `control + F11` to start debug  
+In debug mode editing is not allowed  
+- `c` - continue to the next breakpoint  
+- `q` - quit debug  
+
+- ![editor](assets/screen3.png)
+
 ### Notes:  
 - Map `Caps lock` to `Control` button, everything will be easier.  
 - Use `Alacritty` as default terminal, cause it is fast end easy to config.  
