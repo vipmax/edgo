@@ -190,8 +190,10 @@ brew install zls
 
 Added Debug first implementation
 
-Debug is working only for go lang (dlv) via dap    
-WIP for other langs 
+Debug is working via dap protocol for `go` (dlv)  and `python` (debugpy)
+WIP for other langs
+
+![editor](assets/screen3.png)
 
 Usage:
 - `control + b` - set/delete breakpoint  
@@ -200,7 +202,7 @@ In debug mode editing is not allowed
 - `c` - continue to the next breakpoint  
 - `q` - quit debug  
 
-- ![editor](assets/screen3.png)
+
 
 ### Notes:  
 - Map `Caps lock` to `Control` button, everything will be easier.  

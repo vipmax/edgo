@@ -8,29 +8,30 @@ type Arguments struct {
 	LinesStartAt1                bool   `json:"linesStartAt1"`
 	ColumnsStartAt1              bool   `json:"columnsStartAt1"`
 	PathFormat                   string `json:"pathFormat"`
-	SupportsVariableType         bool   `json:"supportsVariableType"`
-	SupportsVariablePaging       bool   `json:"supportsVariablePaging"`
-	SupportsRunInTerminalRequest bool   `json:"supportsRunInTerminalRequest"`
-	SupportsMemoryReferences     bool   `json:"supportsMemoryReferences"`
-	SupportsProgressReporting    bool   `json:"supportsProgressReporting"`
-	SupportsInvalidatedEvent     bool   `json:"supportsInvalidatedEvent"`
-	SupportsMemoryEvent          bool   `json:"supportsMemoryEvent"`
+	SupportsVariableType         bool   `json:"supportsVariableType,omitempty"`
+	SupportsVariablePaging       bool   `json:"supportsVariablePaging,omitempty"`
+	SupportsRunInTerminalRequest bool   `json:"supportsRunInTerminalRequest,omitempty"`
+	SupportsMemoryReferences     bool   `json:"supportsMemoryReferences,omitempty"`
+	SupportsProgressReporting    bool   `json:"supportsProgressReporting,omitempty"`
+	SupportsInvalidatedEvent     bool   `json:"supportsInvalidatedEvent,omitempty"`
+	SupportsMemoryEvent          bool   `json:"supportsMemoryEvent,omitempty"`
 }
 
 type InitializeRequest struct {
-	Seq       int       `json:"seq"`
-	Type      string    `json:"type"`
-	Command   string    `json:"command"`
-	Arguments Arguments `json:"arguments"`
+	Seq        int       `json:"seq"`
+	RequestSeq int       `json:"request_seq"`
+	Type       string    `json:"type"`
+	Command    string    `json:"command"`
+	Arguments  Arguments `json:"arguments"`
 }
 
 type Response struct {
-	Seq      int    `json:"seq"`
-	Type     string `json:"type"`
-	Request  int    `json:"request_seq"`
-	Success  bool   `json:"success"`
-	Command  string `json:"command"`
-	Body     Body   `json:"body"`
+	Seq     int    `json:"seq"`
+	Type    string `json:"type"`
+	Request int    `json:"request_seq"`
+	Success bool   `json:"success"`
+	Command string `json:"command"`
+	Body    Body   `json:"body"`
 }
 
 type Body struct {
@@ -56,19 +57,19 @@ type LaunchRequest struct {
 }
 
 type LaunchRequestArguments struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Request  string `json:"request"`
-	Mode     string `json:"mode"`
-	Program  string `json:"program"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Request string `json:"request"`
+	Mode    string `json:"mode"`
+	Program string `json:"program"`
 }
 
 type LaunchResponse struct {
-	Seq          int    `json:"seq"`
-	Type         string `json:"type"`
-	RequestSeq   int    `json:"request_seq"`
-	Success      bool   `json:"success"`
-	Command      string `json:"command"`
+	Seq        int    `json:"seq"`
+	Type       string `json:"type"`
+	RequestSeq int    `json:"request_seq"`
+	Success    bool   `json:"success"`
+	Command    string `json:"command"`
 }
 
 type SetBreakpointsRequest struct {
@@ -92,7 +93,6 @@ type Source struct {
 type Breakpoint struct {
 	Line int `json:"line"`
 }
-
 
 type SetBreakpointsResponse struct {
 	Seq          int          `json:"seq"`
@@ -192,19 +192,18 @@ type StackTraceResponse struct {
 }
 
 type StackTraceBody struct {
-	StackFrames   []StackFrame   `json:"stackFrames"`
-	TotalFrames   int            `json:"totalFrames"`
+	StackFrames []StackFrame `json:"stackFrames"`
+	TotalFrames int          `json:"totalFrames"`
 }
 
 type StackFrame struct {
-	ID                        int        `json:"id"`
-	Name                      string     `json:"name"`
-	Source                    Source     `json:"source"`
-	Line                      int        `json:"line"`
-	Column                    int        `json:"column"`
-	InstructionPointerRef     string     `json:"instructionPointerReference"`
+	ID                    int    `json:"id"`
+	Name                  string `json:"name"`
+	Source                Source `json:"source"`
+	Line                  int    `json:"line"`
+	Column                int    `json:"column"`
+	InstructionPointerRef string `json:"instructionPointerReference"`
 }
-
 
 type ScopeRequest struct {
 	Seq       int            `json:"seq"`
@@ -216,7 +215,6 @@ type ScopeRequest struct {
 type ScopeArguments struct {
 	FramedId int `json:"frameId"`
 }
-
 
 type ScopesResponse struct {
 	Seq          int        `json:"seq"`
@@ -238,11 +236,10 @@ type Scope struct {
 	Source             Source `json:"source"`
 }
 
-
 type VariablesRequest struct {
-	Seq       int            `json:"seq"`
-	Type      string         `json:"type"`
-	Command   string         `json:"command"`
+	Seq       int                `json:"seq"`
+	Type      string             `json:"type"`
+	Command   string             `json:"command"`
 	Arguments VariablesArguments `json:"arguments"`
 }
 
@@ -250,14 +247,13 @@ type VariablesArguments struct {
 	VariablesReference int `json:"variablesReference"`
 }
 
-
 type VariablesResponse struct {
-	Seq         int               `json:"seq"`
-	Type        string            `json:"type"`
-	RequestSeq  int               `json:"request_seq"`
-	Success     bool              `json:"success"`
-	Command     string            `json:"command"`
-	ResponseBody VariablesBody     `json:"body"`
+	Seq          int           `json:"seq"`
+	Type         string        `json:"type"`
+	RequestSeq   int           `json:"request_seq"`
+	Success      bool          `json:"success"`
+	Command      string        `json:"command"`
+	ResponseBody VariablesBody `json:"body"`
 }
 
 type VariablesBody struct {
@@ -265,14 +261,25 @@ type VariablesBody struct {
 }
 
 type Variable struct {
-	Name              string          `json:"name"`
-	Value             string          `json:"value"`
-	Type              string          `json:"type"`
-	PresentationHint  PresentationHint `json:"presentationHint"`
-	EvaluateName      string          `json:"evaluateName"`
-	VariablesReference int             `json:"variablesReference"`
+	Name               string           `json:"name"`
+	Value              string           `json:"value"`
+	Type               string           `json:"type"`
+	PresentationHint   PresentationHint `json:"presentationHint"`
+	EvaluateName       string           `json:"evaluateName"`
+	VariablesReference int              `json:"variablesReference"`
 }
 
 type PresentationHint struct {
 	// Add relevant fields if available
+}
+
+type AttachRequest struct {
+	Seq       int             `json:"seq"`
+	Type      string          `json:"type"`
+	Command   string          `json:"command"`
+	Arguments AttachArguments `json:"arguments"`
+}
+
+type AttachArguments struct {
+	Restart bool `json:"restart"`
 }

@@ -1,9 +1,13 @@
 package dap
 
 import (
+	"bufio"
+	"context"
 	. "edgo/internal/logger"
 	"fmt"
 	"os"
+	"os/exec"
+	"os/signal"
 	"strings"
 	"time"
 
@@ -32,6 +36,9 @@ func TestDapClientStart(t *testing.T) {
 
 	if dap.IsStopped { t.Errorf("Expected lsp not to be stopped") }
 }
+
+
+
 
 func TestDapClientInitialize(t *testing.T) {
 	os.Chdir("../..")
@@ -266,5 +273,105 @@ func TestDapClientContinueWithEventsRwice(t *testing.T) {
 	time.Sleep(time.Second)
 	dap.Continue(threadId)
 	time.Sleep(time.Second)
+
+}
+
+func TestDp(t *testing.T) {
+
+	args := "/Users/max/.pyenv/versions/3.11.2/bin/python -m debugpy --listen localhost:54752 --log-to-stderr --wait-for-client atest.py"
+	split := strings.Split(args, " ")
+
+	ctx, _ := signal.NotifyContext(context.Background(), os.Kill)
+	cmd := exec.CommandContext(ctx, split[0], split[1:]...)
+	cmd.Env = append(os.Environ())
+
+
+	go func() {
+		err := cmd.Run()
+		if err != nil {
+			fmt.Println("start err", err.Error())
+		}
+	}()
+
+	go func() {
+		stdout, _ := cmd.StderrPipe()
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			message := scanner.Text()
+			fmt.Println("message", message)
+		}
+	}()
+
+	time.Sleep(time.Second*10)
+
+}
+
+func TestDapClientStartPython(t *testing.T) {
+	os.Chdir("../..")
+	currentDir, _ := os.Getwd()
+
+	os.Setenv("EDGO_LOG", "edgo.log")
+	os.Setenv("PYTHONUNBUFFERED", "1")
+
+	Log.Start()
+
+	dap := DapClient{Lang: "python", Conntype: "tcp", Port: 54752}
+	args := "-m debugpy --listen localhost:54752 --log-to dappy.log --wait-for-client atest.py"
+	cmd := "python3"
+	dap.Start(cmd, strings.Split(args, " ")...)
+
+	go func() {
+		for eventMessage := range dap.EventMessages {
+			fmt.Println("eventMessage", eventMessage)
+		}
+	}()
+
+	go func() {
+		for stdoutMessage := range dap.StdoutMessages {
+			fmt.Println("stdoutMessage", stdoutMessage)
+		}
+	}()
+
+	//if !started { t.Errorf("Error, dap not started") }
+	//if dap.cmd == nil { t.Errorf("Error, cmd is nil") }
+	//
+	//pid := dap.cmd.Process.Pid
+	//fmt.Println("dap pid is", pid)
+	//
+	//process, err := os.FindProcess(pid)
+	//if err != nil { t.Errorf("Error finding cmd with id %d: %s\n", process.Pid, err) }
+	//
+	//if dap.IsStopped { t.Errorf("Expected lsp not to be stopped") }
+
+	initResult := dap.Init(currentDir)
+	fmt.Println("initResult", initResult)
+	attachResult := dap.Attach(false)
+	fmt.Println("attachResult", attachResult)
+	configurationDoneResult := dap.ConfigurationDone()
+	fmt.Println("configurationDoneResult", configurationDoneResult)
+
+	dap.SetBreakpoint("/Users/max/apps/go/edgo/atest.py", 6)
+	time.Sleep(time.Second)
+
+	dap.Continue(1)
+	time.Sleep(time.Second)
+	dap.Continue(1)
+	time.Sleep(time.Second)
+	dap.Continue(1)
+	time.Sleep(time.Second)
+
+	stackTraceResponse := dap.Stacktrace(1, 1)
+	fmt.Println("stackTraceResponse", stackTraceResponse)
+
+	frameid := stackTraceResponse.ResponseBody.StackFrames[0].ID
+
+	scopesResponse := dap.Scopes(frameid)
+	fmt.Println("scopesResponse", scopesResponse)
+	scope := scopesResponse.ResponseBody.Scopes[0]
+
+	variablesResponse := dap.Variables(scope.VariablesReference)
+	fmt.Println("variablesResponse", variablesResponse)
+
+	time.Sleep(time.Second*100000)
 
 }

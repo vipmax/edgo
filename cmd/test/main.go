@@ -11,7 +11,7 @@ func main() {
 	for i := 0; i <= 100000000; i++ {
 		count += i
 		fmt.Println(count)
-		time.Sleep(time.Second)
+		time.Sleep(time.Millisecond * 10)
 	}
 	fmt.Println(count, "elapsed", time.Since(start))
 }

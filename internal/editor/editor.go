@@ -98,7 +98,6 @@ type Editor struct {
 
 	Dap dap.DapClient
 	DebugInfo DebugInfo
-	stopline int
 }
 
 
@@ -460,6 +459,7 @@ func (e *Editor) OpenFile(fname string) error {
 		}
 
 		e.Dap = dap.DapClient{Lang: newLang, Conntype: "tcp", Port: 54752}
+		e.DebugInfo = DebugInfo{stopline: -1}
 	}
 
 	conf, found := e.Config.Langs[e.Lang]
@@ -514,7 +514,6 @@ func (e *Editor) InitScreen() {
 	e.CursorHistory = []CursorMove{}
 	e.lsp2lang = map[string]*LspClient{}
 	e.DebugInfo = DebugInfo{}
-	e.stopline = -1
 
 	return
 }
@@ -691,7 +690,7 @@ func (e *Editor) GetStyle(ry int, cx int) Style {
 	if e.Selection.IsUnderSelection(cx, ry) {
 		style = style.Background(Color(SelectionColor))
 	}
-	if e.stopline == ry {
+	if e.DebugInfo.stopline == ry {
 		style = style.Background(Color(SelectionColor))
 	}
 	return style

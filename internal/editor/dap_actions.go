@@ -32,7 +32,7 @@ func (e *Editor) Breakpoint() {
 func (e *Editor) OnDebugStop() {
 	e.Dap.Disconnect()
 	e.Dap.Stop()
-	e.stopline = -1
+	e.DebugInfo.stopline = -1
 	e.ProcessPanelHeight = 0
 	e.ROWS = e.TERMINAL_HEIGHT
 
@@ -56,32 +56,53 @@ func (e *Editor) OnDebug() {
 		currentDir, _ := os.Getwd()
 		e.ProcessPanelScroll = 0
 		e.ProcessPanelSpacing = 2
-		e.DebugInfo = DebugInfo{}
+		e.DebugInfo = DebugInfo{stopline: -1}
 		e.ProcessContent = [][]rune{}
 
-		//e.Dap.Port
+		var cmd = ""
+		var runtype = "launch"
 
-		args := "dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
-		cmd := "dlv"
-		e.Dap.Start(cmd, strings.Split(args, " ")...)
-		e.ProcessContent = append(e.ProcessContent, []rune(cmd + " " + args))
+		if e.Lang == "go" {
+			cmd = "dlv dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
+		}
+
+		if e.Lang == "python" {
+			cmd = "python3 -m debugpy --listen localhost:54752 --log-to dappy.log --wait-for-client " + e.AbsoluteFilePath
+			runtype = "attach"
+			os.Setenv("PYTHONUNBUFFERED", "1")
+		}
+
+		split := strings.Split(cmd, " ")
+		e.Dap.Start(split[0], split[1:]...)
+		e.ProcessContent = append(e.ProcessContent, []rune(cmd))
+
 		go e.processStdout()
 		go e.processDapEvents()
 
 		e.DrawEverything()
 		e.Screen.Show()
 
+		//time.Sleep(time.Second)
 		e.Dap.Init(currentDir)
-		//time.Sleep(time.Millisecond *500)
-		e.Dap.Launch(e.AbsoluteFilePath)
-		//time.Sleep(time.Millisecond *500)
+		//time.Sleep(time.Second)
+
+		if runtype == "launch" {
+			e.Dap.Launch(e.AbsoluteFilePath)
+		}
+
+		if runtype == "attach" {
+			e.Dap.Attach(false)
+		}
+
+		//time.Sleep(time.Second)
+
+		e.Dap.ConfigurationDone()
 		e.Dap.SetAllBreakpoints()
-		e.Dap.Continue(1)
+		//e.Dap.Continue(1)
 	}
 
 	e.DrawEverything()
 	e.Screen.Show()
-
 }
 
 func (e *Editor) processDapEvents() {
@@ -91,14 +112,18 @@ func (e *Editor) processDapEvents() {
 		if err != nil { Log.Error("Error parsing JSON:" + err.Error()); continue }
 
 		if stopped.Event == "stopped" && stopped.ResponseBody.Reason == "breakpoint" {
-			id := stopped.ResponseBody.HitBreakpointIDs[0] - 1
-			bps := e.Dap.Breakpoints[e.AbsoluteFilePath]
-			if id >= len(bps) { continue }
-			line := bps[id] - 1
-			e.stopline = line
+			e.GetDebugInfo()
+
+			if len(stopped.ResponseBody.HitBreakpointIDs) > 0 {
+				id := stopped.ResponseBody.HitBreakpointIDs[0] - 1
+				bps := e.Dap.Breakpoints[e.AbsoluteFilePath]
+				if id >= len(bps) { continue }
+				line := bps[id] - 1
+				e.DebugInfo.stopline = line
+			}
 
 			e.DrawEverything()
-			e.Screen.SetContent(e.FilesPanelWidth , line, '▷', nil, StyleDefault)
+			e.Screen.SetContent(e.FilesPanelWidth , e.DebugInfo.stopline, '▷', nil, StyleDefault)
 
 			e.GetDebugInfo()
 			e.DrawDebugPanel()
@@ -134,9 +159,10 @@ func (e *Editor) processStdout() {
 }
 
 type DebugInfo struct {
-	StackFrames []dap.StackFrame
-	Scopes      []dap.Scope
-	Variables   []dap.Variable
+	StackFrames     []dap.StackFrame
+	Scopes          []dap.Scope
+	Variables       []dap.Variable
+	stopline        int
 }
 
 func (e *Editor) DrawDebugPanel() {
@@ -154,21 +180,31 @@ func (e *Editor) DrawDebugPanel() {
 		for j := 0; j < len(label); j++ {
 			e.Screen.SetContent(j, i, label[j], nil, StyleDefault)
 		}
-
 	}
 }
 
 func (e *Editor) GetDebugInfo()  {
 	stackTraceResponse := e.Dap.Stacktrace(1, 1)
+
+	if stackTraceResponse.ResponseBody.StackFrames == nil || len(stackTraceResponse.ResponseBody.StackFrames) == 0 {
+		return
+	}
+
 	e.DebugInfo.StackFrames = stackTraceResponse.ResponseBody.StackFrames
 	frameid := stackTraceResponse.ResponseBody.StackFrames[0].ID
 
+	e.DebugInfo.stopline = stackTraceResponse.ResponseBody.StackFrames[0].Line - 1
+
 	scopesResponse := e.Dap.Scopes(frameid)
 	e.DebugInfo.Scopes = scopesResponse.ResponseBody.Scopes
-	scope := scopesResponse.ResponseBody.Scopes[0]
 
-	variablesResponse := e.Dap.Variables(scope.VariablesReference)
-	e.DebugInfo.Variables = variablesResponse.ResponseBody.Variables
+	if scopesResponse.ResponseBody.Scopes != nil && len(scopesResponse.ResponseBody.Scopes) > 0 {
+		scope := scopesResponse.ResponseBody.Scopes[0]
+
+		variablesResponse := e.Dap.Variables(scope.VariablesReference)
+		e.DebugInfo.Variables = variablesResponse.ResponseBody.Variables
+	}
+
 }
 
 
@@ -178,7 +214,7 @@ func (e *Editor) OnDebugKeyHandle(key Key, ev *EventKey, threadId int) {
 
 	if key == KeyRune && keyrune == 'c' {
 		e.Dap.Continue(threadId)
-		e.stopline = -1
+		e.DebugInfo.stopline = -1
 	}
 
 	if key == KeyRune && keyrune == 'n' {
