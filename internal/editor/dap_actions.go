@@ -4,6 +4,7 @@ import (
 	dap "edgo/internal/dap"
 	. "edgo/internal/logger"
 	. "edgo/internal/utils"
+	"fmt"
 	. "github.com/gdamore/tcell"
 	"github.com/goccy/go-json"
 	"os"
@@ -38,7 +39,12 @@ func (e *Editor) OnDebugStop() {
 
 	go func() {
 		time.Sleep(100*time.Millisecond)
-		e.Dap = dap.DapClient{Lang: e.Dap.Lang, Conntype: "tcp", Port: 54752, Breakpoints: e.Dap.Breakpoints}
+		e.Dap = dap.DapClient{
+			Lang: e.Dap.Lang,
+			Conntype: "tcp",
+			Port: e.Dap.Port + 1,
+			Breakpoints: e.Dap.Breakpoints,
+		}
 	}()
 
 }
@@ -63,11 +69,11 @@ func (e *Editor) OnDebug() {
 		var runtype = "launch"
 
 		if e.Lang == "go" {
-			cmd = "dlv dap --listen=127.0.0.1:54752 --log=true --log-output=dap --log-dest=dlv.log"
+			cmd = fmt.Sprintf("dlv dap --listen=127.0.0.1:%d --log=true --log-output=dap", e.Dap.Port)
 		}
 
 		if e.Lang == "python" {
-			cmd = "python3 -m debugpy --listen localhost:54752 --log-to dappy.log --wait-for-client " + e.AbsoluteFilePath
+			cmd = fmt.Sprintf("python3 -m debugpy --listen localhost:%d --wait-for-client %s", e.Dap.Port, e.AbsoluteFilePath)
 			runtype = "attach"
 			os.Setenv("PYTHONUNBUFFERED", "1")
 		}

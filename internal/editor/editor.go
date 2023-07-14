@@ -458,7 +458,12 @@ func (e *Editor) OpenFile(fname string) error {
 			go e.InitLsp(e.Lang)
 		}
 
-		e.Dap = dap.DapClient{Lang: newLang, Conntype: "tcp", Port: 54752}
+		if e.Dap.Port > 0 {
+			e.Dap = dap.DapClient{Lang: newLang, Conntype: "tcp", Port: e.Dap.Port +1}
+		} else {
+			e.Dap = dap.DapClient{Lang: newLang, Conntype: "tcp", Port: 54752}
+		}
+
 		e.DebugInfo = DebugInfo{stopline: -1}
 	}
 
