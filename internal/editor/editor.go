@@ -357,6 +357,8 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 }
 
 func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
+	if key == KeyCtrlF { e.OnSearch() }
+
 	if e.Filename == "" && key != KeyCtrlQ { return }
 
 	if ev.Rune() == '/' && modifiers&ModAlt != 0 || int(ev.Rune()) == '÷' {
@@ -422,7 +424,6 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 	if key == KeyLeft { e.OnLeft(); e.Selection.CleanSelection() }
 	if key == KeyRight { e.OnRight(); e.Selection.CleanSelection() }
 	if key == KeyCtrlT { e.OnFilesTree() }
-	if key == KeyCtrlF { e.OnSearch() }
 	if key == KeyF18 { e.OnRename() }
 	if key == KeyF22 { e.OnProcessRun(true) }
 	if key == KeyF23 { e.OnDebug() }
@@ -524,7 +525,6 @@ func (e *Editor) InitScreen() {
 }
 
 func (e *Editor) DrawEverything() {
-	if len(e.Content) == 0 { return }
 	e.Screen.Clear()
 
 	if e.FilesPanelWidth != 0 {
@@ -542,9 +542,9 @@ func (e *Editor) DrawEverything() {
 		e.DrawTree(e.Tree, 0, &fileindex, &aty)
 	}
 
-	
-	//tabs := CountTabsTo(e.Content[e.Row], e.Col)
-	//correction := tabs*(e.langTabWidth - 1)
+	if len(e.Content) == 0 { return }
+
+
 	countTabsTo := CountTabsTo(e.Content[e.Row], e.Col)
 	tabcor := countTabsTo *(e.langTabWidth - 1)
 	// todo: fix horizontal scrolling
@@ -556,7 +556,6 @@ func (e *Editor) DrawEverything() {
 	// draw Line number and chars according to scrolling offsets
 	for row := 0; row < e.ROWS; row++ {
 		ry := row + e.Y // index to get right row in characters buffer by scrolling offset Y
-		//e.cleanLineAfter(0, row)
 		if row >= len(e.Content) || ry >= len(e.Content) { break }
 		e.DrawLineNumber(ry, row)
 
@@ -1081,14 +1080,30 @@ func (e *Editor) OnSearch() {
 				patternx = 0
 			}
 			if key == KeyCtrlG {
-				// global search
 				end = e.OnGlobalSearch()
-
 				e.DrawEverything()
 				e.DrawSearch(e.SearchPattern, patternx)
+				if end { e.CleanContentSearch() }
 				e.Screen.Show()
 			}
-			if key == KeyESC || key == KeyEnter || key == KeyCtrlF { end = true }
+			if key == KeyESC || key == KeyCtrlF {
+				end = true
+				e.CleanContentSearch()
+				e.Screen.Show()
+			}
+			if key == KeyEnter {
+				if len(e.Content) == 0 { // global search if no content and enter
+					end = e.OnGlobalSearch()
+					e.DrawEverything()
+					e.DrawSearch(e.SearchPattern, patternx)
+					if end { e.CleanContentSearch() }
+					e.Screen.Show()
+				} else {
+					end = true
+					e.CleanContentSearch()
+					e.Screen.Show()
+				}
+			}
 		}
 	}
 
@@ -1127,6 +1142,16 @@ func (e *Editor) DrawSearch(pattern []rune, patternx int) {
 	e.Screen.ShowCursor(len(prefix) + patternx + e.LINES_WIDTH + e.FilesPanelWidth, e.ROWS-1)
 }
 
+
+func (e *Editor) CleanContentSearch() {
+	for i := e.LINES_WIDTH + e.FilesPanelWidth; i < e.COLUMNS; i++ {
+		e.Screen.SetContent(i, e.ROWS-1, ' ', nil, StyleDefault)
+	}
+
+	if len(e.Content) == 0 {
+		e.Screen.HideCursor()
+	}
+}
 
 func (e *Editor) OnGlobalSearch() bool {
 	dir, _ := os.Getwd()
@@ -1195,6 +1220,7 @@ func (e *Editor) OnGlobalSearch() bool {
 					e.Screen.Clear()
 					selectionEnd = true
 					end = true
+					return true
 				}
 
 				if key == KeyDown && selected < len(options)-1 { selected++; isChanged = true }
@@ -1445,6 +1471,7 @@ func (e *Editor) OnFilesTree() {
 				_, i := FindFirstFile(e.Tree, 0)
 				e.FileSelectedIndex = i
 			}
+
 			if key == KeyEnter || !e.IsFilesSearch  && (key == KeyLeft || key == KeyRight) {
 				end = e.SelectAndOpenFile()
 				if end {
@@ -1687,8 +1714,6 @@ func (e *Editor) OnProcessRun(newRun bool) {
 		// printing immediately
 		process.Cmd.Env = append(process.Cmd.Env, "PYTHONUNBUFFERED=1")
 	}
-
-
 
 	e.ProcessContent = [][]rune{}
 	e.ProcessPanelScroll = 0
