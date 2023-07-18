@@ -72,6 +72,24 @@ func (e *Editor) Focus() {
 	if e.Row > e.Y+ e.ROWS { e.Y = e.Row + e.ROWS }
 	if e.Row < e.Y { e.Y = e.Row }
 }
+func (e *Editor) FocusCenter() {
+	e.Screen.Show()
+	if e.Row > e.Y + e.ROWS {
+		e.Y = e.Row + e.ROWS
+	}
+	if e.Row < e.Y {
+		e.Y = e.Row
+	}
+
+	e.Y -= e.ROWS/2
+	if e.Y < 0 { e.Y = 0 }
+
+	centerRow := e.ROWS / 2
+	// Update the cursor row to the center row if necessary
+	if e.Row - e.Y > centerRow {
+		e.Y += e.Row - e.Y - centerRow
+	}
+}
 
 func (e *Editor) OnEnter() {
 
@@ -232,7 +250,8 @@ func (e *Editor) InsertCharacter(line, pos int, ch rune) {
 
 func (e *Editor) InsertString(line, pos int, linestring string) {
 	// Convert the string to insert to a slice of runes
-	insertRunes := []rune(linestring)
+	l := RemoveLeadingTabsSpaces(linestring)
+	insertRunes := []rune(l)
 
 	// Record the operation on the undo stack. Note that we're creating a new EditOperation
 	// and adding all the Operations to it
@@ -249,14 +268,22 @@ func (e *Editor) InsertString(line, pos int, linestring string) {
 func (e *Editor) InsertLines(line, pos int, lines []string) {
 	var ops = EditOperation{}
 
-	tabs := CountTabs(e.Content[e.Row], e.Col) // todo: spaces also can be
-	if len(e.Content[e.Row]) > 0 { e.Row++ }
+	//tabs := CountTabs(e.Content[e.Row], e.Col) // todo: spaces also can be
+	//if len(e.Content[e.Row]) > 0 { e.Row++ }
 	//ops = append(ops, Operation{Enter, '\n', e.Row, e.Col})
+
+
+	lines[0] = string(e.Content[e.Row][:e.Col]) + RemoveLeadingTabsSpaces(lines[0])
+
+
 	for _, linestr := range lines {
 		e.Col = 0
 		if e.Row >= len(e.Content)  { e.Content = append(e.Content, []rune{}) } // if last Line adding empty Line before
 
-		nl := strings.Repeat("\t", tabs) + linestr
+		//l := RemoveLeadingTabsSpaces(linestr)
+		l := linestr
+		//nl := strings.Repeat("\t", tabs) + l
+		nl := l
 		e.Content = InsertTo(e.Content, e.Row, []rune(nl))
 
 		ops = append(ops, Operation{Enter, '\n', e.Row, e.Col})

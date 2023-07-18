@@ -196,6 +196,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 		e.OnProcessStop()
 		e.ROWS = screenRows
 		e.ProcessPanelHeight = 0
+		e.ProcessContent = [][]rune{}
 		return
 	}
 
@@ -495,6 +496,7 @@ func (e *Editor) OpenFile(fname string) error {
 
     e.Row = 0; e.Col = 0; e.Y = 0; e.X = 0
 	e.Selection = Selection{-1,-1,-1,-1,false }
+	e.SearchResults = []SearchResult{}
 
 	return nil
 }
@@ -1028,6 +1030,7 @@ func (e *Editor) OnSearch() {
 				e.Selection.Sex = sx + len(e.SearchPattern);
 				e.Selection.Sey = sy;
 				e.Selection.IsSelected = true
+				e.FocusCenter()
 				e.DrawEverything()
 				e.DrawSearch(e.SearchPattern, patternx)
 				e.Screen.Show()
@@ -1081,6 +1084,7 @@ func (e *Editor) OnSearch() {
 			}
 			if key == KeyCtrlG {
 				end = e.OnGlobalSearch()
+				e.FocusCenter()
 				e.DrawEverything()
 				e.DrawSearch(e.SearchPattern, patternx)
 				if end { e.CleanContentSearch() }
@@ -1094,12 +1098,14 @@ func (e *Editor) OnSearch() {
 			if key == KeyEnter {
 				if len(e.Content) == 0 { // global search if no content and enter
 					end = e.OnGlobalSearch()
+					e.FocusCenter()
 					e.DrawEverything()
 					e.DrawSearch(e.SearchPattern, patternx)
 					if end { e.CleanContentSearch() }
 					e.Screen.Show()
 				} else {
 					end = true
+					e.FocusCenter()
 					e.CleanContentSearch()
 					e.Screen.Show()
 				}
@@ -1723,14 +1729,18 @@ func (e *Editor) OnProcessRun(newRun bool) {
 	e.Process = process
 
 	go func() {
-		for line := range process.Out {
+		for range process.Update {
 
-			e.ProcessContent = append(e.ProcessContent, []rune(line))
+			//e.ProcessContent = append(e.ProcessContent, []rune(line))
 
-			if len(e.ProcessContent) > e.ProcessPanelHeight {
-				if e.ProcessPanelScroll >= len(e.ProcessContent) - e.ProcessPanelHeight - 1  {
-					e.ProcessPanelScroll = len(e.ProcessContent) - e.ProcessPanelHeight + 1 // focusing
-					e.ProcessPanelScroll = Max(0, e.ProcessPanelScroll)
+			newLines := e.Process.Lines[len(e.ProcessContent):]
+			for _, line := range newLines {
+				e.ProcessContent = append(e.ProcessContent, []rune(line))
+				if len(e.ProcessContent) > e.ProcessPanelHeight {
+					if e.ProcessPanelScroll >= len(e.ProcessContent) - e.ProcessPanelHeight - 1  {
+						e.ProcessPanelScroll = len(e.ProcessContent) - e.ProcessPanelHeight + 1 // focusing
+						e.ProcessPanelScroll = Max(0, e.ProcessPanelScroll)
+					}
 				}
 			}
 

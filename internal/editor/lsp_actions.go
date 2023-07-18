@@ -46,7 +46,8 @@ func (e *Editor) OnDefinition() {
 	e.Row = e.Selection.Sey; e.Col = e.Selection.Sex
 	e.Selection.IsSelected = true
 	if e.Row >= len(e.Content) { e.Row = 0; e.Col = 0; e.Selection.CleanSelection() }
-	e.Focus()
+
+	e.FocusCenter()
 }
 
 func (e *Editor) OnHover() {
@@ -264,7 +265,7 @@ func (e *Editor) applyReferences(referencesResult ReferencesRange) {
 	e.Selection.Sex = referencesResult.Range.End.Character
 	e.Selection.IsSelected = true
 	e.Row = e.Selection.Sey; e.Col = e.Selection.Sex
-	e.Focus()
+	e.FocusCenter()
 	e.DrawEverything()
 }
 

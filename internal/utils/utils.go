@@ -311,3 +311,13 @@ func goldenRatioPartition(totalSize int) (a int, b int) {
 	a = totalSize - b
 	return
 }
+
+// Function to remove leading tabs and spaces
+func RemoveLeadingTabsSpaces(s string) string {
+	for i, c := range s {
+		if c != '\t' && c != ' ' {
+			return s[i:]
+		}
+	}
+	return ""
+}

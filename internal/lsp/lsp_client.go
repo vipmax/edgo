@@ -401,7 +401,7 @@ func (this *LspClient) References(file string, line int, character int) (Referen
 		Params: Params{
 			TextDocument: TextDocument{ URI: "file://" + file },
 			Position: Position{ Line: line, Character: character },
-			Context: Context{ IncludeDeclaration: true },
+			Context: Context{ IncludeDeclaration: false },
 		},
 	}
 
