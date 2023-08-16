@@ -15,6 +15,7 @@ import (
 var HighlighterGlobal = Highlighter{}
 
 type Highlighter struct {
+
 }
 
 //var theme = IdeaLight

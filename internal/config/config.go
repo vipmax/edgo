@@ -30,7 +30,7 @@ var DefaultConfig = Config { Langs:
 		"vue":        { Lsp: "vscode-html-language-server --stdio" },
 		"rust":       { Lsp: "rust-analyzer", TabWidth: 4},
 		"c":          { Lsp: "clangd" },
-		"c++":        { Lsp: "clangd", Comment: "//"},
+		"c++":        { Lsp: "clangd" },
 		"d":          { Lsp: "serve-d", Cmd: "dmd", CmdArgs: "-run"},
 		"java":       { Lsp: "jdtls", TabWidth: 4, Cmd: "java" },
 		"swift":      { Lsp: "xcrun sourcekit-lsp", Cmd: "swift" },

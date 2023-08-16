@@ -27,6 +27,7 @@ func TestDetectPythonLang(t *testing.T) {
 		t.Error("language must be Python", language)
 	}
 }
+
 //
 //func TestNoSelection(t *testing.T) {
 //	var Content = [][]rune{

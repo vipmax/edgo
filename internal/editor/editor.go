@@ -222,7 +222,8 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 		e.IsProcessPanelMoving = false; return
 	}
 
-	if my >= e.ROWS && mx >= e.FilesPanelWidth - 2 {
+	if my >= e.ROWS {
+		if mx < 2 || mx > e.COLUMNS { return }
 		// in process panel
 		e.IsProcessPanelFocused = true
 		if buttons & WheelDown != 0 && e.ProcessPanelScroll <= len(e.ProcessContent) - e.ProcessPanelHeight {
@@ -233,8 +234,8 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 		}
 
 		if buttons & Button1 == 1 {
-			if mx < e.FilesPanelWidth + e.ProcessPanelSpacing { return }
-			e.ProcessPanelCursorX = mx - e.FilesPanelWidth - e.ProcessPanelSpacing
+			if mx < e.ProcessPanelSpacing { return }
+			e.ProcessPanelCursorX = mx - e.ProcessPanelSpacing
 			e.ProcessPanelCursorY = my + e.ProcessPanelScroll - e.ROWS -1
 
 			if e.ProcessPanelCursorY < 0 { e.ProcessPanelCursorY = 0 }
@@ -531,8 +532,8 @@ func (e *Editor) DrawEverything() {
 
 	if e.FilesPanelWidth != 0 {
 		// clean  files panel and draw separator
-		_, screenRows := e.Screen.Size()
-		for row := 0; row < screenRows; row++ {
+		//_, screenRows := e.Screen.Size()
+		for row := 0; row < e.ROWS; row++ {
 			for col := 0; col < e.FilesPanelWidth; col++ { // clean
 				e.Screen.SetContent(col, row, ' ', nil, StyleDefault)
 			}
@@ -622,7 +623,7 @@ func (e *Editor) DrawEverything() {
 func (e *Editor) DrawProcessPanel() {
 
 
-	for i := e.FilesPanelWidth-1; i < e.COLUMNS-7; i++ {
+	for i := 0; i < e.COLUMNS-7; i++ {
 		e.Screen.SetContent(i, e.ROWS, '─', nil, SeparatorStyle)
 	}
 
@@ -644,7 +645,7 @@ func (e *Editor) DrawProcessPanel() {
 		e.Screen.SetContent(e.COLUMNS-4, e.ROWS, '■',nil, StyleDefault.Foreground(Color(AccentColor)))
 	}
 	e.Screen.SetContent(e.COLUMNS-3, e.ROWS, ' ',nil, StyleDefault)
-	e.Screen.SetContent(e.COLUMNS-2, e.ROWS, '⏻',nil, StyleDefault)
+	e.Screen.SetContent(e.COLUMNS-2, e.ROWS, '⏼',nil, StyleDefault)
 
 	if e.langConf.Cmd != "" && (e.Process == nil || e.Process != nil && e.Process.Stopped) {
 		e.Screen.SetContent(e.COLUMNS-2, 0,   '▶',nil, StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
@@ -667,10 +668,10 @@ func (e *Editor) DrawProcessPanel() {
 				style = style.Background(Color(SelectionColor))
 			}
 
-			e.Screen.SetContent(i + e.FilesPanelWidth + e.ProcessPanelSpacing, y, ch,nil, style)
+			e.Screen.SetContent(i + e.ProcessPanelSpacing, y, ch,nil, style)
 		}
 		for i := len(line); i < e.COLUMNS; i++ {
-			e.Screen.SetContent(i + e.FilesPanelWidth + e.ProcessPanelSpacing, y, ' ',nil, StyleDefault)
+			e.Screen.SetContent(i + e.ProcessPanelSpacing, y, ' ',nil, StyleDefault)
 		}
 	}
 
@@ -678,7 +679,7 @@ func (e *Editor) DrawProcessPanel() {
 		if e.ProcessPanelCursorY - e.ProcessPanelScroll + e.ROWS +1 <= e.ROWS {
 			e.Screen.HideCursor()
 		} else {
-			e.Screen.ShowCursor(e.ProcessPanelCursorX + e.FilesPanelWidth + e.ProcessPanelSpacing, e.ProcessPanelCursorY - e.ProcessPanelScroll + e.ROWS + 1)
+			e.Screen.ShowCursor(e.ProcessPanelCursorX + e.ProcessPanelSpacing, e.ProcessPanelCursorY - e.ProcessPanelScroll + e.ROWS + 1)
 		}
 
 	} else {
@@ -1387,7 +1388,8 @@ func (e *Editor) OnFilesTree() {
 
 	// loop until escape or enter pressed
 	for !end {
-		_, screenRows := e.Screen.Size()
+		//_, screenRows := e.Screen.Size()
+		_, screenRows := 0, e.ROWS
 
 		if e.FileSelectedIndex != -1 && e.FileSelectedIndex < e.FileScrollingOffset {
 			e.FileScrollingOffset = e.FileSelectedIndex
@@ -1399,7 +1401,6 @@ func (e *Editor) OnFilesTree() {
 		treeSize := TreeSize(e.Tree, 0)
 		var aty = 0
 		var fileindex = 0
-
 
 		for row := 0; row < screenRows; row++ {
 			for col := 0; col < e.FilesPanelWidth-2; col++ { // clean
@@ -1419,6 +1420,7 @@ func (e *Editor) OnFilesTree() {
 			//modifiers := ev.Modifiers()
 
 			if mx > e.FilesPanelWidth - 3  { end = true; continue }
+			if my >= screenRows { end = true; continue }
 
 			if buttons & WheelDown != 0 && treeSize > screenRows {
 				if e.FileScrollingOffset < treeSize - screenRows {
@@ -1496,7 +1498,7 @@ func (e *Editor) DrawTree(fileInfo FileInfo, level int, fileindex *int, aty *int
 	isNeedToShow := *fileindex >= e.FileScrollingOffset
 
 	if isNeedToShow {
-		//if *aty >= e.ROWS { return }
+		if *aty >= e.ROWS { return }
 
 		style := StyleDefault
 		isSelectedFile := e.IsFileSelection && e.FileSelectedIndex != -1 && *fileindex  == e.FileSelectedIndex
@@ -1512,7 +1514,7 @@ func (e *Editor) DrawTree(fileInfo FileInfo, level int, fileindex *int, aty *int
 			e.Screen.SetContent(i + 1, *aty, ' ', nil, StyleDefault)
 		}
 
-		label := []rune(fileInfo.Name)
+		label := []rune(" " + fileInfo.Name + " ")
 		for i := 0; i < len(label); i++ {
 			if i+1 + level >= e.FilesPanelWidth-2 { break }
 			e.Screen.SetContent(i + 1 + level, *aty, label[i], nil, style)
@@ -1577,8 +1579,8 @@ func (e *Editor) SelectAndOpenFile() bool {
 func (e *Editor) IsMouseUnderFile(mx int) bool {
 	found, selectedFile := GetSelected(e.Tree, e.FileSelectedIndex)
 	if found {
-		if selectedFile.Level + len(selectedFile.Name)  >= mx {
-			if mx <= selectedFile.Level { return false }
+		if selectedFile.Level + len(selectedFile.Name) + 1 >= mx {
+			if mx < selectedFile.Level + 2 { return false } // 2 is spacing
 			return true
 		} else {
 			return false

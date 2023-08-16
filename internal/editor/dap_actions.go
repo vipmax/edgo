@@ -4,6 +4,7 @@ import (
 	dap "edgo/internal/dap"
 	. "edgo/internal/logger"
 	. "edgo/internal/utils"
+	//"encoding/json"
 	"fmt"
 	. "github.com/gdamore/tcell"
 	"github.com/goccy/go-json"
@@ -173,7 +174,7 @@ type DebugInfo struct {
 
 func (e *Editor) DrawDebugPanel() {
 	// clean files panel
-	for i := 0; i < e.TERMINAL_HEIGHT; i++ {
+	for i := 0; i < e.ROWS; i++ {
 		for j := 0; j < e.FilesPanelWidth-1; j++ {
 			e.Screen.SetContent(j, i, ' ', nil, StyleDefault)
 		}
@@ -192,7 +193,8 @@ func (e *Editor) DrawDebugPanel() {
 func (e *Editor) GetDebugInfo()  {
 	stackTraceResponse := e.Dap.Stacktrace(1, 1)
 
-	if stackTraceResponse.ResponseBody.StackFrames == nil || len(stackTraceResponse.ResponseBody.StackFrames) == 0 {
+	if stackTraceResponse.ResponseBody.StackFrames == nil ||
+		len(stackTraceResponse.ResponseBody.StackFrames) == 0 {
 		return
 	}
 

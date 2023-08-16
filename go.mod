@@ -1,6 +1,6 @@
 module edgo
 
-go 1.20
+go 1.21
 
 require (
 	github.com/alecthomas/chroma v0.10.0
@@ -32,6 +32,7 @@ require (
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/rivo/uniseg v0.4.3 // indirect
 	github.com/skeema/knownhosts v1.1.1 // indirect
+	github.com/smacker/go-tree-sitter v0.0.0-20230720070738-0d0a9f78d8f8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	golang.org/x/crypto v0.9.0 // indirect
 	golang.org/x/net v0.10.0 // indirect
