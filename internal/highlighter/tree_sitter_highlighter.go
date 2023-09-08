@@ -94,34 +94,32 @@ func populateTreeNode(node *sitter.Node, codeBytes []byte) TreeNode {
 
 var defaultColors =
 `
-identifier: 25165780
+identifier: 121
 tag: 121
 field_identifier: 121
-property_identifier: 147
-string: 26275472
-#attribute_value: 222
-#interpreted_string_literal: 222
-keyword: 303
-#type_identifier: 133
+property_identifier: 140
+string: 222
+attribute_value: 222
+interpreted_string_literal: 222
+keyword: 133
+type_identifier: 303
 constant: 303
 number: 303
 integer: 303
 float: 303
 function: 147
-namespace: 133
-#constructor: 153
+namespace: 147
+constructor: 153
 comment: 243
 
 function.call: 147
-type: 133
+type: 303
 tag.attribute: 133
-variable.builtin: 303
 method: 147
 property: 25165780
 
 accent_color: 303
-accent_color2: 25165780
-preproc: 25165780
+accent_color2: 121
 `
 
 func (h *TreeSitterHighlighter) SetTheme(themePath string) {

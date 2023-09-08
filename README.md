@@ -1,7 +1,6 @@
 # edgo
 Yet another console text editor, but with lsp support
 ![editor](assets/screen1.png)
-![editor](assets/screen2.png)
 
 ### Key bindings and features:
 - `Control + s` - save file
@@ -17,6 +16,7 @@ Yet another console text editor, but with lsp support
 - `Option + /` - comment line
 - `Control + o` - cursor back
 - `Control + ]` - cursor forward
+- `Control + j` - cursor to the end 
 
 
 - `Shift + arrow` - select text
