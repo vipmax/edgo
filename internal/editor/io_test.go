@@ -16,7 +16,7 @@ func TestProcessDirectory(t *testing.T) {
 	}
 
 	// Recursively process the directory
-	fileInfo, err := ReadDirTree(dir, "", true)
+	fileInfo, err := ReadDirTree(dir, "", true,0)
 	if err != nil {
 		fmt.Println("Failed to process directory:", err)
 		return
@@ -31,14 +31,14 @@ func TestProcessDirectory(t *testing.T) {
 
 func TestTreeSize(t *testing.T) {
 	dir, _ := os.Getwd()
-	tree, _ := ReadDirTree(dir,"", true)
+	tree, _ := ReadDirTree(dir,"", true,0)
 	size := TreeSize(tree, 0)
 	fmt.Println("size", size)
 }
 
 func TestGetSelected(t *testing.T) {
 	dir, _ := os.Getwd()
-	tree, _ := ReadDirTree(dir, "", true)
+	tree, _ := ReadDirTree(dir, "", true,0)
 	found, fi := GetSelected(tree, 13)
 	fmt.Println("selected", found, fi)
 }

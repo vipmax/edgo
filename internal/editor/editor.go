@@ -1491,7 +1491,7 @@ func (e *Editor) OnFilesTree() {
 				if !e.IsMouseUnderFile(mx) { continue }
 				end = e.SelectAndOpenFile()
 				if end && e.IsFilesSearch  {
-					tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), false, 0)
+					tree, _ := ReadDirTree(dir, "", false, 0)
 					e.Tree = tree
 					e.Tree.IsDirOpen = true
 					SetDirOpenFlag(&e.Tree, e.InputFile)
@@ -1518,9 +1518,15 @@ func (e *Editor) OnFilesTree() {
 			if key == KeyBackspace2  && e.IsFilesSearch && patternx > 0 && len(e.FilesSearchPattern) > 0 {
 				patternx--
 				e.FilesSearchPattern = Remove(e.FilesSearchPattern, patternx)
-				tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), true, 0)
-				tree = FilterIfLeafEmpty(tree)
-				e.Tree = tree
+				if len(e.FilesSearchPattern) != 0 {
+					tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), true, 0)
+					tree = FilterIfLeafEmpty(tree)
+					e.Tree = tree
+				} else {
+					tree, _ := ReadDirTree(dir, "", false, 0)
+					e.Tree = tree
+				}
+
 				e.Tree.IsDirOpen = true
 				e.FileScrollingOffset = 0
 				_, i := FindFirstFile(e.Tree, 0)
@@ -1542,7 +1548,7 @@ func (e *Editor) OnFilesTree() {
 			if key == KeyEnter || !e.IsFilesSearch  && (key == KeyLeft || key == KeyRight) {
 				end = e.SelectAndOpenFile()
 				if end && e.IsFilesSearch  {
-					tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), false, 0)
+					tree, _ := ReadDirTree(dir, "", false, 0)
 					e.Tree = tree
 					e.Tree.IsDirOpen = true
 					SetDirOpenFlag(&e.Tree, e.InputFile)
