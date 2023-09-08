@@ -1,5 +1,6 @@
 # edgo
 Yet another console text editor, but with lsp support
+![editor](assets/screen0.png)
 ![editor](assets/screen1.png)
 
 ### Key bindings and features:
