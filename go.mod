@@ -10,6 +10,8 @@ require (
 	github.com/goccy/go-json v0.10.2
 	github.com/pmezard/go-difflib v1.0.0
 	github.com/sergi/go-diff v1.1.0
+	github.com/smacker/go-tree-sitter v0.0.0-20230720070738-0d0a9f78d8f8
+	gopkg.in/yaml.v2 v2.2.4
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -32,7 +34,6 @@ require (
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/rivo/uniseg v0.4.3 // indirect
 	github.com/skeema/knownhosts v1.1.1 // indirect
-	github.com/smacker/go-tree-sitter v0.0.0-20230720070738-0d0a9f78d8f8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	golang.org/x/crypto v0.9.0 // indirect
 	golang.org/x/net v0.10.0 // indirect

@@ -5,13 +5,11 @@ import (
 	"edgo/internal/utils"
 	"fmt"
 	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/javascript"
-	"time"
-
-	//"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/golang"
+	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/python"
 	"testing"
+	"time"
 )
 
 func walk(node *sitter.Node) {
@@ -122,6 +120,24 @@ print("Elapsed time:", elapsed_time, q"seconds")
 	//fmt.Println(n)
 
 	walk(n)
+}
+
+
+func TestTreeSitterJs(t *testing.T) {
+	code := []byte(`
+function hello() { 
+	console.log('hello') 
+}
+`)
+	parser := sitter.NewParser()
+	parser.SetLanguage(javascript.GetLanguage())
+
+	start := time.Now()
+	tree, err := parser.ParseCtx(context.Background(),nil, code)
+	if err != nil { fmt.Println(err)}
+
+	fmt.Println("parsed, elapsed", time.Since(start))
+	print(tree.RootNode(), code)
 }
 
 
@@ -269,7 +285,6 @@ func TestTreeSitterJsEditDeleteMultiple(t *testing.T) {
 }
 
 
-
 func TestTreeSitterJsEditEnter(t *testing.T) {
 	parser := sitter.NewParser()
 	parser.SetLanguage(javascript.GetLanguage())
@@ -310,4 +325,85 @@ console.log('hello')}`)
 	fmt.Printf("Speedup factor: %.2f\n", speedup)
 
 	print(tree.RootNode(), code)
+}
+
+
+
+func TestTreeSitterQuery(t *testing.T) {
+	code := []byte(`
+function hello() { 
+	// comment line 
+	console.log('hello') 
+	if (true) { console.log('true') }
+	return "value"
+}
+`)
+
+	query := `
+[
+  "function"
+  "if"
+  "return"
+] @keyword
+
+(comment) @comment
+`
+	lang := javascript.GetLanguage()
+	start := time.Now()
+	q, _ := sitter.NewQuery([]byte(query), lang)
+	qc := sitter.NewQueryCursor()
+
+	n, _ := sitter.ParseCtx(context.Background(), code, lang)
+	fmt.Println("parsed , elapsed", time.Since(start))
+
+	// Execute the query
+
+	qc.Exec(q, n)
+	fmt.Println("query exec, elapsed", time.Since(start))
+
+	for {
+		m, ok := qc.NextMatch()
+		if !ok { break }
+		m = qc.FilterPredicates(m, code)
+		for _, c := range m.Captures {
+			name := q.CaptureNameForId(c.Index)
+			content := c.Node.Content(code)
+			fmt.Println(c.Node.StartPoint(), c.Node.EndPoint(), name, c.Node.Type(), content)
+		}
+	}
+}
+
+func TestTreeSitterQuery2(t *testing.T) {
+	sourceCode := []byte(`
+package main
+import "fmt"
+func main() {
+	// comment line 
+	fmt.Println("Hello, world!")
+}
+`)
+
+	// Query with predicates
+	query := `
+(identifier) @keyword
+`
+	// Parse source code
+	lang := golang.GetLanguage()
+	n, _ := sitter.ParseCtx(context.Background(), sourceCode, lang)
+
+	// Execute the query
+	q, _ := sitter.NewQuery([]byte(query), lang)
+	qc := sitter.NewQueryCursor()
+	qc.Exec(q, n)
+
+	// Iterate over query results
+	for {
+		m, ok := qc.NextMatch()
+		if !ok { break }
+		// Apply predicates filtering
+		m = qc.FilterPredicates(m, sourceCode)
+		for _, c := range m.Captures {
+			fmt.Println(c.Node.StartPoint(), c.Node.EndPoint(), c.Node.Type(), c.Node.Content(sourceCode))
+		}
+	}
 }

@@ -24,8 +24,8 @@ var DefaultConfig = Config { Langs:
 	map[string]Lang{
 		"go":         { Lsp: "gopls", TabWidth: 4, Cmd: "go", CmdArgs: "run" },
 		"python":     { Lsp: "pylsp", Comment: "#", TabWidth: 4, Cmd: "python3" },
-		"typescript": { Lsp: "typescript-language-server --stdio", Cmd: "ts-node" },
-		"javascript": { Lsp: "typescript-language-server --stdio", Cmd: "ts-node" },
+		"typescript": { Lsp: "typescript-language-server --stdio", Cmd: "tsx" },
+		"javascript": { Lsp: "typescript-language-server --stdio", Cmd: "tsx" },
 		"html":       { Lsp: "vscode-html-language-server --stdio" },
 		"vue":        { Lsp: "vscode-html-language-server --stdio" },
 		"rust":       { Lsp: "rust-analyzer", TabWidth: 4},

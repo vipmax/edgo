@@ -58,6 +58,7 @@ var Darcula = styles.Register(chroma.MustNewStyle("darcula", chroma.StyleEntries
 	chroma.NumberInteger: "#7A9EC2",
 	//chroma.NameFunction: "#FFC66D",
 	chroma.NameFunction: "#AD9E7E",
+	//chroma.NameOther: "#AD9E7E",
 }))
 
 

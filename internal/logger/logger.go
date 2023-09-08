@@ -27,8 +27,8 @@ func (this *Logger) Start() {
 	this.file = file
 
 	this.logger = log.New(file, "", log.LstdFlags)
-	this.logger.SetFlags(0)
 	this.logger.SetOutput(file)
+	this.logger.SetFlags(0)
 	this.layout = "2006-01-02 15:04:05.000"
 
 	this.stream = make(chan string)

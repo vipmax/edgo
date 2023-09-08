@@ -9,7 +9,6 @@ import (
 	"github.com/alecthomas/chroma/styles"
 	"github.com/gdamore/tcell"
 	"strings"
-	"time"
 )
 
 var HighlighterGlobal = Highlighter{}
@@ -22,7 +21,7 @@ type Highlighter struct {
 //var theme = Edgo
 
 // var theme = IdeaLight
-// var theme = EdgoLight
+//var theme = EdgoLight
 var theme = EdgoDark
 
 //var theme = Darcula
@@ -61,6 +60,11 @@ func (h *Highlighter) SetTheme(name string) {
 	AccentColor2 = int(tcell.GetColor(theme.Get(chroma.KeywordType).Colour.String()))
 }
 
+func ColorFromString(str string) int {
+	colour := chroma.ParseColour(str)
+	return int(tcell.GetColor(colour.String()))
+}
+
 func (h *Highlighter) GetRunButtonStyle() int {
 	return int(tcell.GetColor(theme.Get(chroma.String).Colour.String()))
 }
@@ -70,7 +74,7 @@ func (h *Highlighter) Colorize(code string, filename string) [][]int {
 		return [][]int{nil}
 	}
 
-	start := time.Now()
+	//start := time.Now()
 
 	// get lexer depending on Name
 	lexer := lexers.Match(filename)
@@ -102,6 +106,6 @@ func (h *Highlighter) Colorize(code string, filename string) [][]int {
 		textColors = append(textColors, lineColors)
 	}
 
-	Log.Info("colorize end, elapsed: " + time.Since(start).String())
+	//Log.Info("colorize end, elapsed: " + time.Since(start).String())
 	return textColors
 }

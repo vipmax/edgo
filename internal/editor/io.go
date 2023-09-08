@@ -2,6 +2,7 @@ package editor
 
 import (
 	"bufio"
+	"cmp"
 	. "edgo/internal/highlighter"
 	. "edgo/internal/logger"
 	. "edgo/internal/search"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -319,6 +321,12 @@ func ReadDirTree(dirPath string, filter string, isOpen bool, level int) (FileInf
 		}
 	}
 
+	slices.SortFunc(fileInfo.Childs, func(a, b FileInfo) int {
+		if a.IsDir == true && b.IsDir == false { return -1 }
+		if a.IsDir == false && b.IsDir == true { return 1 }
+		return cmp.Compare(a.Name, b.Name)
+	})
+
 	return fileInfo, nil
 }
 
@@ -412,4 +420,20 @@ func FindFirstFile(fileInfo FileInfo, index int) (*FileInfo, int) {
 
 	// No file found in the hierarchy
 	return nil, -1
+}
+
+
+func SetDirOpenFlag(root *FileInfo, fileName string) bool {
+	if root == nil { return false }
+	if root.FullName == fileName { return true }
+
+	for i := range root.Childs {
+		didSet := SetDirOpenFlag(&root.Childs[i], fileName)
+		if didSet {
+			root.IsDirOpen = true
+			return true
+		}
+	}
+
+	return false
 }
