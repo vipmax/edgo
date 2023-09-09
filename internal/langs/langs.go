@@ -2,6 +2,8 @@ package langs
 
 import (
 	. "edgo/internal/langs/bash"
+	. "edgo/internal/langs/c"
+	. "edgo/internal/langs/cpp"
 	. "edgo/internal/langs/golang"
 	. "edgo/internal/langs/html"
 	. "edgo/internal/langs/javascript"
@@ -22,6 +24,9 @@ func MatchQueryLang(lang string) string {
 		"python":     &Python{},
 		"rust":       &Rust{},
 		"go":         &Go{},
+		"c":          &C{},
+		"c++":        &Cpp{},
+		"cpp":        &Cpp{},
 		"html":       &Html{},
 		"yaml":       &Yaml{},
 		"bash":       &Bash{},

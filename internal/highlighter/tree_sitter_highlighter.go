@@ -6,12 +6,16 @@ import (
 	"log"
 	"os"
 	"strconv"
-
 	. "edgo/internal/langs"
 	. "edgo/internal/logger"
 	"fmt"
+	"strings"
+	"time"
+	"unicode/utf8"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/bash"
+	"github.com/smacker/go-tree-sitter/c"
+	"github.com/smacker/go-tree-sitter/cpp"
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/html"
 	"github.com/smacker/go-tree-sitter/javascript"
@@ -19,9 +23,6 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 	"github.com/smacker/go-tree-sitter/yaml"
-	"strings"
-	"time"
-	"unicode/utf8"
 )
 
 type TreeSitterHighlighter struct {
@@ -152,24 +153,17 @@ func (h *TreeSitterHighlighter) SetLang(lang string) {
 	h.lang = lang
 	
 	switch lang {
-	case "javascript": 
-		h.language = javascript.GetLanguage()
-	case "typescript":
-		h.language = typescript.GetLanguage()
-	case "go": 
-		h.language = golang.GetLanguage()
-	case "python": 
-		h.language = python.GetLanguage()
-	case "html":
-		h.language = html.GetLanguage()
-	case "yaml":
-		h.language = yaml.GetLanguage()
-	case "rust":
-		h.language = rust.GetLanguage()
-	case "bash":
-		h.language = bash.GetLanguage()
-	default: 
-		h.language = javascript.GetLanguage()
+	case "javascript": h.language = javascript.GetLanguage()
+	case "typescript": h.language = typescript.GetLanguage()
+	case "go": h.language = golang.GetLanguage()
+	case "python": h.language = python.GetLanguage()
+	case "html": h.language = html.GetLanguage()
+	case "yaml": h.language = yaml.GetLanguage()
+	case "rust": h.language = rust.GetLanguage()
+	case "bash": h.language = bash.GetLanguage()
+	case "c": h.language = c.GetLanguage()
+	case "c++": h.language = cpp.GetLanguage()
+	default: h.language = javascript.GetLanguage()
 	}
 	
 	h.parser.SetLanguage(h.language)
