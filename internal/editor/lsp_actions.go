@@ -4,6 +4,7 @@ import (
 	. "edgo/internal/highlighter"
 	. "edgo/internal/lsp"
 	. "edgo/internal/operations"
+	"edgo/internal/search"
 	. "edgo/internal/utils"
 
 	"fmt"
@@ -197,11 +198,22 @@ func (e *Editor) OnReferences() {
 		if err != nil || len(referencesResponse.Result) == 0 { return }
 
 		var options = []string{}
+		searchResults := []search.FileSearchResult{}
 		for i, ref := range referencesResponse.Result {
+			f := strings.Split(ref.URI, "file://")[1]
+
 			text := fmt.Sprintf("%d/%d %s %d %d ", i+1, len(referencesResponse.Result),
-				ref.URI, ref.Range.Start.Line + 1, ref.Range.Start.Character + 1,
+				f, ref.Range.Start.Line + 1, ref.Range.Start.Character + 1,
 			)
+
+			searchResult := search.FileSearchResult{ File: f,
+				Results: []search.SearchResult{
+					{Line: ref.Range.Start.Line + 1, Position: ref.Range.Start.Character +1},
+				},
+			}
+
 			options = append(options, text)
+			searchResults = append(searchResults, searchResult)
 		}
 
 		if len(options) == 0 { return }
@@ -212,12 +224,15 @@ func (e *Editor) OnReferences() {
 			return
 		}
 
-		tabs := CountTabsTo(e.Content[e.Row], e.Col)
-		width := Max(30, MaxString(options))                                                                          // width depends on max option len or 30 at min
-		height := MinMany(10, len(options))                                                                           // depends on min option len or 5 at min or how many rows to the end of e.Screen
-		atx := (e.Col -tabs) + e.LINES_WIDTH + tabs*(e.langTabWidth) + e.FilesPanelWidth; aty := e.Row - height - e.Y // Define the window  position and dimensions
+		//tabs := CountTabsTo(e.Content[e.Row], e.Col)
+		//width := Max(30, MaxString(options))                                                                          // width depends on max option len or 30 at min
+		height := MinMany(3, len(options))                                                                           // depends on min option len or 5 at min or how many rows to the end of e.Screen
+		//atx := (e.Col -tabs) + e.LINES_WIDTH + tabs*(e.langTabWidth) + e.FilesPanelWidth;
+		atx := e.FilesPanelWidth;
+		//aty := e.Row - height - e.Y // Define the window  position and dimensions
+		aty := 0 // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
-		if len(options) > e.Row - e.Y { aty = e.Row + 1 }
+		//if len(options) > e.Row - e.Y { aty = e.Row + 1 }
 
 		var selectionEnd = false; var selected = 0; var selectedOffset = 0
 
@@ -225,7 +240,12 @@ func (e *Editor) OnReferences() {
 			if selected < selectedOffset { selectedOffset = selected }  // calculate offsets for scrolling completion
 			if selected >= selectedOffset+height { selectedOffset = selected - height + 1 }
 
-			e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
+			//e.drawCompletion(atx,aty, height, width, options, selected, selectedOffset, style)
+			//e.Screen.Show()
+
+			e.DrawCodePreview(atx, aty, height, options, selectedOffset, selected, style, searchResults, lspStatus)
+
+			e.Screen.HideCursor()
 			e.Screen.Show()
 
 			switch ev := e.Screen.PollEvent().(type) { // poll and handle event

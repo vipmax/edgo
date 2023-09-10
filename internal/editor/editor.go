@@ -1254,7 +1254,7 @@ func (e *Editor) OnGlobalSearch() bool {
 
 			if isChanged && resultsCount > 0 {
 				isChanged = false
-				e.DrawGlobalSearch(aty, height, options, selectedOffset, selected, style, atx, searchResults,
+				e.DrawCodePreview(atx, aty, height, options, selectedOffset, selected, style, searchResults,
 					fmt.Sprintf("global search: '%s', %d rows found, processed %d rows, %d files, elapsed %s",
 						string(e.SearchPattern), resultsCount, totalRowsProcessed, filesProcessedCount, elapsed),
 				)
@@ -1311,10 +1311,10 @@ func (e *Editor) OnGlobalSearch() bool {
 	return false
 }
 
-func (e *Editor) DrawGlobalSearch(aty int, height int, options []string, selectedOffset int, selected int,
-	style Style, atx int, searchResults []FileSearchResult, status string)  {
+func (e *Editor) DrawCodePreview(atx int, aty int, height int, options []string, selectedOffset int, selected int,
+	style Style, searchResults []FileSearchResult, status string)  {
 
-	searchPattern, _ := ParsePattern(string(e.SearchPattern))
+	//searchPattern, _ := ParsePattern(string(e.SearchPattern))
 
 	// draw options
 	for row := aty; row < aty+height; row++ {
@@ -1374,8 +1374,12 @@ func (e *Editor) DrawGlobalSearch(aty int, height int, options []string, selecte
 					if color > 0 { chstyle = StyleDefault.Foreground(Color(color)) }
 				}
 
-				if linenumber == searchResult.Line-1 &&  // color match
-					col >= searchResult.Position && col < searchResult.Position + len(searchPattern) {
+				//if linenumber == searchResult.Line-1 &&  // color match
+				//	col >= searchResult.Position && col < searchResult.Position + len(searchPattern) {
+				//	chstyle = chstyle.Background(Color(SelectionColor))
+				//}
+
+				if linenumber == searchResult.Line-1 {
 					chstyle = chstyle.Background(Color(SelectionColor))
 				}
 

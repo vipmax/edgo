@@ -408,7 +408,7 @@ func (this *LspClient) References(file string, line int, character int) (Referen
 	this.message2chan[id] = this.referencesMessages
 	this.send(request)
 
-	response, err := WaitForRequest[ReferencesResponse](this.referencesMessages, 10000)
+	response, err := WaitForRequest[ReferencesResponse](this.referencesMessages, 3000)
 
 	delete(this.message2chan, id)
 	return response, err
