@@ -165,6 +165,10 @@ func (this *Cpp) Query() string {
 
 ;(null "nullptr" @constant.builtin)
 
+(auto) @type.builtin
+
+(operator_name) @function
+"operator" @function
 `
 }
 

@@ -1341,7 +1341,8 @@ func (e *Editor) DrawGlobalSearch(aty int, height int, options []string, selecte
 		rowsToShow := e.ROWS - height
 		previewContent := e.ReadContent(file, searchResult.Line-rowsToShow/2, searchResult.Line+rowsToShow/2)
 		text := ConvertContentToString(previewContent)
-		previewContentColors := HighlighterGlobal.Colorize(text, file)
+		//previewContentColors := HighlighterGlobal.Colorize(text, file)
+		previewContentColors := e.treeSitterHighlighter.Colorize(text)
 
 		// clear
 		for j := height + 1; j < e.ROWS; j++ {

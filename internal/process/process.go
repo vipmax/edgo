@@ -46,7 +46,6 @@ func (p *Process) Start() {
 		for scanner.Scan() {
 			line := scanner.Text()
 			p.Lines = append(p.Lines, line)
-			//p.Out <- line
 		}
 
 	}()
@@ -57,12 +56,12 @@ func (p *Process) Start() {
 		for scanner.Scan() {
 			line := scanner.Text()
 			p.Lines = append(p.Lines, line)
-			//p.Out <- line // slow for fast rate output
 		}
 	}()
 
 	go func() {
-		// idea is to check output changes every 10ms, update only if changes found
+		// idea is to check output changes every 10ms
+		// update only if changes found
 		lastMessagesLen := 0
 
 		for !p.Stopped {
