@@ -53,6 +53,7 @@ type Editor struct {
 	Undo []EditOperation // stack for undo operations
 	Redo []EditOperation // stack for redo operations
 
+	Cwd              string // current dir
 	InputFile        string // exact user input
 	Filename         string // current file name
 	AbsoluteFilePath string // current file name and directory
@@ -118,6 +119,8 @@ func (e *Editor) Start() {
 	} else {
 		e.Filename = os.Args[1]
 		e.InputFile = e.Filename
+		cwd, _ := os.Getwd()
+		e.Cwd = cwd
 
 		info, err := os.Stat(e.InputFile)
 		if err != nil { log.Fatal(err) }

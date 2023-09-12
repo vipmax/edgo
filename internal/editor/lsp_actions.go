@@ -6,7 +6,6 @@ import (
 	. "edgo/internal/operations"
 	"edgo/internal/search"
 	. "edgo/internal/utils"
-
 	"fmt"
 	. "github.com/gdamore/tcell"
 	"sort"
@@ -201,6 +200,8 @@ func (e *Editor) OnReferences() {
 		searchResults := []search.FileSearchResult{}
 		for i, ref := range referencesResponse.Result {
 			f := strings.Split(ref.URI, "file://")[1]
+			// make f relative
+			//ff, _ := filepath.Rel(e.Cwd, f); f = ff;
 
 			text := fmt.Sprintf("%d/%d %s %d %d ", i+1, len(referencesResponse.Result),
 				f, ref.Range.Start.Line + 1, ref.Range.Start.Character + 1,

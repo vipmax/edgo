@@ -8,7 +8,9 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
+	"github.com/acarl005/stripansi"
 )
 
 type Process struct {
@@ -18,7 +20,7 @@ type Process struct {
 	ctx  context.Context
 	stop context.CancelFunc
 	Stopped bool
-
+	mu      sync.Mutex // Mutex to protect access to Stopped
 	Lines []string
 	Update chan struct{}
 }
@@ -44,7 +46,7 @@ func (p *Process) Start() {
 		scanner := bufio.NewScanner(stdout)
 
 		for scanner.Scan() {
-			line := scanner.Text()
+			line := stripansi.Strip(scanner.Text())
 			p.Lines = append(p.Lines, line)
 		}
 
@@ -54,7 +56,7 @@ func (p *Process) Start() {
 		stderr, _ := p.Cmd.StderrPipe()
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			line := scanner.Text()
+			line := stripansi.Strip(scanner.Text())
 			p.Lines = append(p.Lines, line)
 		}
 	}()
@@ -85,7 +87,7 @@ func (p *Process) runCmd() {
 	))
 	p.Update <- struct{}{}
 
-	err := p.Cmd.Run()
+	err := p.Cmd.Run() // its blocks until process exiting
 	if err != nil {
 		p.Lines = append(p.Lines, "Error: " + err.Error())
 	}
@@ -94,14 +96,19 @@ func (p *Process) runCmd() {
 	p.Lines = append(p.Lines, fmt.Sprintf("Process %d finished with exit code %d",
 		p.Cmd.ProcessState.Pid(), p.Cmd.ProcessState.ExitCode(),
 	))
+	
+	p.mu.Lock()
 	p.Stopped = true
+	p.mu.Unlock()
 	p.Update <- struct{}{}
-
 }
 
 
-func (p *Process) Stop() {
+func (p *Process) Stop() {	
 	if p.Stopped { return }
 	p.stop()
+	
+	p.mu.Lock()
 	p.Stopped = true
+	p.mu.Unlock()
 }
