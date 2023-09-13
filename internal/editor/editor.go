@@ -1,5 +1,5 @@
 package editor
-// sad 
+// lsdfddd
 
 import (
 	. "edgo/internal/config"
@@ -31,7 +31,7 @@ type Editor struct {
 	LINES_WIDTH int // draw file lines number
 
 	TERMINAL_HEIGHT int
-	TERMINAL_WIDHT int
+	TERMINAL_WIDHT  int
 
 	Row int // cursor position row
 	Col int // cursor position column
@@ -70,12 +70,12 @@ type Editor struct {
 	IsFilesSearch       bool       // true if in files search mode
 	IsFilesPanelMoving  bool       // true if in files panel moving mode
 	Tree                FileInfo   // files Tree
-	FilesSearchPattern []rune
+	FilesSearchPattern  []rune
 
-	IsContentSearch    bool
-	SearchPattern      []rune // pattern for search in a buffer
-	SearchResults      []SearchResult
-	SearchResultIndex  int
+	IsContentSearch   bool
+	SearchPattern     []rune // pattern for search in a buffer
+	SearchResults     []SearchResult
+	SearchResultIndex int
 
 	//filesInfo []FileInfo
 	CursorHistory     []CursorMove
@@ -86,31 +86,33 @@ type Editor struct {
 	//Removed               Set
 
 	// process panel vars
-	ProcessPanelHeight int
-	ProcessPanelWidth int
-	ProcessContent     [][]rune
-	ProcessPanelScroll int
-	ProcessPanelHScroll int
+	ProcessPanelHeight    int
+	ProcessPanelWidth     int
+	ProcessContent        [][]rune
+	ProcessPanelScroll    int
+	ProcessPanelHScroll   int
 	IsProcessPanelMoving  bool
 	IsProcessPanelFocused bool
 	Process               *Process
 	ProcessPanelSpacing   int
 	ProcessPanelCursorX   int
 	ProcessPanelCursorY   int
-	ProcessPanelSelection  Selection
+	ProcessPanelSelection Selection
 
 	lsp2lang map[string]*LspClient
 
-	Dap dap.DapClient
+	Dap       dap.DapClient
 	DebugInfo DebugInfo
 
 	treeSitterHighlighter *TreeSitterHighlighter
+
+	FileWatcher *FileWatcher
 }
 
 func (e *Editor) Start() {
 	Log.Info("starting edgo")
 
-	e.InitScreen()
+	e.Init()
 
 	// reading file from cmd args
 	if len(os.Args) == 1 {
@@ -538,10 +540,13 @@ func (e *Editor) OpenFile(fname string) error {
 	e.Selection = Selection{-1,-1,-1,-1,false }
 	e.SearchResults = []SearchResult{}
 
+	e.FileWatcher.UpdateFile(e.AbsoluteFilePath)
+	e.FileWatcher.Update()
+
 	return nil
 }
 
-func (e *Editor) InitScreen() {
+func (e *Editor) Init() {
 	encoding.Register()
 	screen, err := NewScreen()
 	if err != nil { fmt.Fprintf(os.Stderr, "%v\n", err); os.Exit(1) }
@@ -567,8 +572,12 @@ func (e *Editor) InitScreen() {
 	e.treeSitterHighlighter = New()
 	e.treeSitterHighlighter.SetTheme(e.Config.Theme)
 
+	e.FileWatcher = NewFileWatcher(1000)
+	e.FileWatcher.StartWatch(e.OnFileUpdate)
 	return
 }
+
+
 
 func (e *Editor) DrawEverything() {
 	e.Screen.Clear()
@@ -1864,3 +1873,20 @@ func (e *Editor) OnProcessStop() {
 	}
 }
 
+func (e *Editor) OnFileUpdate() {
+	row, col := e.Row, e.Col // save cursor
+	x, y := e.X, e.Y         // safe scroll
+	e.OpenFile(e.AbsoluteFilePath)
+
+	// if row and col fits to content, restore cursor
+	if row < len(e.Content) {
+		e.Row = row
+		e.X = x
+		if col < len(e.Content[row]) {
+			e.Col = col
+			e.Y = y
+		}
+	}
+	e.DrawEverything()
+	e.Screen.Show()
+}

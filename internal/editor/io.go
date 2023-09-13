@@ -13,6 +13,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 )
 
 func (e *Editor) ReadFile(fileToRead string) string {
@@ -70,6 +72,7 @@ func (e *Editor) WriteFile() {
 	if err := f.Close(); err != nil { panic(err) }
 
 	e.IsContentChanged = false
+	e.FileWatcher.Update()
 
 	if e.Lang != "" {
 		lsp := e.lsp2lang[e.Lang]
@@ -436,4 +439,60 @@ func SetDirOpenFlag(root *FileInfo, fileName string) bool {
 	}
 
 	return false
+}
+
+type FileWatcher struct {
+	filePath  string
+	lastStats os.FileInfo
+	ticker    *time.Ticker
+	mu        sync.Mutex
+}
+
+func NewFileWatcher(everyms int) *FileWatcher {
+	duration := time.Millisecond * time.Duration(everyms)
+
+	fw := &FileWatcher{
+		filePath:  "",
+		lastStats: nil,
+		ticker:    time.NewTicker(duration),
+		mu:        sync.Mutex{},
+	}
+	return fw
+}
+
+func (fw *FileWatcher) StartWatch(f func() ) {
+	go func() {
+		for range fw.ticker.C {
+			if fw.filePath == "" { continue }
+			stats, _ := os.Stat(fw.filePath)
+
+			if stats.Size() != fw.lastStats.Size() ||
+			   stats.ModTime() != fw.lastStats.ModTime() {
+				f()
+				fw.Update()
+			}
+		}
+	}()
+}
+
+
+func (fw *FileWatcher) UpdateFile(filePath string) {
+	if fw.filePath == filePath { return }
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+	fw.filePath = filePath
+}
+
+
+func (fw *FileWatcher) Update() {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+	newStats, _ := os.Stat(fw.filePath)
+	fw.lastStats = newStats
+}
+
+func (fw *FileWatcher) Stop() {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+	fw.ticker.Stop()
 }
