@@ -8,6 +8,8 @@ import (
 	. "edgo/internal/search"
 	. "edgo/internal/utils"
 	"fmt"
+	"github.com/rjeczalik/notify"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -324,13 +326,21 @@ func ReadDirTree(dirPath string, filter string, isOpen bool, level int) (FileInf
 		}
 	}
 
-	slices.SortFunc(fileInfo.Childs, func(a, b FileInfo) int {
-		if a.IsDir == true && b.IsDir == false { return -1 }
-		if a.IsDir == false && b.IsDir == true { return 1 }
-		return cmp.Compare(a.Name, b.Name)
-	})
+	SortTree(fileInfo)
 
 	return fileInfo, nil
+}
+
+func SortTree(fileInfo FileInfo) {
+	slices.SortFunc(fileInfo.Childs, func(a, b FileInfo) int {
+		if a.IsDir == true && b.IsDir == false {
+			return -1
+		}
+		if a.IsDir == false && b.IsDir == true {
+			return 1
+		}
+		return cmp.Compare(a.Name, b.Name)
+	})
 }
 
 func PrintTree(fileInfo FileInfo, indent int) {
@@ -441,6 +451,18 @@ func SetDirOpenFlag(root *FileInfo, fileName string) bool {
 	return false
 }
 
+func FindByFullName(node *FileInfo, fileName string) *FileInfo {
+	if node == nil { return nil }
+	if node.FullName == fileName { return node }
+
+	for i := range node.Childs {
+		foundNode := FindByFullName(&node.Childs[i], fileName)
+		if foundNode != nil { return foundNode }
+	}
+
+	return nil
+}
+
 type FileWatcher struct {
 	filePath  string
 	lastStats os.FileInfo
@@ -450,14 +472,14 @@ type FileWatcher struct {
 
 func NewFileWatcher(everyms int) *FileWatcher {
 	duration := time.Millisecond * time.Duration(everyms)
+	ticker := time.NewTicker(duration)
 
-	fw := &FileWatcher{
+	return &FileWatcher{
 		filePath:  "",
 		lastStats: nil,
-		ticker:    time.NewTicker(duration),
+		ticker:    ticker,
 		mu:        sync.Mutex{},
 	}
-	return fw
 }
 
 func (fw *FileWatcher) StartWatch(f func() ) {
@@ -495,4 +517,41 @@ func (fw *FileWatcher) Stop() {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 	fw.ticker.Stop()
+}
+
+
+type DirWatcher struct {
+	dirPath  string
+	events chan notify.EventInfo
+	mu 	  sync.Mutex
+}
+
+func NewDirWatcher(dirPath string) *DirWatcher {
+	abs, _ := filepath.Abs(dirPath)
+
+	return &DirWatcher{
+		dirPath:  abs,
+		mu:        sync.Mutex{},
+	}
+}
+
+func (dw *DirWatcher) StartWatch(f func(e notify.EventInfo) ) {
+	dw.events = make(chan notify.EventInfo, 1)
+	path := dw.dirPath + "/..." // any dirs and files inside
+
+	err := notify.Watch(path, dw.events, notify.All)
+	if err != nil { log.Fatal(err) }
+
+	go func() {
+		for e := range dw.events {
+			//log.Println("Got event:", e)
+			f(e)
+		}
+	}()
+}
+
+func (dw *DirWatcher) Stop() {
+	dw.mu.Lock()
+	defer dw.mu.Unlock()
+	notify.Stop(dw.events)
 }

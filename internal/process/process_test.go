@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"testing"
 	"time"
@@ -104,4 +105,57 @@ func run(ctx context.Context) {
 	}()
 
 	cmd.Start()
+}
+
+
+// Regular expression to match ANSI escape code for color (e.g., \e[1;31m)
+var ansiColorPattern = "[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))"
+
+
+// Function to extract ANSI escape code colors from a string
+func extractANSIColors(input string) string {
+	regex := regexp.MustCompile(ansiColorPattern)
+	return regex.ReplaceAllString(input, "")
+
+	//matches := regex.FindAllStringSubmatch(input, -1)
+	//return matches
+}
+
+
+func TestExtractANSIColors(t *testing.T) {
+	testCases := []struct {
+		input          string
+		expectedColors int
+	}{
+		{
+			input:          `This is \e[1;31ma red\e[0m text and \e[1;34mblue\e[0m text.`,
+			expectedColors: 2,
+		},
+		{
+			input:          "No ANSI escape codes here.",
+			expectedColors: 0,
+		},
+		{
+			input:          `This has a \e[1;32mgreen\e[0m color code and \e[0;35mpurple\e[0m code.`,
+			expectedColors: 2,
+		},
+		{
+			input:          `Multiple color codes in a single string: \e[1;33myellow\e[0m, \e[1;36mcyan\e[0m, \e[1;35mmagenta\e[0m.`,
+			expectedColors: 3,
+		},
+		{
+			input:          `Incomplete color code: \e[1;31mred\e[0.`,
+			expectedColors: 1,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.input, func(t *testing.T) {
+			detectedColorCodes := extractANSIColors(testCase.input)
+
+			if len(detectedColorCodes) != testCase.expectedColors {
+				t.Errorf("Expected %d ANSI escape code colors, but got %d", testCase.expectedColors, len(detectedColorCodes))
+			}
+		})
+	}
 }

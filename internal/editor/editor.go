@@ -16,6 +16,7 @@ import (
 	"github.com/atotto/clipboard"
 	. "github.com/gdamore/tcell"
 	"github.com/gdamore/tcell/encoding"
+	"github.com/rjeczalik/notify"
 	"log"
 	"os"
 	"path"
@@ -107,12 +108,17 @@ type Editor struct {
 	treeSitterHighlighter *TreeSitterHighlighter
 
 	FileWatcher *FileWatcher
+	DirWatcher  *DirWatcher
 }
 
 func (e *Editor) Start() {
 	Log.Info("starting edgo")
 
 	e.Init()
+
+	cwd, _ := os.Getwd()
+	e.Cwd = cwd
+
 
 	// reading file from cmd args
 	if len(os.Args) == 1 {
@@ -121,8 +127,6 @@ func (e *Editor) Start() {
 	} else {
 		e.Filename = os.Args[1]
 		e.InputFile = e.Filename
-		cwd, _ := os.Getwd()
-		e.Cwd = cwd
 
 		info, err := os.Stat(e.InputFile)
 		if err != nil { log.Fatal(err) }
@@ -574,6 +578,9 @@ func (e *Editor) Init() {
 
 	e.FileWatcher = NewFileWatcher(1000)
 	e.FileWatcher.StartWatch(e.OnFileUpdate)
+
+	e.DirWatcher = NewDirWatcher(".")
+	e.DirWatcher.StartWatch(e.OnFilesTreeUpdate)
 	return
 }
 
@@ -1439,10 +1446,9 @@ func (e *Editor) findSearchGlobalOption(searchResults []FileSearchResult, select
 
 func (e *Editor) OnFilesTree() {
 	e.IsFileSelection = true
-	dir, _ := os.Getwd()
 
 	if e.FilesPanelWidth == 0 {
-		tree, _ := ReadDirTree(dir, "", false, 0)
+		tree, _ := ReadDirTree(e.Cwd, "", false, 0)
 		e.Tree = tree
 		if len(tree.Childs) == 0 { return }
 		e.FilesPanelWidth = 28
@@ -1508,7 +1514,7 @@ func (e *Editor) OnFilesTree() {
 				if !e.IsMouseUnderFile(mx) { continue }
 				end = e.SelectAndOpenFile()
 				if end && e.IsFilesSearch  {
-					tree, _ := ReadDirTree(dir, "", false, 0)
+					tree, _ := ReadDirTree(e.Cwd, "", false, 0)
 					e.Tree = tree
 					e.Tree.IsDirOpen = true
 					SetDirOpenFlag(&e.Tree, e.InputFile)
@@ -1536,11 +1542,11 @@ func (e *Editor) OnFilesTree() {
 				patternx--
 				e.FilesSearchPattern = Remove(e.FilesSearchPattern, patternx)
 				if len(e.FilesSearchPattern) != 0 {
-					tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), true, 0)
+					tree, _ := ReadDirTree(e.Cwd, string(e.FilesSearchPattern), true, 0)
 					tree = FilterIfLeafEmpty(tree)
 					e.Tree = tree
 				} else {
-					tree, _ := ReadDirTree(dir, "", false, 0)
+					tree, _ := ReadDirTree(e.Cwd, "", false, 0)
 					e.Tree = tree
 				}
 
@@ -1553,7 +1559,7 @@ func (e *Editor) OnFilesTree() {
 				e.IsFilesSearch = true
 				e.FilesSearchPattern = InsertTo(e.FilesSearchPattern, patternx, ev.Rune())
 				patternx++
-				tree, _ := ReadDirTree(dir, string(e.FilesSearchPattern), true, 0)
+				tree, _ := ReadDirTree(e.Cwd, string(e.FilesSearchPattern), true, 0)
 				tree = FilterIfLeafEmpty(tree)
 				e.Tree = tree
 				e.Tree.IsDirOpen = true
@@ -1565,7 +1571,7 @@ func (e *Editor) OnFilesTree() {
 			if key == KeyEnter || !e.IsFilesSearch  && (key == KeyLeft || key == KeyRight) {
 				end = e.SelectAndOpenFile()
 				if end && e.IsFilesSearch  {
-					tree, _ := ReadDirTree(dir, "", false, 0)
+					tree, _ := ReadDirTree(e.Cwd, "", false, 0)
 					e.Tree = tree
 					e.Tree.IsDirOpen = true
 					SetDirOpenFlag(&e.Tree, e.InputFile)
@@ -1887,6 +1893,48 @@ func (e *Editor) OnFileUpdate() {
 			e.Y = y
 		}
 	}
+	e.DrawEverything()
+	e.Screen.Show()
+}
+
+
+func (e *Editor) OnFilesTreeUpdate(event notify.EventInfo) {
+	fullname := event.Path(); name := filepath.Base(fullname);
+	dir := filepath.Dir(fullname)
+	parentNode := FindByFullName(&e.Tree, dir)
+	if parentNode == nil { return }
+
+	switch event.Event() {
+	case notify.Create:
+		// find and add node to parent
+		fileInfo, err := os.Stat(fullname)
+		if err != nil { return }
+		isDir := fileInfo.IsDir()
+
+		f := FileInfo{
+			Name: name, FullName: fullname,
+			IsDir: isDir, IsDirOpen: false,
+			Childs: []FileInfo{}, Level: parentNode.Level + 1,
+		}
+
+		parentNode.Childs = append(parentNode.Childs, f)
+		SortTree(*parentNode)
+
+	case notify.Remove:
+		// find and remove node from parent
+		for i, child := range parentNode.Childs {
+			if child.FullName == fullname {
+				parentNode.Childs = Remove(parentNode.Childs, i)
+				break
+			}
+		}
+	default:
+		// update all
+		tree, _ := ReadDirTree(e.Cwd, "", false, 0)
+		tree.IsDirOpen = true
+		e.Tree = tree
+	}
+
 	e.DrawEverything()
 	e.Screen.Show()
 }
