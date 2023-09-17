@@ -123,7 +123,8 @@ func (e *Editor) Start() {
 	// reading file from cmd args
 	if len(os.Args) == 1 {
 		// if no args, open current dir
-		e.OnFilesTree()
+		e.DrawLogo()
+		e.OnFilesTree(false)
 	} else {
 		e.Filename = os.Args[1]
 		e.InputFile = e.Filename
@@ -135,7 +136,7 @@ func (e *Editor) Start() {
 			// if arg is dir, go to dir and open
 			err = os.Chdir(e.InputFile)
 			if err != nil { log.Fatal(err) }
-			e.OnFilesTree()
+			e.OnFilesTree(true)
 		} else {
 			// if arg is file, open file
 			err := e.OpenFile(e.InputFile)
@@ -167,6 +168,8 @@ func (e *Editor) HandleEvents() {
 		e.TERMINAL_HEIGHT = e.ROWS
 		e.TERMINAL_WIDHT = e.COLUMNS
 		e.ROWS -= e.ProcessPanelHeight
+		e.DrawEverything()
+		e.Screen.Show()
 
 	case *EventMouse:
 		mx, my := ev.Position()
@@ -297,7 +300,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 	if e.IsFilesPanelMoving && buttons & Button1 == 1 { e.FilesPanelWidth = mx; return }
 	if e.IsFilesPanelMoving && buttons & Button1 == 0 { e.IsFilesPanelMoving = false; return }
-	if mx < e.FilesPanelWidth-3 && buttons & Button1 == 0 && !e.Dap.IsStarted { e.OnFilesTree(); return }
+	if mx < e.FilesPanelWidth-3 && buttons & Button1 == 0 && !e.Dap.IsStarted { e.OnFilesTree(true); return }
 
 	if e.Filename == "" { return }
 
@@ -465,7 +468,7 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 	if key == KeyUp { e.OnUp(); e.Selection.CleanSelection() }
 	if key == KeyLeft { e.OnLeft(); e.Selection.CleanSelection() }
 	if key == KeyRight { e.OnRight(); e.Selection.CleanSelection() }
-	if key == KeyCtrlT { e.OnFilesTree() }
+	if key == KeyCtrlT { e.OnFilesTree(true) }
 	if key == KeyF18 { e.OnRename() }
 	if key == KeyF22 { e.OnProcessRun(true) }
 	if key == KeyF23 { e.OnDebug() }
@@ -604,8 +607,10 @@ func (e *Editor) DrawEverything() {
 		e.DrawTree(e.Tree, 0, &fileindex, &aty)
 	}
 
-	if len(e.Content) == 0 { return }
-
+	if len(e.Content) == 0 {
+		e.DrawLogo()
+		return
+	}
 
 	countTabsTo := CountTabsTo(e.Content[e.Row], e.Col)
 	tabcor := countTabsTo *(e.langTabWidth - 1)
@@ -1444,7 +1449,7 @@ func (e *Editor) findSearchGlobalOption(searchResults []FileSearchResult, select
 	return "", SearchResult{}, false
 }
 
-func (e *Editor) OnFilesTree() {
+func (e *Editor) OnFilesTree(forceOpen bool) {
 	e.IsFileSelection = true
 
 	if e.FilesPanelWidth == 0 {
@@ -1930,11 +1935,40 @@ func (e *Editor) OnFilesTreeUpdate(event notify.EventInfo) {
 		}
 	default:
 		// update all
-		tree, _ := ReadDirTree(e.Cwd, "", false, 0)
-		tree.IsDirOpen = true
-		e.Tree = tree
+		//tree, _ := ReadDirTree(e.Cwd, "", false, 0)
+		//tree.IsDirOpen = true
+		//e.Tree = tree
 	}
 
 	e.DrawEverything()
+	e.Screen.Show()
+}
+
+// draw logo
+func (e *Editor) DrawLogo() {
+	// https://patorjk.com/software/taag/#p=testall&h=0&f=3D%20Diagonal&t=edgo
+	logo :=
+`
+ _______ ______   ______  _____ 
+ |______ |     \ |  ____ |     |
+ |______ |_____/ |_____| |_____|
+                                
+`
+	// split logo by new line
+	lines := strings.Split(logo, "\n")
+
+	logoWidth := len(lines[1])
+	//fromx := e.COLUMNS / 2 - logoWidth / 2
+	fromy := e.ROWS / 2 - len(lines) / 2
+
+	fromx := (e.COLUMNS + 28 - 2) / 2 - logoWidth / 2
+
+	for i, line  := range lines {
+		for j, ch := range line {
+			e.Screen.SetContent(j + fromx, i + fromy, ch, nil,
+				StyleDefault.Foreground(Color(AccentColor2)))
+		}
+	}
+
 	e.Screen.Show()
 }

@@ -2,16 +2,9 @@ package highlighter
 
 import (
 	"context"
-	. "gopkg.in/yaml.v2"
-	"log"
-	"os"
-	"strconv"
 	. "edgo/internal/langs"
 	. "edgo/internal/logger"
 	"fmt"
-	"strings"
-	"time"
-	"unicode/utf8"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/bash"
 	"github.com/smacker/go-tree-sitter/c"
@@ -23,6 +16,13 @@ import (
 	"github.com/smacker/go-tree-sitter/rust"
 	"github.com/smacker/go-tree-sitter/typescript/typescript"
 	"github.com/smacker/go-tree-sitter/yaml"
+	. "gopkg.in/yaml.v2"
+	"log"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
 )
 
 type TreeSitterHighlighter struct {
@@ -102,7 +102,7 @@ property_identifier: 140
 string: 222
 attribute_value: 222
 interpreted_string_literal: 222
-keyword: 133
+keyword: 177
 type_identifier: 303
 constant: 303
 number: 303
@@ -112,13 +112,11 @@ function: 147
 namespace: 147
 constructor: 153
 comment: 243
-
 function.call: 147
 type: 303
-tag.attribute: 133
+tag.attribute: 177
 method: 147
 property: 25165780
-
 accent_color: 303
 accent_color2: 121
 `
@@ -345,7 +343,6 @@ func (h *TreeSitterHighlighter) colorizeNode(node *sitter.Node, nodeContent []by
 		column += 1
 
 	}
-
 
 	for _, character := range s {
 		if character == '\n' { i++; column = 0; continue }
