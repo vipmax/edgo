@@ -1,10 +1,11 @@
-package editor
-// lsdfddd
+package ui
+// 
 
 import (
 	. "edgo/internal/config"
 	"edgo/internal/dap"
 	. "edgo/internal/highlighter"
+	. "edgo/internal/io"
 	. "edgo/internal/logger"
 	. "edgo/internal/lsp"
 	. "edgo/internal/operations"
@@ -520,7 +521,7 @@ func (e *Editor) OpenFile(fname string) error {
 
 	code := e.ReadFile(e.AbsoluteFilePath)
 	//e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
-	e.treeSitterHighlighter = New()
+	e.treeSitterHighlighter = TreeSitterHighlighterNew()
 	e.treeSitterHighlighter.SetTheme(e.Config.Theme)
 	e.treeSitterHighlighter.SetLang(e.Lang)
 	e.Colors = e.treeSitterHighlighter.Colorize(code)
@@ -548,7 +549,7 @@ func (e *Editor) OpenFile(fname string) error {
 	e.SearchResults = []SearchResult{}
 
 	e.FileWatcher.UpdateFile(e.AbsoluteFilePath)
-	e.FileWatcher.Update()
+	e.FileWatcher.UpdateStats()
 
 	return nil
 }
@@ -576,7 +577,7 @@ func (e *Editor) Init() {
 	e.lsp2lang = map[string]*LspClient{}
 	e.DebugInfo = DebugInfo{}
 
-	e.treeSitterHighlighter = New()
+	e.treeSitterHighlighter = TreeSitterHighlighterNew()
 	e.treeSitterHighlighter.SetTheme(e.Config.Theme)
 
 	e.FileWatcher = NewFileWatcher(1000)
@@ -599,7 +600,7 @@ func (e *Editor) DrawEverything() {
 			for col := 0; col < e.FilesPanelWidth; col++ { // clean
 				e.Screen.SetContent(col, row, ' ', nil, StyleDefault)
 			}
-			//e.Screen.SetContent(e.FilesPanelWidth-2, row, '▕', nil, SeparatorStyle)
+			e.Screen.SetContent(e.FilesPanelWidth-2, row, '▕', nil, SeparatorStyle)
 		}
 
 		var aty = 0
@@ -1460,6 +1461,7 @@ func (e *Editor) OnFilesTree(forceOpen bool) {
 		// root is always opened
 		e.Tree.IsDirOpen = true
 	}
+	
 	if e.Filename != "" { e.DrawEverything() }
 
 	var end = false
@@ -1904,7 +1906,8 @@ func (e *Editor) OnFileUpdate() {
 
 
 func (e *Editor) OnFilesTreeUpdate(event notify.EventInfo) {
-	fullname := event.Path(); name := filepath.Base(fullname);
+	fullname := event.Path()
+	name := filepath.Base(fullname)
 	dir := filepath.Dir(fullname)
 	parentNode := FindByFullName(&e.Tree, dir)
 	if parentNode == nil { return }

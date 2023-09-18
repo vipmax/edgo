@@ -1,4 +1,4 @@
-package editor
+package ui
 
 import (
 	dap "edgo/internal/dap"

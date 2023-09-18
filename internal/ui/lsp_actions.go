@@ -1,7 +1,8 @@
-package editor
+package ui
 
 import (
 	. "edgo/internal/highlighter"
+	. "edgo/internal/io"
 	. "edgo/internal/lsp"
 	. "edgo/internal/operations"
 	"edgo/internal/search"

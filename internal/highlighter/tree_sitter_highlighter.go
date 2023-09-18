@@ -5,6 +5,7 @@ import (
 	. "edgo/internal/langs"
 	. "edgo/internal/logger"
 	"fmt"
+	"github.com/gdamore/tcell"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/bash"
 	"github.com/smacker/go-tree-sitter/c"
@@ -33,10 +34,10 @@ type TreeSitterHighlighter struct {
 	lang      string
 	language  *sitter.Language
 	query     *sitter.Query
-	colorsMap map[string]int
+	colorsMap map[string]string
 }
 
-func New() *TreeSitterHighlighter {
+func TreeSitterHighlighterNew() *TreeSitterHighlighter {
 	parser := sitter.NewParser()
 
 	return &TreeSitterHighlighter{
@@ -95,31 +96,31 @@ func populateTreeNode(node *sitter.Node, codeBytes []byte) TreeNode {
 
 var defaultColors =
 `
-identifier: 121
-tag: 121
-field_identifier: 121
-property_identifier: 140
-string: 222
-attribute_value: 222
-interpreted_string_literal: 222
-keyword: 177
-type_identifier: 303
-constant: 303
-number: 303
-integer: 303
-float: 303
-function: 147
-namespace: 147
-constructor: 153
-comment: 243
-function.call: 147
-type: 303
-tag.attribute: 177
-method: 147
-property: 25165780
-accent_color: 303
-accent_color2: 121
+identifier: "#a5fcd9"
+field_identifier: "#a5fcd9"
+property_identifier: "#a5fcd9"
+property: "#a5fcd9"
+string: "#a5fc94"
+keyword: "#ec6aad"
+constant: "#ec6aad"
+number: "#ec6aad"
+integer: "#ec6aad"
+float: "#ec6aad"
+variable.builtin: "#ec6aad"
+function: "#afaff9"
+function.call: "#afaff9"
+method: "#afaff9"
+comment: "#767676"
+namespace: "#c6a5fc"
+type: "#c6a5fc"
+tag.attribute: "#c6a5fc"
+accent_color: "#ec6aad"
+accent_color2: "#a5fcd9"
 `
+
+func (h *TreeSitterHighlighter) ParseColor(colour string) int {
+	return int(tcell.GetColor(colour))
+}
 
 func (h *TreeSitterHighlighter) SetTheme(themePath string) {
 	yamlFile, err := os.ReadFile(themePath)
@@ -135,10 +136,10 @@ func (h *TreeSitterHighlighter) SetTheme(themePath string) {
 	}
 
 	if value, ok := h.colorsMap["accent_color"]; ok {
-		AccentColor = value
+		AccentColor = h.ParseColor(value)
 	}
 	if value, ok := h.colorsMap["accent_color2"]; ok {
-		AccentColor2 = value
+		AccentColor2 =  h.ParseColor(value)
 	}
 
 	//fmt.Println("Cases and Return Values:")
@@ -169,8 +170,8 @@ func (h *TreeSitterHighlighter) SetLang(lang string) {
 
 
 func (h *TreeSitterHighlighter) matchExpression(expression string, fullexpression string) int {
-	if value, ok := h.colorsMap[fullexpression]; ok { return value }
-	if value, ok := h.colorsMap[expression]; ok { return value }
+	if value, ok := h.colorsMap[fullexpression]; ok { return  h.ParseColor(value) }
+	if value, ok := h.colorsMap[expression]; ok { return  h.ParseColor(value) }
 	return -1
 }
 
@@ -371,7 +372,7 @@ func (h *TreeSitterHighlighter) ColorizeRange(newcode string,
 	Log.Info("tree-sitter edit, elapsed: " + time.Since(starttime).String())
 	h.lines = strings.Split(newcode, "\n")
 
-	//treeDebug := populateTreeNode(h.tree.RootNode(), code); Use(treeDebug)
+	treeDebug := populateTreeNode(h.tree.RootNode(), code); Use(treeDebug)
 
 	rootNode := h.tree.RootNode()
 	node := rootNode.NamedDescendantForPointRange(

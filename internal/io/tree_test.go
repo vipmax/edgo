@@ -1,4 +1,4 @@
-package editor
+package io
 
 import (
 	"fmt"
@@ -26,7 +26,7 @@ func TestProcessDirectory(t *testing.T) {
 	//fmt.Printf("%+v\n", fileInfo)
 
 	PrintTree(fileInfo, 0)
-	
+
 }
 
 func TestTreeSize(t *testing.T) {

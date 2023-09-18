@@ -9,7 +9,7 @@ import (
 )
 
 func TestTreeSitterHighlighter(t *testing.T) {
-	treeSitterHighlighter := New()
+	treeSitterHighlighter := TreeSitterHighlighterNew()
 	treeSitterHighlighter.SetLang("javascript")
 	code := `
 function hello() {
@@ -26,7 +26,7 @@ function hello() {
 }
 
 func TestTreeSitterHighlighterFromFile(t *testing.T) {
-	treeSitterHighlighter := New()
+	treeSitterHighlighter := TreeSitterHighlighterNew()
 	treeSitterHighlighter.SetLang("go")
 
 	code, _ := ReadFileToString("../editor/editor.go")
@@ -42,7 +42,7 @@ func TestTreeSitterHighlighterFromFile(t *testing.T) {
 
 
 func TestTreeSitterHighlighterEdit(t *testing.T) {
-	treeSitterHighlighter := New()
+	treeSitterHighlighter := TreeSitterHighlighterNew()
 	treeSitterHighlighter.SetLang("javascript")
 	code := `function hello() {
 	console.log('hello') 
@@ -69,5 +69,28 @@ func TestTreeSitterHighlighterEdit(t *testing.T) {
 	for i, colorsLine := range treeSitterHighlighter.Colors {
 		fmt.Println(i+1, codes[i])
 		fmt.Println(i+1, colorsLine)
+	}
+}
+
+
+func BenchmarkColorFromString(b *testing.B) {
+	h := TreeSitterHighlighterNew()
+	col := h.ParseColor("#fc9994")
+	fmt.Println(col)
+
+	want := 33331604
+	if col != want {
+		b.Errorf("got %v want %v", col, want)
+	}
+}
+
+func TestColorFromString(t *testing.T) {
+	h := TreeSitterHighlighterNew()
+	col := h.ParseColor("#fc9994")
+	fmt.Println(col)
+
+	want := 33331604
+	if col != want {
+		t.Errorf("got %v want %v", col, want)
 	}
 }
