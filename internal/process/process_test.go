@@ -4,27 +4,30 @@ import (
 	"bufio"
 	"context"
 	. "fmt"
+	"github.com/stretchr/testify/assert"
 	"os"
 	"os/exec"
 	"os/signal"
-	"regexp"
 	"syscall"
 	"testing"
 	"time"
 )
 
 func TestProcess(t *testing.T) {
+	os.Chdir("../../")
+	Println(os.Getwd())
 
-	process := NewProcess("/Users/max/opt/anaconda3/bin/python", "atest.py")
+	//process := NewProcess("python3", "atest.py")
+	process := NewProcess("go", "run", "cmd/test/main.go")
 	process.Cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
-
-	process.Start()
 
 	go func() {
 		for line := range process.Out {
 			Println("Output:", line)
 		}
 	}()
+
+	process.Start()
 
 	//Println("Process started with PID:", process.Cmd.Process.Pid)
 
@@ -75,6 +78,8 @@ func TestKill2(t *testing.T) {
 }
 
 func TestKill3(t *testing.T) {
+	os.Chdir("../../")
+	Println(os.Getwd())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 
 	go run(ctx)
@@ -87,8 +92,8 @@ func TestKill3(t *testing.T) {
 }
 
 func run(ctx context.Context) {
-	cmd := exec.CommandContext(ctx, "python3", "atest.py")
-	//cmd := exec.CommandContext(ctx, "go", "run", "cmd/test/main.go")
+	//cmd := exec.CommandContext(ctx, "python3", "atest.py")
+	cmd := exec.CommandContext(ctx, "go", "run", "cmd/test/main.go")
 	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 
 	stdout, _ := cmd.StdoutPipe()
@@ -108,54 +113,74 @@ func run(ctx context.Context) {
 }
 
 
-// Regular expression to match ANSI escape code for color (e.g., \e[1;31m)
-var ansiColorPattern = "[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))"
-
-
-// Function to extract ANSI escape code colors from a string
-func extractANSIColors(input string) string {
-	regex := regexp.MustCompile(ansiColorPattern)
-	return regex.ReplaceAllString(input, "")
-
-	//matches := regex.FindAllStringSubmatch(input, -1)
-	//return matches
+func TestNewProcess(t *testing.T) {
+	cmd := NewProcess("echo", "hello")
+	assert.NotNil(t, cmd)
+	assert.NotNil(t, cmd.Cmd)
+	assert.NotNil(t, cmd.Out)
+	assert.NotNil(t, cmd.done)
+	assert.NotNil(t, cmd.Lines)
+	assert.NotNil(t, cmd.Update)
 }
 
+func TestProcess_StartStop(t *testing.T) {
+	cmd := NewProcess("echo", "hello")
+	assert.NotNil(t, cmd)
 
-func TestExtractANSIColors(t *testing.T) {
-	testCases := []struct {
-		input          string
-		expectedColors int
-	}{
-		{
-			input:          `This is \e[1;31ma red\e[0m text and \e[1;34mblue\e[0m text.`,
-			expectedColors: 2,
-		},
-		{
-			input:          "No ANSI escape codes here.",
-			expectedColors: 0,
-		},
-		{
-			input:          `This has a \e[1;32mgreen\e[0m color code and \e[0;35mpurple\e[0m code.`,
-			expectedColors: 2,
-		},
-		{
-			input:          `Multiple color codes in a single string: \e[1;33myellow\e[0m, \e[1;36mcyan\e[0m, \e[1;35mmagenta\e[0m.`,
-			expectedColors: 3,
-		},
-		{
-			input:          `Incomplete color code: \e[1;31mred\e[0.`,
-			expectedColors: 1,
-		},
+	// Start the process
+	cmd.Start()
+	// Allow some time for the process to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Check if it started successfully
+	assert.False(t, cmd.Stopped)
+
+	// Stop the process
+	cmd.Stop()
+	// Allow some time for the process to stop
+	time.Sleep(100 * time.Millisecond)
+
+	// Check if it stopped successfully
+	assert.True(t, cmd.Stopped)
+}
+
+func TestProcess_StopTwice(t *testing.T) {
+	cmd := NewProcess("echo", "hello")
+	assert.NotNil(t, cmd)
+
+	// Start the process
+	cmd.Start()
+	time.Sleep(100 * time.Millisecond) // Allow some time for the process to start
+
+	// Stop the process twice
+	cmd.Stop()
+	cmd.Stop() // Second stop should be a no-op
+
+	// Check if it stopped successfully
+	assert.True(t, cmd.Stopped)
+}
+
+func TestProcessOutput(t *testing.T) {
+	// Define a simple command that outputs "hello"
+	cmd := NewProcess("echo", "hello")
+	assert.NotNil(t, cmd)
+
+	// Start the process
+	cmd.Start()
+	time.Sleep(100 * time.Millisecond) // Allow some time for the process to start
+
+	for range cmd.Update {
+		Println(cmd.Lines)
 	}
 
-	for _, testCase := range testCases {
-		t.Run(testCase.input, func(t *testing.T) {
-			detectedColorCodes := extractANSIColors(testCase.input)
+	// Check if the output was captured correctly
+	assert.Len(t, cmd.Lines, 4)
+	assert.Contains(t, cmd.Lines[0], "echo hello")
+	assert.Contains(t, cmd.Lines[1], "hello")
+	assert.Equal(t, cmd.Lines[2], "")
+	assert.Contains(t, cmd.Lines[3], "finished with exit code 0")
 
-			if len(detectedColorCodes) != testCase.expectedColors {
-				t.Errorf("Expected %d ANSI escape code colors, but got %d", testCase.expectedColors, len(detectedColorCodes))
-			}
-		})
-	}
+	//// Stop the process
+	//cmd.Stop()
+	//time.Sleep(100 * time.Millisecond) // Allow some time for the process to stop
 }

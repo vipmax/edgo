@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/acarl005/stripansi"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strings"
 	"sync"
 	"time"
-	"github.com/acarl005/stripansi"
 )
 
 type Process struct {
@@ -70,7 +70,7 @@ func (p *Process) Start() {
 			<- time.After(time.Millisecond * 10)
 			currentLen := len(p.Lines)
 			if currentLen != lastMessagesLen {
-				p.Update <- struct{}{}
+				if !p.Stopped { p.Update <- struct{}{} } else { return }
 				lastMessagesLen = currentLen
 			}
 		}
@@ -96,18 +96,18 @@ func (p *Process) runCmd() {
 	p.Lines = append(p.Lines, fmt.Sprintf("Process %d finished with exit code %d",
 		p.Cmd.ProcessState.Pid(), p.Cmd.ProcessState.ExitCode(),
 	))
-	
+
 	p.mu.Lock()
 	p.Stopped = true
-	p.mu.Unlock()
 	p.Update <- struct{}{}
+	close(p.Update)
+	p.mu.Unlock()
 }
 
 
-func (p *Process) Stop() {	
+func (p *Process) Stop() {
 	if p.Stopped { return }
 	p.stop()
-	
 	p.mu.Lock()
 	p.Stopped = true
 	p.mu.Unlock()

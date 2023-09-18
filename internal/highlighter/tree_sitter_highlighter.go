@@ -185,7 +185,7 @@ func (h *TreeSitterHighlighter) Colorize(newCode string) [][]int {
 	h.tree = tree
 	Log.Info("[Colorize] tree parsed, elapsed", time.Since(start).String())
 
-	treeForDebug := populateTreeNode(h.tree.RootNode(), code); Use(treeForDebug)
+	//treeForDebug := populateTreeNode(h.tree.RootNode(), code); Use(treeForDebug)
 
 	h.lines = strings.Split(newCode, "\n")
 	h.Colors = make([][]int, len(h.lines))
@@ -330,7 +330,7 @@ func (h *TreeSitterHighlighter) colorizeChildNodes(node *sitter.Node, code []byt
 }
 
 func (h *TreeSitterHighlighter) colorizeNode(node *sitter.Node, nodeContent []byte, color int) {
-	tn := treeNode(node, string(nodeContent)); Use(tn)
+	//tn := treeNode(node, string(nodeContent)); Use(tn)
 	s := string(nodeContent)
 	i := node.StartPoint().Row
 	j := int(node.StartPoint().Column)  // todo; node.StartPoint().Column is in bytes, needs to recalculate it to position
@@ -372,7 +372,7 @@ func (h *TreeSitterHighlighter) ColorizeRange(newcode string,
 	Log.Info("tree-sitter edit, elapsed: " + time.Since(starttime).String())
 	h.lines = strings.Split(newcode, "\n")
 
-	treeDebug := populateTreeNode(h.tree.RootNode(), code); Use(treeDebug)
+	//treeDebug := populateTreeNode(h.tree.RootNode(), code); Use(treeDebug)
 
 	rootNode := h.tree.RootNode()
 	node := rootNode.NamedDescendantForPointRange(
