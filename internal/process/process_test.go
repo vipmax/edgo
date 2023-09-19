@@ -3,83 +3,19 @@ package process
 import (
 	"bufio"
 	"context"
-	. "fmt"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"os/exec"
 	"os/signal"
-	"syscall"
 	"testing"
 	"time"
 )
 
-func TestProcess(t *testing.T) {
+
+func TestKillProcess(t *testing.T) {
 	os.Chdir("../../")
-	Println(os.Getwd())
-
-	//process := NewProcess("python3", "atest.py")
-	process := NewProcess("go", "run", "cmd/test/main.go")
-	process.Cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
-
-	go func() {
-		for line := range process.Out {
-			Println("Output:", line)
-		}
-	}()
-
-	process.Start()
-
-	//Println("Process started with PID:", process.Cmd.Process.Pid)
-
-	// Kill the process after 5 seconds
-	time.Sleep(3 * time.Second)
-	process.Stop()
-	//Println("Process killed with PID:", process.Cmd.Process.Pid)
-
-	time.Sleep(30 * time.Second)
-
-	Println("Child process finished.")
-}
-
-func TestProcessKill(t *testing.T) {
-	cmd := exec.Command("sleep", "100", "&")
-	err := cmd.Start()
-	if err != nil { Println(err) }
-
-	Println("Process started with PID:", cmd.Process.Pid)
-
-	// Kill the process after 5 seconds
-	time.Sleep(5 * time.Second)
-
-	err = cmd.Process.Kill()
-	if err != nil { Println(err) }
-	cmd.Process.Release()
-
-	Println("Process killed with PID:", cmd.Process.Pid)
-	time.Sleep(30 * time.Second)
-}
-
-
-func TestKill2(t *testing.T) {
-	cmd := exec.Command("sleep", "100")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	cmd.Start()
-
-	Printf("Parent PID: %d\n", cmd.Process.Pid)
-
-	time.Sleep(3 * time.Second)
-	go func( ) {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os. Interrupt)
-		<-sig
-		signal.Reset()
-	}()
-	time.Sleep(30 * time.Second)
-}
-
-func TestKill3(t *testing.T) {
-	os.Chdir("../../")
-	Println(os.Getwd())
+	fmt.Println(os.Getwd())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 
 	go run(ctx)
@@ -88,12 +24,13 @@ func TestKill3(t *testing.T) {
 
 	stop()
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(1 * time.Second)
 }
 
 func run(ctx context.Context) {
 	//cmd := exec.CommandContext(ctx, "python3", "atest.py")
-	cmd := exec.CommandContext(ctx, "go", "run", "cmd/test/main.go")
+	//cmd := exec.CommandContext(ctx, "go", "run", "cmd/test/main.go")
+	cmd := exec.CommandContext(ctx, "sleep", "10")
 	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 
 	stdout, _ := cmd.StdoutPipe()
@@ -102,10 +39,10 @@ func run(ctx context.Context) {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
-			Println(line)
+			fmt.Println(line)
 		}
 
-		Println("done")
+		fmt.Println("done")
 
 	}()
 
@@ -117,10 +54,8 @@ func TestNewProcess(t *testing.T) {
 	cmd := NewProcess("echo", "hello")
 	assert.NotNil(t, cmd)
 	assert.NotNil(t, cmd.Cmd)
-	assert.NotNil(t, cmd.Out)
-	assert.NotNil(t, cmd.done)
 	assert.NotNil(t, cmd.Lines)
-	assert.NotNil(t, cmd.Update)
+	assert.NotNil(t, cmd.Updates)
 }
 
 func TestProcess_StartStop(t *testing.T) {
@@ -161,26 +96,90 @@ func TestProcess_StopTwice(t *testing.T) {
 }
 
 func TestProcessOutput(t *testing.T) {
-	// Define a simple command that outputs "hello"
 	cmd := NewProcess("echo", "hello")
 	assert.NotNil(t, cmd)
 
-	// Start the process
-	cmd.Start()
-	time.Sleep(100 * time.Millisecond) // Allow some time for the process to start
+	cmd.Start() // Start the process
 
-	for range cmd.Update {
-		Println(cmd.Lines)
+	time.Sleep(10 * time.Millisecond) // Allow some time for the process to start
+
+	for range cmd.Updates { } // wait for no updates anymore
+
+	lines := cmd.GetLines(0)
+
+	for _, line := range lines {
+		fmt.Println("-> ",line)
 	}
 
 	// Check if the output was captured correctly
-	assert.Len(t, cmd.Lines, 4)
-	assert.Contains(t, cmd.Lines[0], "echo hello")
-	assert.Contains(t, cmd.Lines[1], "hello")
-	assert.Equal(t, cmd.Lines[2], "")
-	assert.Contains(t, cmd.Lines[3], "finished with exit code 0")
-
-	//// Stop the process
-	//cmd.Stop()
-	//time.Sleep(100 * time.Millisecond) // Allow some time for the process to stop
+	assert.Len(t, lines, 4)
+	assert.Contains(t, lines[0], "echo hello")
+	assert.Contains(t, lines[1], "hello")
+	assert.Equal(t, lines[2], "")
+	assert.Contains(t, lines[3], "finished with exit code 0")
+	assert.Equal(t, cmd.IsStopped(), true)
 }
+
+func TestProcessErrorOutput(t *testing.T) {
+	cmd := NewProcess("sh", "-c", "echo hello >&2")
+	assert.NotNil(t, cmd)
+
+	cmd.Start() // Start the process
+
+	time.Sleep(10 * time.Millisecond) // Allow some time for the process to start
+
+	for range cmd.Updates { } // wait for no updates anymore
+
+	lines := cmd.GetLines(0)
+
+	for _, line := range lines {
+		fmt.Println("-> ",line)
+	}
+
+	// Check if the output was captured correctly
+	assert.Len(t, lines, 4)
+	assert.Contains(t, lines[0], "echo hello")
+	assert.Contains(t, lines[1], "hello")
+	assert.Equal(t, lines[2], "")
+	assert.Contains(t, lines[3], "finished with exit code 0")
+	assert.Equal(t, cmd.IsStopped(), true)
+}
+
+func TestProcessStop(t *testing.T) {
+	cmd := NewProcess("sleep", "10") // sleep 10 seconds
+	assert.NotNil(t, cmd)
+
+	cmd.Start() // Start the process
+	time.Sleep(10 * time.Millisecond)
+
+	assert.Equal(t, cmd.IsStopped(), false)
+
+	cmd.Stop() // Stop the process
+	time.Sleep(10 * time.Millisecond)
+
+	assert.Equal(t, cmd.IsStopped(), true)
+}
+
+
+func TestProcessCommandNotFound(t *testing.T) {
+	cmd := NewProcess("sleepp", "10")
+	assert.NotNil(t, cmd)
+
+	cmd.Start() // Start the process
+	// Allow some time for the process to start
+	time.Sleep(10 * time.Millisecond)
+
+	for range cmd.Updates { } // wait for no updates anymore
+
+	lines := cmd.GetLines(0)
+	for _, line := range lines {
+		fmt.Println("-> ",line)
+	}
+
+	// Check if the output was captured correctly
+	assert.Len(t, lines, 2)
+	assert.Equal(t, lines[0], "sleepp 10")
+	assert.Contains(t, lines[1], "executable file not found in $PATH")
+	assert.Equal(t, cmd.IsStopped(), true)
+}
+

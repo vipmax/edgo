@@ -14,15 +14,13 @@ import (
 )
 
 type Process struct {
-	Cmd  *exec.Cmd
-	Out  chan string
-	done chan struct{}
-	ctx  context.Context
-	stop context.CancelFunc
-	Stopped bool
-	mu      sync.Mutex // Mutex to protect access to Stopped
-	Lines []string
-	Update chan struct{}
+	Cmd       *exec.Cmd          // command to run
+	cancelF   context.CancelFunc // function to cancelF process
+	Stopped   bool               // true if process stopped
+	Lines     []string           // all stdout/err lines
+	muLines   sync.Mutex         // Mutex to protect access to Lines
+	muStopped sync.Mutex         // Mutex to protect access to Stopped
+	Updates   chan struct{}      // channel to notify about new lines
 }
 
 func NewProcess(command string, args ...string) *Process {
@@ -30,13 +28,10 @@ func NewProcess(command string, args ...string) *Process {
 	cmd := exec.CommandContext(ctx, command, args...)
 
 	return &Process{
-		Cmd:  cmd,
-		Out:  make(chan string),
-		done: make(chan struct{}),
-		Lines: []string{},
-		Update: make(chan struct{}),
-		ctx: ctx,
-		stop: stop,
+		Cmd:     cmd,
+		Lines:   []string{},
+		Updates: make(chan struct{}),
+		cancelF: stop,
 	}
 }
 
@@ -47,9 +42,13 @@ func (p *Process) Start() {
 
 		for scanner.Scan() {
 			line := stripansi.Strip(scanner.Text())
-			p.Lines = append(p.Lines, line)
+			p.appendLine(line)
+			// it is not good idea to send updates here,
+			// if process output is too fast, it will be too many updates
+			// channels is too slow for this
+			// p.Updates <- struct{}{}
 		}
-
+		// this goroutine will be finished after process exit
 	}()
 
 	go func() {
@@ -57,58 +56,85 @@ func (p *Process) Start() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := stripansi.Strip(scanner.Text())
-			p.Lines = append(p.Lines, line)
+			p.appendLine(line)
 		}
+		// this goroutine will be finished after process exit
 	}()
 
 	go func() {
-		// idea is to check output changes every 10ms
-		// update only if changes found
+		// if process output is too fast - it will be hard to read
+		// The idea is to check output changes every 10ms
+		// Write update message only if changes found
 		lastMessagesLen := 0
 
 		for !p.Stopped {
-			<- time.After(time.Millisecond * 10)
+			p.muLines.Lock()
 			currentLen := len(p.Lines)
 			if currentLen != lastMessagesLen {
-				if !p.Stopped { p.Update <- struct{}{} } else { return }
+				p.Updates <- struct{}{}
 				lastMessagesLen = currentLen
 			}
+			p.muLines.Unlock()
+			<-time.After(time.Millisecond * 30)
 		}
 	}()
 
 	go p.runCmd()
 }
 
+func (p *Process) appendLine(line string) {
+	p.muLines.Lock()
+	defer p.muLines.Unlock()
+	p.Lines = append(p.Lines, line)
+}
+
+func (p *Process) IsStopped() bool {
+	p.muStopped.Lock()
+	defer p.muStopped.Unlock()
+	return p.Stopped
+}
+
+func (p *Process) GetLines(offset int) []string {
+	p.muLines.Lock()
+	defer p.muLines.Unlock()
+	//return p.Lines[offset:]
+
+	// Return a copy to avoid concurrent modification
+	return append([]string{}, p.Lines[offset:]...)
+}
 
 func (p *Process) runCmd() {
-
-	p.Lines = append(p.Lines, fmt.Sprintf("%s %s",
+	p.appendLine(fmt.Sprintf("%s %s",
 		p.Cmd.Path, strings.Join(p.Cmd.Args[1:], " "),
 	))
-	p.Update <- struct{}{}
+	p.Updates <- struct{}{}
 
 	err := p.Cmd.Run() // its blocks until process exiting
 	if err != nil {
-		p.Lines = append(p.Lines, "Error: " + err.Error())
+		p.appendLine( "Error: " + err.Error())
 	}
 
-	p.Lines = append(p.Lines, "")
-	p.Lines = append(p.Lines, fmt.Sprintf("Process %d finished with exit code %d",
-		p.Cmd.ProcessState.Pid(), p.Cmd.ProcessState.ExitCode(),
-	))
+	if p.Cmd.ProcessState != nil {
+		p.appendLine("")
+		p.appendLine(fmt.Sprintf(
+			"Process %d finished with exit code %d",
+			p.Cmd.ProcessState.Pid(), p.Cmd.ProcessState.ExitCode(),
+		))
+	}
 
-	p.mu.Lock()
+	p.muStopped.Lock()
 	p.Stopped = true
-	p.Update <- struct{}{}
-	close(p.Update)
-	p.mu.Unlock()
+	p.muStopped.Unlock()
+
+	p.Updates <- struct{}{}
+	close(p.Updates)
 }
 
 
 func (p *Process) Stop() {
-	if p.Stopped { return }
-	p.stop()
-	p.mu.Lock()
+	if p.IsStopped() { return }
+	p.cancelF()
+	p.muStopped.Lock()
 	p.Stopped = true
-	p.mu.Unlock()
+	p.muStopped.Unlock()
 }

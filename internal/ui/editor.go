@@ -195,7 +195,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 	// upper play button
 	if mx == e.COLUMNS - 2 && my == 0  && buttons & Button1 == 1 {
 		// do not show if process active
-		if e.Process == nil || (e.Process != nil && e.Process.Stopped){
+		if e.Process == nil || (e.Process != nil && e.Process.IsStopped()){
 			e.OnProcessRun(true)
 		}
 		return
@@ -204,7 +204,6 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 	// play button on process panel
 	if mx == e.COLUMNS - 6 && my == e.ROWS  && buttons & Button1 == 1 {
 		e.OnProcessStop()
-		time.Sleep(time.Millisecond * 100) // give a time to show 'kill' message
 		e.OnProcessRun(false)
 		return
 	}
@@ -266,7 +265,9 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 			if e.ProcessPanelCursorY < 0 { e.ProcessPanelCursorY = 0 }
 			// fit cursor
 			if e.ProcessPanelCursorY >= len(e.ProcessContent) { e.ProcessPanelCursorY = len(e.ProcessContent)-1 }
-			if e.ProcessPanelCursorX > len(e.ProcessContent[e.ProcessPanelCursorY]) { e.ProcessPanelCursorX = len(e.ProcessContent[e.ProcessPanelCursorY]) }
+			if e.ProcessPanelCursorY < len(e.ProcessContent) && e.ProcessPanelCursorX > len(e.ProcessContent[e.ProcessPanelCursorY]) {
+				e.ProcessPanelCursorX = len(e.ProcessContent[e.ProcessPanelCursorY])
+			}
 
 			if e.ProcessPanelSelection.Ssx < 0 {
 				e.ProcessPanelSelection.Ssx, e.ProcessPanelSelection.Ssy =
@@ -686,7 +687,7 @@ func (e *Editor) DrawEverything() {
 }
 
 func (e *Editor) DrawProcessPanel() {
-	if e.langConf.Cmd != "" && (e.Process == nil || e.Process != nil && e.Process.Stopped) {
+	if e.langConf.Cmd != "" && (e.Process == nil || e.Process != nil && e.Process.IsStopped()) {
 		e.Screen.SetContent(e.COLUMNS-2, 0, '▶', nil, StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
 	}
 
@@ -700,7 +701,7 @@ func (e *Editor) DrawProcessPanel() {
 
 	e.Screen.SetContent(e.COLUMNS-5, e.ROWS, ' ',nil, StyleDefault)
 
-	if e.Process != nil && e.Process.Stopped {
+	if e.Process != nil && e.Process.IsStopped() {
 		e.Screen.SetContent(e.COLUMNS-4, e.ROWS, ' ',nil, StyleDefault)
 	} else {
 		e.Screen.SetContent(e.COLUMNS-4, e.ROWS, '■',nil, StyleDefault.Foreground(Color(AccentColor)))
@@ -1773,27 +1774,28 @@ func (e *Editor) OnProcessRun(newRun bool) {
 		args = e.Process.Cmd.Args[1:]
 	}
 
-	var process = NewProcess(cmd, args...)
-	process.Cmd.Env = append(os.Environ())
+	e.Process = NewProcess(cmd, args...)
+
+	e.Process.Cmd.Env = append(os.Environ())
 
 	if e.Lang == "python" {
 		// printing immediately
-		process.Cmd.Env = append(process.Cmd.Env, "PYTHONUNBUFFERED=1")
+		e.Process.Cmd.Env = append(e.Process.Cmd.Env, "PYTHONUNBUFFERED=1")
 	}
 
 	e.ProcessContent = [][]rune{}
 	e.ProcessPanelScroll = 0
 	e.ProcessPanelSpacing = 2
 
-	process.Start()
-	e.Process = process
+	e.Process.Start()
 
 	go func() {
-		for range process.Update {
+		for range e.Process.Updates {
 
 			//e.ProcessContent = append(e.ProcessContent, []rune(line))
 
-			newLines := e.Process.Lines[len(e.ProcessContent):]
+			//newLines := e.Process.Lines[len(e.ProcessContent):]
+			newLines := e.Process.GetLines(len(e.ProcessContent))
 			for _, line := range newLines {
 				e.ProcessContent = append(e.ProcessContent, []rune(line))
 				if len(e.ProcessContent) > e.ProcessPanelHeight {
@@ -1807,7 +1809,7 @@ func (e *Editor) OnProcessRun(newRun bool) {
 			e.DrawProcessPanel()
 			e.Screen.Show()
 
-			if process.Stopped {
+			if e.Process.IsStopped() {
 				if len(e.ProcessContent) > e.ProcessPanelHeight { // focusing
 					e.ProcessPanelScroll = len(e.ProcessContent) - e.ProcessPanelHeight + 1
 				}
@@ -1873,8 +1875,9 @@ func (e *Editor) OnProcessKeyHandle(key Key, keyrune rune) {
 }
 
 func (e *Editor) OnProcessStop() {
-	if e.Process != nil && e.Process.Cmd != nil {
+	if e.Process != nil && e.Process.Cmd != nil && !e.Process.IsStopped() {
 		e.Process.Stop()
+		time.Sleep(time.Millisecond * 300) // give a time to show 'kill' message
 	}
 
 	if e.Dap.IsStarted {
