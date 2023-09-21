@@ -17,21 +17,21 @@ type Language interface {
 	Query() string
 }
 
-func MatchQueryLang(lang string) string {
-	var languages = map[string]Language{
-		"javascript": &Javascript{},
-		"typescript": &Typescript{},
-		"python":     &Python{},
-		"rust":       &Rust{},
-		"go":         &Go{},
-		"c":          &C{},
-		"c++":        &Cpp{},
-		"cpp":        &Cpp{},
-		"html":       &Html{},
-		"yaml":       &Yaml{},
-		"bash":       &Bash{},
-	}
+var languages = map[string]Language{
+	"javascript": &Javascript{},
+	"typescript": &Typescript{},
+	"python":     &Python{},
+	"rust":       &Rust{},
+	"go":         &Go{},
+	"c":          &C{},
+	"c++":        &Cpp{},
+	"cpp":        &Cpp{},
+	"html":       &Html{},
+	"yaml":       &Yaml{},
+	"bash":       &Bash{},
+}
 
+func MatchQueryLang(lang string) string {
 	if l, exists := languages[lang]; exists {
 		return l.Query()
 	}

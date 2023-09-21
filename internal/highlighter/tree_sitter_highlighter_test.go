@@ -9,7 +9,7 @@ import (
 )
 
 func TestTreeSitterHighlighter(t *testing.T) {
-	treeSitterHighlighter := TreeSitterHighlighterNew()
+	treeSitterHighlighter := NewTreeSitter()
 	treeSitterHighlighter.SetLang("javascript")
 	code := `
 function hello() {
@@ -26,7 +26,7 @@ function hello() {
 }
 
 func TestTreeSitterHighlighterFromFile(t *testing.T) {
-	treeSitterHighlighter := TreeSitterHighlighterNew()
+	treeSitterHighlighter := NewTreeSitter()
 	treeSitterHighlighter.SetLang("go")
 
 	code, _ := ReadFileToString("../editor/editor.go")
@@ -42,7 +42,7 @@ func TestTreeSitterHighlighterFromFile(t *testing.T) {
 
 
 func TestTreeSitterHighlighterEdit(t *testing.T) {
-	treeSitterHighlighter := TreeSitterHighlighterNew()
+	treeSitterHighlighter := NewTreeSitter()
 	treeSitterHighlighter.SetLang("javascript")
 	code := `function hello() {
 	console.log('hello') 
@@ -74,7 +74,7 @@ func TestTreeSitterHighlighterEdit(t *testing.T) {
 
 
 func BenchmarkColorFromString(b *testing.B) {
-	h := TreeSitterHighlighterNew()
+	h := NewTreeSitter()
 	col := h.ParseColor("#fc9994")
 	fmt.Println(col)
 
@@ -85,7 +85,7 @@ func BenchmarkColorFromString(b *testing.B) {
 }
 
 func TestColorFromString(t *testing.T) {
-	h := TreeSitterHighlighterNew()
+	h := NewTreeSitter()
 	col := h.ParseColor("#fc9994")
 	fmt.Println(col)
 

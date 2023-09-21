@@ -145,6 +145,7 @@ func (e *Editor) OnEnter() {
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
 	e.Update = true
 	e.IsContentChanged = true
+	e.FindTests()
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 }
 
@@ -192,6 +193,7 @@ func (e *Editor) OnDelete() {
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
 	e.Update = true
 	e.IsContentChanged = true
+	e.FindTests()
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 }
 
@@ -222,6 +224,7 @@ func (e *Editor) OnTab() {
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
 	e.Update = true
 	e.IsContentChanged = true
+	e.FindTests()
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 }
 
@@ -252,6 +255,7 @@ func (e *Editor) OnBackTab() {
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
 	e.Update = true
 	e.IsContentChanged = true
+	e.FindTests()
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 }
 
@@ -268,6 +272,7 @@ func (e *Editor) AddChar(ch rune) {
 
 	e.Update = true
 	e.IsContentChanged = true
+	e.FindTests()
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 	//e.UpdateColorsAtLine(e.Row)
 }
@@ -284,14 +289,6 @@ func (e *Editor) InsertCharacter(line, pos int, ch rune) {
 	e.treeSitterHighlighter.ColorizeRange(code, line, 0, line, len(e.Content[line]))
 	e.Colors = e.treeSitterHighlighter.Colors
 
-	//start := time.Now()
-	//code := ConvertContentToString(e.Content)
-	//startIndex := e.FindStartIndex(line, pos)
-	//e.treeSitterHighlighter.EditPrepare(highlighter.AddChar, code, line, pos)
-	//e.Colors = e.treeSitterHighlighter.Edit(code, line, pos, startIndex, startIndex, startIndex+1)
-	//Log.Info("tree-sitter edit colorized, elapsed: " + time.Since(start).String())
-
-	//e.Added.Add(e.Row+1)
 }
 
 func (e *Editor) InsertString(line, pos int, linestring string) {
@@ -382,6 +379,7 @@ func (e *Editor) OnSwapLinesUp() {
 	e.Selection.CleanSelection()
 	e.Update = true
 	e.IsContentChanged = true
+	e.FindTests()
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 }
 
@@ -409,6 +407,7 @@ func (e *Editor) OnSwapLinesDown() {
 	e.Selection.CleanSelection()
 	e.Update = true
 	e.IsContentChanged = true
+	e.FindTests()
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 }
 
@@ -572,6 +571,7 @@ func (e *Editor) Duplicate() {
 		e.Undo = append(e.Undo, ops)
 		e.Update = true
 		e.IsContentChanged = true
+		e.FindTests()
 		if len(e.Content) <= 10000 { go e.WriteFile() }
 
 	} else {

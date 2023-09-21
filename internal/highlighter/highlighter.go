@@ -41,6 +41,10 @@ var AccentColor2 = 30    // aqua
 
 var SeparatorStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
 
+func ResetSelectionColor() {
+	SeparatorStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
+}
+
 func DetectLang(filename string) string {
 	lexer := lexers.Match(filename)
 	if lexer == nil {
@@ -66,7 +70,8 @@ func ColorFromString(str string) int {
 }
 
 func (h *Highlighter) GetRunButtonStyle() int {
-	return int(tcell.GetColor(theme.Get(chroma.String).Colour.String()))
+
+	return int(tcell.GetColor("#90EE90"))
 }
 
 func (h *Highlighter) Colorize(code string, filename string) [][]int {

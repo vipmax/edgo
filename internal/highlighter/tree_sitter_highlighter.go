@@ -37,7 +37,7 @@ type TreeSitterHighlighter struct {
 	colorsMap map[string]string
 }
 
-func TreeSitterHighlighterNew() *TreeSitterHighlighter {
+func NewTreeSitter() *TreeSitterHighlighter {
 	parser := sitter.NewParser()
 
 	return &TreeSitterHighlighter{
@@ -437,4 +437,11 @@ func (h *TreeSitterHighlighter) colorizeWithQuery(node *sitter.Node, code []byte
 	}
 
 	Log.Info("tree-sitter colorizeWithQuery, elapsed: " + time.Since(starttime).String())
+}
+
+func (h *TreeSitterHighlighter) GetTree() *sitter.Tree {
+	return h.tree
+}
+func (h *TreeSitterHighlighter) GetLang() *sitter.Language {
+	return h.language
 }

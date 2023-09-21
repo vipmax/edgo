@@ -187,6 +187,15 @@ brew install zls
 ```
 
 
+### Tests
+
+Edgo provides a seamless testing experience with the ability to execute tests using a simple button click.
+
+Edgo supports testing functionality using Tree Sitter for `go`, `python`, `javascript`.  
+WIP for other langs
+
+![editor](assets/screen4.png)
+
 ### Debug
 
 Added Debug first implementation

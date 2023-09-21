@@ -12,6 +12,27 @@ import (
 	"time"
 )
 
+func TestProcessCommandNotFound(t *testing.T) {
+	cmd := NewProcess("sleepp", "10")
+	assert.NotNil(t, cmd)
+
+	cmd.Start() // Start the process
+	// Allow some time for the process to start
+	time.Sleep(10 * time.Millisecond)
+
+	for range cmd.Updates { } // wait for no updates anymore
+
+	lines := cmd.GetLines(0)
+	for _, line := range lines {
+		fmt.Println("-> ",line)
+	}
+
+	// Check if the output was captured correctly
+	assert.Len(t, lines, 2)
+	assert.Equal(t, lines[0], "sleepp 10")
+	assert.Contains(t, lines[1], "executable file not found in $PATH")
+	assert.Equal(t, cmd.IsStopped(), true)
+}
 
 func TestKillProcess(t *testing.T) {
 	os.Chdir("../../")
@@ -159,27 +180,3 @@ func TestProcessStop(t *testing.T) {
 
 	assert.Equal(t, cmd.IsStopped(), true)
 }
-
-
-func TestProcessCommandNotFound(t *testing.T) {
-	cmd := NewProcess("sleepp", "10")
-	assert.NotNil(t, cmd)
-
-	cmd.Start() // Start the process
-	// Allow some time for the process to start
-	time.Sleep(10 * time.Millisecond)
-
-	for range cmd.Updates { } // wait for no updates anymore
-
-	lines := cmd.GetLines(0)
-	for _, line := range lines {
-		fmt.Println("-> ",line)
-	}
-
-	// Check if the output was captured correctly
-	assert.Len(t, lines, 2)
-	assert.Equal(t, lines[0], "sleepp 10")
-	assert.Contains(t, lines[1], "executable file not found in $PATH")
-	assert.Equal(t, cmd.IsStopped(), true)
-}
-

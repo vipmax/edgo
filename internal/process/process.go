@@ -15,13 +15,14 @@ import (
 
 type Process struct {
 	Cmd       *exec.Cmd          // command to run
-	cancelF   context.CancelFunc // function to cancelF process
+	cancelF   context.CancelFunc // function to cancel process
 	Stopped   bool               // true if process stopped
 	Lines     []string           // all stdout/err lines
 	muLines   sync.Mutex         // Mutex to protect access to Lines
 	muStopped sync.Mutex         // Mutex to protect access to Stopped
 	Updates   chan struct{}      // channel to notify about new lines
 }
+
 
 func NewProcess(command string, args ...string) *Process {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Kill)
@@ -92,6 +93,15 @@ func (p *Process) IsStopped() bool {
 	p.muStopped.Lock()
 	defer p.muStopped.Unlock()
 	return p.Stopped
+}
+
+func (p *Process) GetExitCode() int {
+	p.muStopped.Lock()
+	defer p.muStopped.Unlock()
+	if p.Cmd.ProcessState == nil {
+		return -1
+	}
+	return p.Cmd.ProcessState.ExitCode()
 }
 
 func (p *Process) GetLines(offset int) []string {

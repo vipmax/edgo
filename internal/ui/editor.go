@@ -4,7 +4,6 @@ package ui
 import (
 	. "edgo/internal/config"
 	"edgo/internal/dap"
-	. "edgo/internal/highlighter"
 	. "edgo/internal/io"
 	. "edgo/internal/logger"
 	. "edgo/internal/lsp"
@@ -12,12 +11,14 @@ import (
 	. "edgo/internal/process"
 	. "edgo/internal/search"
 	. "edgo/internal/selection"
+	. "edgo/internal/highlighter"
 	. "edgo/internal/utils"
 	"fmt"
 	"github.com/atotto/clipboard"
 	. "github.com/gdamore/tcell"
 	"github.com/gdamore/tcell/encoding"
 	"github.com/rjeczalik/notify"
+	sitter "github.com/smacker/go-tree-sitter"
 	"log"
 	"os"
 	"path"
@@ -110,6 +111,10 @@ type Editor struct {
 
 	FileWatcher *FileWatcher
 	DirWatcher  *DirWatcher
+
+	Tests     map[int]Test
+	testQuery *sitter.Query
+
 }
 
 func (e *Editor) Start() {
@@ -190,7 +195,6 @@ func (e *Editor) HandleEvents() {
 
 func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMask) {
 	_, screenRows := e.Screen.Size()
-
 
 	// upper play button
 	if mx == e.COLUMNS - 2 && my == 0  && buttons & Button1 == 1 {
@@ -306,12 +310,23 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 	if e.Filename == "" { return }
 
+	if buttons & Button1 == 1 && mx == e.COLUMNS - 2 { // test button
+		line := my + e.Y
+		if  _, found := e.Tests[line]; found {
+			e.RunTest(e.Tests[line])
+			return
+		}
+
+	}
+
 	mx -= e.LINES_WIDTH + e.FilesPanelWidth
 
 	if mx < 0 { return }
 	if my > e.ROWS { return }
 
 	if e.Content == nil { return }
+
+
 
 	// if click with control or option, lookup for definition or references
 	if buttons & Button1 == 1 && (modifiers & ModAlt != 0 || modifiers & ModCtrl != 0) {
@@ -355,6 +370,8 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 	if buttons & WheelDown != 0 { e.OnScrollDown(); return }
 	if buttons & WheelUp != 0 { e.OnScrollUp(); return }
 	if buttons & Button1 == 0 && e.Selection.Ssx == -1 { e.Update = false; return }
+
+
 
 	if buttons & Button1 == 1 {
 		e.Update = true
@@ -522,7 +539,7 @@ func (e *Editor) OpenFile(fname string) error {
 
 	code := e.ReadFile(e.AbsoluteFilePath)
 	//e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
-	e.treeSitterHighlighter = TreeSitterHighlighterNew()
+	e.treeSitterHighlighter = NewTreeSitter()
 	e.treeSitterHighlighter.SetTheme(e.Config.Theme)
 	e.treeSitterHighlighter.SetLang(e.Lang)
 	e.Colors = e.treeSitterHighlighter.Colorize(code)
@@ -552,6 +569,8 @@ func (e *Editor) OpenFile(fname string) error {
 	e.FileWatcher.UpdateFile(e.AbsoluteFilePath)
 	e.FileWatcher.UpdateStats()
 
+	e.FindTests()
+
 	return nil
 }
 
@@ -578,14 +597,15 @@ func (e *Editor) Init() {
 	e.lsp2lang = map[string]*LspClient{}
 	e.DebugInfo = DebugInfo{}
 
-	e.treeSitterHighlighter = TreeSitterHighlighterNew()
+	e.treeSitterHighlighter = NewTreeSitter()
 	e.treeSitterHighlighter.SetTheme(e.Config.Theme)
 
 	e.FileWatcher = NewFileWatcher(1000)
 	e.FileWatcher.StartWatch(e.OnFileUpdate)
 
-	e.DirWatcher = NewDirWatcher(".")
-	e.DirWatcher.StartWatch(e.OnFilesTreeUpdate)
+	//e.DirWatcher = NewDirWatcher(".")
+	//e.DirWatcher.StartWatch(e.OnFilesTreeUpdate)
+	e.Tests = make(map[int]Test)
 	return
 }
 
@@ -627,6 +647,10 @@ func (e *Editor) DrawEverything() {
 		ry := row + e.Y // index to get right row in characters buffer by scrolling offset Y
 		if row >= len(e.Content) || ry >= len(e.Content) { break }
 		e.DrawLineNumber(ry, row)
+
+		if _, found := e.Tests[ry]; found {
+			e.DrawTest(ry, row)
+		}
 
 		tabsOffset := 0
 		for col := 0; col <= e.COLUMNS; col++ {
@@ -737,18 +761,6 @@ func (e *Editor) DrawProcessPanel() {
 			e.Screen.SetContent(col + e.ProcessPanelSpacing, y, ch,nil, style)
 		}
 
-		//for i := 0;  i < len(line); i++ {
-		//	if i >= e.TERMINAL_WIDHT { break }
-		//	if i >= len(line) { continue }
-		//	ch := line[i]
-		//
-		//	style := StyleDefault
-		//	if e.ProcessPanelSelection.IsUnderSelection(i, index + e.ProcessPanelScroll ) {
-		//		style = style.Background(Color(SelectionColor))
-		//	}
-		//
-		//	e.Screen.SetContent(i + e.ProcessPanelSpacing, y, ch,nil, style)
-		//}
 		for i := len(line); i < e.COLUMNS; i++ {
 			e.Screen.SetContent(i + e.ProcessPanelSpacing, y, ' ',nil, StyleDefault)
 		}
@@ -1748,6 +1760,7 @@ func (e *Editor) UpdateNeeded() {
 	e.IsContentChanged = true
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 	e.UpdateColors()
+	e.FindTests()
 }
 
 func (e *Editor) OnProcessRun(newRun bool) {
@@ -1774,8 +1787,8 @@ func (e *Editor) OnProcessRun(newRun bool) {
 		args = e.Process.Cmd.Args[1:]
 	}
 
+	ResetSelectionColor()
 	e.Process = NewProcess(cmd, args...)
-
 	e.Process.Cmd.Env = append(os.Environ())
 
 	if e.Lang == "python" {
@@ -1887,6 +1900,7 @@ func (e *Editor) OnProcessStop() {
 	if len(e.ProcessContent) > e.ProcessPanelHeight { // focusing
 		e.ProcessPanelScroll = len(e.ProcessContent) - e.ProcessPanelHeight + 2
 	}
+	ResetSelectionColor()
 }
 
 func (e *Editor) OnFileUpdate() {
@@ -1978,3 +1992,17 @@ func (e *Editor) DrawLogo() {
 
 	e.Screen.Show()
 }
+
+func (e *Editor) DrawTest(line int, row int) {
+	x := e.COLUMNS-2
+	//x := e.FilesPanelWidth + e.LINES_WIDTH/2
+
+	//for i:= 0; i < e.LINES_WIDTH; i++ {
+	//	e.Screen.SetContent(e.FilesPanelWidth + i, row, ' ', nil, StyleDefault)
+	//}
+
+	e.Screen.SetContent(x, row, '▶', nil,
+		StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
+	//e.Screen.Show()
+}
+
