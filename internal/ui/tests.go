@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"edgo/internal/process"
 	"edgo/internal/highlighter"
+	"edgo/internal/process"
 	"edgo/internal/utils"
 	"fmt"
 	"github.com/gdamore/tcell"
@@ -106,8 +106,14 @@ var tfinder = TestFinder{}
 
 func (e *Editor) FindTests() {
 	clear(e.Tests)
+
 	switch e.Lang {
 	case "go":
+		// e.abs must ends with "test.go"
+		if !strings.HasSuffix(e.AbsoluteFilePath, "test.go") {
+			return
+		}
+
 		if tfinder.testQuery == nil || tfinder.lang != e.Lang {
 			q, _ := sitter.NewQuery([]byte(QueryGo()), e.treeSitterHighlighter.GetLang())
 			tfinder.testQuery = q

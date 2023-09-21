@@ -4,6 +4,7 @@ package ui
 import (
 	. "edgo/internal/config"
 	"edgo/internal/dap"
+	. "edgo/internal/highlighter"
 	. "edgo/internal/io"
 	. "edgo/internal/logger"
 	. "edgo/internal/lsp"
@@ -11,7 +12,6 @@ import (
 	. "edgo/internal/process"
 	. "edgo/internal/search"
 	. "edgo/internal/selection"
-	. "edgo/internal/highlighter"
 	. "edgo/internal/utils"
 	"fmt"
 	"github.com/atotto/clipboard"
@@ -621,7 +621,7 @@ func (e *Editor) DrawEverything() {
 			for col := 0; col < e.FilesPanelWidth; col++ { // clean
 				e.Screen.SetContent(col, row, ' ', nil, StyleDefault)
 			}
-			e.Screen.SetContent(e.FilesPanelWidth-2, row, '▕', nil, SeparatorStyle)
+			e.Screen.SetContent(e.FilesPanelWidth-2, row, '▕', nil, DimmedStyle)
 		}
 
 		var aty = 0

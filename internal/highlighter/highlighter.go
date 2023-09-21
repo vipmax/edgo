@@ -40,6 +40,7 @@ var AccentColor = 303    // pink
 var AccentColor2 = 30    // aqua
 
 var SeparatorStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
+var DimmedStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
 
 func ResetSelectionColor() {
 	SeparatorStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
@@ -70,7 +71,6 @@ func ColorFromString(str string) int {
 }
 
 func (h *Highlighter) GetRunButtonStyle() int {
-
 	return int(tcell.GetColor("#90EE90"))
 }
 
