@@ -603,8 +603,9 @@ func (e *Editor) Init() {
 	e.FileWatcher = NewFileWatcher(1000)
 	e.FileWatcher.StartWatch(e.OnFileUpdate)
 
-	//e.DirWatcher = NewDirWatcher(".")
-	//e.DirWatcher.StartWatch(e.OnFilesTreeUpdate)
+	e.DirWatcher = NewDirWatcher(".")
+	e.DirWatcher.StartWatch(e.OnFilesTreeUpdate)
+
 	e.Tests = make(map[int]Test)
 	return
 }
@@ -1995,6 +1996,7 @@ func (e *Editor) DrawLogo() {
 
 func (e *Editor) DrawTest(line int, row int) {
 	x := e.COLUMNS-2
+	
 	//x := e.FilesPanelWidth + e.LINES_WIDTH/2
 
 	//for i:= 0; i < e.LINES_WIDTH; i++ {

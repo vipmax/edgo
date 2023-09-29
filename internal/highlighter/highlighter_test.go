@@ -52,9 +52,13 @@ func TestGetColor(t *testing.T) {
 	col := ColorFromString("#fc9994")
 	fmt.Println(col)
 
-	col = ColorFromString("#c6a5fc")
-	fmt.Println(col)
-
-	col = ColorFromString("#d992f9")
-	fmt.Println(col)
+	//col = ColorFromString("#c6a5fc")
+	//fmt.Println(col)
+	//
+	//col = ColorFromString("#d992f9")
+	//fmt.Println(col)
+	//
+	//col = ColorFromString("#f78bff")
+	//fmt.Println(col)
 }
+

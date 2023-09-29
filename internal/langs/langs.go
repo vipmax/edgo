@@ -9,6 +9,7 @@ import (
 	. "edgo/internal/langs/javascript"
 	. "edgo/internal/langs/python"
 	. "edgo/internal/langs/rust"
+	. "edgo/internal/langs/java"
 	. "edgo/internal/langs/typescript"
 	. "edgo/internal/langs/yaml"
 )
@@ -28,6 +29,7 @@ var languages = map[string]Language{
 	"cpp":        &Cpp{},
 	"html":       &Html{},
 	"yaml":       &Yaml{},
+	"java":       &Java{},
 	"bash":       &Bash{},
 }
 

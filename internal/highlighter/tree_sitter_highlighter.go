@@ -12,6 +12,7 @@ import (
 	"github.com/smacker/go-tree-sitter/cpp"
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/html"
+	"github.com/smacker/go-tree-sitter/java"
 	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/python"
 	"github.com/smacker/go-tree-sitter/rust"
@@ -162,6 +163,7 @@ func (h *TreeSitterHighlighter) SetLang(lang string) {
 	case "bash": h.language = bash.GetLanguage()
 	case "c": h.language = c.GetLanguage()
 	case "c++": h.language = cpp.GetLanguage()
+	case "java": h.language = java.GetLanguage()
 	default: h.language = javascript.GetLanguage()
 	}
 	

@@ -140,8 +140,9 @@ var IgnoreDirs = []string{
 	".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
 	".DS_Store", ".venv", "venv",
 }
+
 var IgnoreExts = []string{ "",
-	".doc", ".docx", ".pdf", ".txt", ".rtf", ".odt", ".xlsx", ".pptx",
+	".doc", ".docx", ".pdf", ".rtf", ".odt", ".xlsx", ".pptx",
 	".jpg", ".png", ".gif", ".bmp", ".svg", ".tiff",
 	".mp3", ".wav", ".aac", ".flac", ".ogg",
 	".mp4", ".avi", ".mov", ".wmv", ".mkv",

@@ -61,6 +61,7 @@ func (fw *FileWatcher) UpdateStats() {
 	defer fw.mu.Unlock()
 	newStats, _ := os.Stat(fw.filePath)
 	fw.lastStats = newStats
+	//fw.ticker.Reset(time.Millisecond * 1000)
 }
 
 

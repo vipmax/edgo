@@ -12,8 +12,9 @@ import (
 
 
 func TestGit(t *testing.T) {
-	fname := "internal/editor/io.go"
+	//os.Chdir("../../")
 
+	fname := "internal/config/config.go"
 
 	fileContent, err := GetLastCommitFileContent(fname)
 	if err != nil { log.Fatal(err) }
