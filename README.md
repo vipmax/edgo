@@ -4,7 +4,6 @@ Yet another console text editor, but with lsp support
 ![editor](assets/screen1.png)
 
 ### Key bindings and features:
-- `Control + s` - save file
 - `Control + q` - quit
 - `Control + d` - duplicate line
 - `Control + x` - cut 
@@ -22,7 +21,7 @@ Yet another console text editor, but with lsp support
 
 - `Shift + arrow` - select text
 - `Option + right/left` - smart horizontal movement by words
-- `Option + down/up` - smart vertical movement (adds new line)
+- `Option + down/up` - smart selection
 - `Control + Shift + down/up` - lines swap
 
 
@@ -191,7 +190,7 @@ brew install zls
 
 Edgo provides a seamless testing experience with the ability to execute tests using a simple button click.
 
-Edgo supports testing functionality using Tree Sitter for `go`, `python`, `javascript`.  
+Edgo supports testing functionality using Tree Sitter for `go`, `python`, `javascript`, `java`.  
 WIP for other langs
 
 ![editor](assets/screen4.png)

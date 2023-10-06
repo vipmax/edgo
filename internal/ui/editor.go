@@ -116,6 +116,7 @@ type Editor struct {
 	TestFinder TestFinder
 	Test       Test
 
+	TreePath *Path
 }
 
 func (e *Editor) Start() {
@@ -467,9 +468,20 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 		return
 	}
 
-	if key == KeyRune && modifiers & ModAlt != 0 && len(e.Content) > 0 { e.HandleSmartMove(ev.Rune()); return }
-	if key == KeyDown && modifiers & ModAlt != 0 { e.HandleSmartMoveDown(); return }
-	if key == KeyUp && modifiers & ModAlt != 0 { e.HandleSmartMoveUp(); return }
+	if key == KeyRune && modifiers & ModAlt != 0 && len(e.Content) > 0 {
+		e.HandleSmartMove(ev.Rune());
+		return
+	}
+	if key == KeyDown && modifiers & ModAlt != 0 {
+		e.OnSelectLessAtCursor()
+		//e.HandleSmartMoveDown();
+		return
+	}
+	if key == KeyUp && modifiers & ModAlt != 0 {
+		e.OnSelectMoreAtCursor()
+		//e.HandleSmartMoveUp();
+		return
+	}
 
 	if key == KeyRune {
 		e.AddChar(ev.Rune())

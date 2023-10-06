@@ -452,3 +452,59 @@ func (h *TreeSitterHighlighter) GetTree() *sitter.Tree {
 func (h *TreeSitterHighlighter) GetLang() *sitter.Language {
 	return h.language
 }
+
+
+type NodeRange struct {
+	Ssy int
+	Ssx int
+	Sey int
+	Sex int
+}
+
+type Path struct {
+	Atx int
+	Aty int
+	Nodes []NodeRange
+	Current int
+}
+
+func (p *Path) CurrentNode() NodeRange {
+	return p.Nodes[p.Current]
+}
+func (p *Path) Next() NodeRange {
+	p.Current += 1
+	if p.Current >= len(p.Nodes) { p.Current = len(p.Nodes) - 1 }
+	return p.Nodes[p.Current]
+}
+func (p *Path) Prev() NodeRange {
+	p.Current -= 1
+	if p.Current < 0 {
+		p.Current = 0;
+		return NodeRange{p.Aty,p.Atx,p.Aty,p.Atx}
+	}
+	return p.Nodes[p.Current]
+}
+
+func (h *TreeSitterHighlighter) GetNodePathAt(StartPointRow int, StartPointColumn int,
+	EndPointRow int, EndPointColumn int) Path {
+
+	rootNode := h.tree.RootNode()
+	node := rootNode.NamedDescendantForPointRange(
+		sitter.Point{Row: uint32(StartPointRow), Column: uint32(StartPointColumn)},
+		sitter.Point{Row: uint32(EndPointRow), Column: uint32(EndPointColumn)},
+	)
+
+	path := Path{Aty: StartPointRow, Atx: StartPointColumn}
+
+	for node != nil {
+		r := NodeRange{int(node.StartPoint().Row),
+			int(node.StartPoint().Column),
+			int(node.EndPoint().Row),
+			int(node.EndPoint().Column),
+		}
+		path.Nodes = append(path.Nodes, r)
+		node = node.Parent()
+	}
+
+	return path
+}
