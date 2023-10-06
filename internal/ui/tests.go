@@ -32,15 +32,17 @@ func getTestByLang(lang string, filepath string) Test {
 func (e *Editor) FindTests() {
 	clear(e.Tests)
 
-	if e.TestFinder.TestQuery == nil || e.TestFinder.Lang != e.Lang {
+	if e.TestFinder.Lang != e.Lang {
+		e.TestFinder.Lang = e.Lang
+
 		e.Test = getTestByLang(e.Lang, e.AbsoluteFilePath)
 		if e.Test == nil { return }
 		queryStr := e.Test.Query()
 		q, _ := sitter.NewQuery([]byte(queryStr), e.treeSitterHighlighter.GetLang())
 		e.TestFinder.TestQuery = q
-		e.TestFinder.Lang = e.Lang
 	}
 
+	if e.Test == nil { return }
 	codeBytes := []byte(utils.ConvertContentToString(e.Content))
 	rootNode := e.treeSitterHighlighter.GetTree().RootNode()
 	e.Tests = e.Test.Find(&e.TestFinder, rootNode, e.AbsoluteFilePath, codeBytes)
