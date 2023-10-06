@@ -8,26 +8,9 @@ import (
 	"github.com/gdamore/tcell"
 	sitter "github.com/smacker/go-tree-sitter"
 	"os"
-	"strings"
 )
 
-func getTestByLang(lang string, filepath string) Test {
-	switch lang {
-	case "go":
-		if !strings.HasSuffix(filepath, "test.go") { return nil }
-		return &GoTest{}
 
-	case "python":
-		return &PythonTest{}
-
-	case "javascript":
-		return &JavascriptTest{}
-
-	default:
-	}
-
-	return nil
-}
 
 func (e *Editor) FindTests() {
 	clear(e.Tests)
@@ -35,7 +18,7 @@ func (e *Editor) FindTests() {
 	if e.TestFinder.Lang != e.Lang {
 		e.TestFinder.Lang = e.Lang
 
-		e.Test = getTestByLang(e.Lang, e.AbsoluteFilePath)
+		e.Test = GetTestByLang(e.Lang, e.AbsoluteFilePath)
 		if e.Test == nil { return }
 		queryStr := e.Test.Query()
 		q, _ := sitter.NewQuery([]byte(queryStr), e.treeSitterHighlighter.GetLang())

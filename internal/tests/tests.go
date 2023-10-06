@@ -2,6 +2,7 @@ package tests
 
 import (
 	. "github.com/smacker/go-tree-sitter"
+	"strings"
 )
 
 type Test interface {
@@ -49,4 +50,19 @@ func (this *TestFinder) Find(root *Node, filename string, code []byte) map[int]T
 	}
 
 	return tests
+}
+
+func GetTestByLang(lang string, filepath string) Test {
+	switch lang {
+	case "go":
+		if !strings.HasSuffix(filepath, "test.go") { return nil }
+		return &GoTest{}
+
+	case "python": return &PythonTest{}
+	case "javascript": return &JavascriptTest{}
+	case "java":return &JavaTest{}
+	default:
+	}
+
+	return nil
 }
