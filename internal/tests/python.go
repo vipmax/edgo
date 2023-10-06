@@ -33,7 +33,7 @@ func (this *PythonTest) Find(tfinder *TestFinder, root *Node, filename string, c
 }
 
 func (this *PythonTest) Run(test TestData) []string {
-	cmd := fmt.Sprintf(`python3 -m unittest -k %s %s`, test.Name, test.Filename)
+	cmd := fmt.Sprintf(`python3 -m pytest -k %s %s`, test.Name, test.Filename)
 	args := strings.Split(cmd, " ")
 	return args
 }

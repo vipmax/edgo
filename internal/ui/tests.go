@@ -43,7 +43,7 @@ func (e *Editor) FindTests() {
 
 	codeBytes := []byte(utils.ConvertContentToString(e.Content))
 	rootNode := e.treeSitterHighlighter.GetTree().RootNode()
-	e.Tests = e.TestFinder.Find(rootNode, e.AbsoluteFilePath, codeBytes)
+	e.Tests = e.Test.Find(&e.TestFinder, rootNode, e.AbsoluteFilePath, codeBytes)
 }
 
 
