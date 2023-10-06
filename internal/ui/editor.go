@@ -12,13 +12,13 @@ import (
 	. "edgo/internal/process"
 	. "edgo/internal/search"
 	. "edgo/internal/selection"
+	. "edgo/internal/tests"
 	. "edgo/internal/utils"
 	"fmt"
 	"github.com/atotto/clipboard"
 	. "github.com/gdamore/tcell"
 	"github.com/gdamore/tcell/encoding"
 	"github.com/rjeczalik/notify"
-	sitter "github.com/smacker/go-tree-sitter"
 	"log"
 	"os"
 	"path"
@@ -112,8 +112,9 @@ type Editor struct {
 	FileWatcher *FileWatcher
 	DirWatcher  *DirWatcher
 
-	Tests     map[int]Test
-	testQuery *sitter.Query
+	Tests     map[int]TestData
+	TestFinder TestFinder
+	Test       Test
 
 }
 
@@ -606,7 +607,9 @@ func (e *Editor) Init() {
 	e.DirWatcher = NewDirWatcher(".")
 	e.DirWatcher.StartWatch(e.OnFilesTreeUpdate)
 
-	e.Tests = make(map[int]Test)
+	e.Tests = make(map[int]TestData)
+	e.TestFinder = TestFinder{}
+
 	return
 }
 
@@ -755,6 +758,7 @@ func (e *Editor) DrawProcessPanel() {
 			ch := line[cx]
 
 			style := StyleDefault
+			style = style.Foreground(Color(AccentColor3))
 			if e.ProcessPanelSelection.IsUnderSelection(cx, index + e.ProcessPanelScroll ) {
 				style = style.Background(Color(SelectionColor))
 			}
@@ -1547,6 +1551,9 @@ func (e *Editor) OnFilesTree(forceOpen bool) {
 		case *EventKey:
 			key := ev.Key()
 
+			if key == KeyCtrlN {
+				e.NewFileOrDir()
+			}
 			if key == KeyCtrlF { e.IsFilesSearch = !e.IsFilesSearch }
 			if key == KeyEscape && !e.IsFilesSearch { end = true; e.FilesPanelWidth =  0 }
 			if key == KeyEscape && e.IsFilesSearch { end = true; e.IsFilesSearch = false; e.CleanFilesSearch();e.Screen.Show() }
@@ -1615,7 +1622,9 @@ func (e *Editor) DrawTree(fileInfo FileInfo, level int, fileindex *int, aty *int
 
 		style := StyleDefault
 		isSelectedFile := e.IsFileSelection && e.FileSelectedIndex != -1 && *fileindex  == e.FileSelectedIndex
-		if fileInfo.IsDir { style = style.Foreground(Color(AccentColor2)) }
+		if fileInfo.IsDir { style = style.Foreground(Color(AccentColor2)) } else {
+			style = style.Foreground(Color(AccentColor3))
+		}
 		if isSelectedFile { style = style.Foreground(Color(AccentColor)) }
 
 		if e.InputFile != "" && e.InputFile == fileInfo.FullName {
@@ -2006,5 +2015,88 @@ func (e *Editor) DrawTest(line int, row int) {
 	e.Screen.SetContent(x, row, '▶', nil,
 		StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
 	//e.Screen.Show()
+}
+
+func (e *Editor) NewFileOrDir() {
+	inputName := make([]rune, 0)
+	cursorx := 0
+	end := false
+	pref := " create "
+	directory := ""
+
+	// add current
+	found, selectedFile := GetSelected(e.Tree, e.FileSelectedIndex)
+	if found {
+		rel, err := filepath.Rel(e.Cwd, selectedFile.FullName)
+		if err != nil { return }
+
+		if selectedFile.IsDir {
+			directory = rel + string(filepath.Separator)
+		} else {
+			directory = filepath.Dir(rel)
+		}
+	}
+
+
+	for !end {
+
+		e.Screen.ShowCursor(len(pref) + len(directory) + cursorx, e.ROWS-1)
+
+		for col := 0; col <= len(pref) + len(inputName) || col < e.FilesPanelWidth; col++ { // clean
+			e.Screen.SetContent(col, e.ROWS-1, ' ', nil, StyleDefault)
+		}
+
+		for i, ch := range pref { // draw prefix
+			e.Screen.SetContent(i, e.ROWS-1, ch, nil, StyleDefault)
+		}
+		for i, ch := range directory { // draw directory
+			e.Screen.SetContent(i+len(pref), e.ROWS-1, ch, nil, StyleDefault)
+		}
+
+		for i, ch := range inputName { // draw inputName
+			e.Screen.SetContent(i+len(pref)+len(directory), e.ROWS-1, ch, nil, StyleDefault)
+		}
+
+		e.Screen.Show()
+
+		switch ev := e.Screen.PollEvent().(type) {
+		case *EventKey:
+			key := ev.Key()
+
+			if key == KeyRune {
+				inputName = InsertTo(inputName, cursorx, ev.Rune()); cursorx++
+			}
+			if key == KeyBackspace2 && cursorx > 0 && len(inputName) > 0 {
+				cursorx--; inputName = Remove(inputName, cursorx)
+			}
+			if key == KeyLeft && cursorx > 0 { cursorx-- }
+			if key == KeyRight && cursorx < len(inputName) { cursorx++ }
+			if key == KeyEscape { end = true }
+
+			if key == KeyEnter {
+				name := filepath.Join(directory, string(inputName))
+				nameabs, err := filepath.Abs(name)
+				if err != nil { return }
+
+				isCreateDir := strings.HasSuffix(string(inputName), string(filepath.Separator))
+
+				if isCreateDir {
+					// dir/  - create dir
+					err := os.MkdirAll(nameabs, 0750)
+					if err != nil { return }
+				} else {  // create file
+					file, err := os.Create(nameabs)
+					defer file.Close()
+					if err != nil { return }
+				}
+
+				end = true
+			}
+		}
+	}
+
+	for col := 0; col <= len(pref) + len(inputName); col++ { // clean
+		e.Screen.SetContent(col, e.ROWS-1, ' ', nil, StyleDefault)
+	}
 }
 

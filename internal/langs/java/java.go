@@ -128,5 +128,11 @@ func (this *Java) Query() string {
   (void_type)
 ] @type.builtin
 
+; Annotations
+
+(annotation
+  name: (identifier) @attribute)
+(marker_annotation
+  name: (identifier) @attribute)
 `
 }

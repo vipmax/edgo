@@ -38,6 +38,7 @@ var SelectionColor = 246 // gray
 var OverlayColor = -1    // transparent
 var AccentColor = 303    // pink
 var AccentColor2 = 30    // aqua
+var AccentColor3 = -1    // aqua
 
 var SeparatorStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
 var DimmedStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)

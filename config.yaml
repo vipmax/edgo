@@ -1,4 +1,4 @@
-theme: "/Users/max/apps/go/edgo/internal/highlighter/themes/edgo.yml"
+theme: "/Users/max/apps/go/edgo/internal/highlighter/themes/edgo_new.yml"
 langs:
   c#:
     name: C#

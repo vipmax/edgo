@@ -142,6 +142,9 @@ func (h *TreeSitterHighlighter) SetTheme(themePath string) {
 	if value, ok := h.colorsMap["accent_color2"]; ok {
 		AccentColor2 =  h.ParseColor(value)
 	}
+	if value, ok := h.colorsMap["accent_color3"]; ok {
+		AccentColor3 =  h.ParseColor(value)
+	}
 
 	//fmt.Println("Cases and Return Values:")
 	//for caseName, returnValue := range h.colorsMap {
@@ -149,24 +152,26 @@ func (h *TreeSitterHighlighter) SetTheme(themePath string) {
 	//}
 }
 
+func GetSitterLang(lang string) *sitter.Language {
+	switch lang {
+	case "javascript": return javascript.GetLanguage()
+	case "typescript": return typescript.GetLanguage()
+	case "go": return golang.GetLanguage()
+	case "python": return python.GetLanguage()
+	case "html": return html.GetLanguage()
+	case "yaml": return yaml.GetLanguage()
+	case "rust": return rust.GetLanguage()
+	case "bash": return bash.GetLanguage()
+	case "c": return c.GetLanguage()
+	case "c++": return cpp.GetLanguage()
+	case "java":return java.GetLanguage()
+	default: return javascript.GetLanguage()
+	}
+}
+
 func (h *TreeSitterHighlighter) SetLang(lang string) {
 	h.lang = lang
-	
-	switch lang {
-	case "javascript": h.language = javascript.GetLanguage()
-	case "typescript": h.language = typescript.GetLanguage()
-	case "go": h.language = golang.GetLanguage()
-	case "python": h.language = python.GetLanguage()
-	case "html": h.language = html.GetLanguage()
-	case "yaml": h.language = yaml.GetLanguage()
-	case "rust": h.language = rust.GetLanguage()
-	case "bash": h.language = bash.GetLanguage()
-	case "c": h.language = c.GetLanguage()
-	case "c++": h.language = cpp.GetLanguage()
-	case "java": h.language = java.GetLanguage()
-	default: h.language = javascript.GetLanguage()
-	}
-	
+	h.language = GetSitterLang(lang)
 	h.parser.SetLanguage(h.language)
 }
 
