@@ -18,9 +18,9 @@ func (e *Editor) OnDown() {
 	}
 	e.Row++
 	if e.Col > len(e.Content[e.Row]) { e.Col = len(e.Content[e.Row]) } // fit to e.Content
-	if e.Row < e.Y { e.Y = e.Row
-	}
+	if e.Row < e.Y { e.Y = e.Row }
 	if e.Row >= e.Y+ e.ROWS { e.Y = e.Row - e.ROWS + 1  }
+	clear(e.HighlightElements)
 }
 
 func (e *Editor) OnUp() {
@@ -30,6 +30,7 @@ func (e *Editor) OnUp() {
 	if e.Col > len(e.Content[e.Row]) { e.Col = len(e.Content[e.Row]) } // fit to e.Content
 	if e.Row < e.Y { e.Y = e.Row }
 	if e.Row > e.Y+ e.ROWS { e.Y = e.Row - e.ROWS + 1  }
+	clear(e.HighlightElements)
 }
 
 func (e *Editor) OnLeft() {
@@ -37,12 +38,13 @@ func (e *Editor) OnLeft() {
 
 	if e.Col > 0 {
 		e.Col--
+
 	} else if e.Row > 0 {
 		e.Row--
 		e.Col = len(e.Content[e.Row]) // fit to e.Content
-		if e.Row < e.Y { e.Y = e.Row
-		}
+		if e.Row < e.Y { e.Y = e.Row }
 	}
+	clear(e.HighlightElements)
 }
 
 func (e *Editor) OnRight() {
@@ -55,6 +57,7 @@ func (e *Editor) OnRight() {
 		e.Col = 0
 		if e.Row > e.Y+ e.ROWS { e.Y++  }
 	}
+	clear(e.HighlightElements)
 }
 
 func (e *Editor) OnScrollUp() {
@@ -140,10 +143,12 @@ func (e *Editor) OnEnter() {
 
 	e.Undo = append(e.Undo, ops)
 	e.Focus(); if e.Row- e.Y == e.ROWS { e.OnScrollDown() }
+	e.OnCursorChanged()
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
 	e.Update = true
 	e.IsContentChanged = true
 	e.FindTests()
+
 	if len(e.Content) <= 10000 { go e.WriteFile() }
 }
 
@@ -157,6 +162,7 @@ func (e *Editor) OnDelete() {
 	if e.Col > 0 {
 		e.Col--
 		e.DeleteCharacter(e.Row, e.Col)
+		e.OnCursorChanged()
 		//e.UpdateColorsAtLine(e.Row)
 	} else if e.Row > 0 { // delete line
 		e.Undo = append(e.Undo, EditOperation{{DeleteLine, ' ', e.Row -1, len(e.Content[e.Row-1])}})
@@ -180,7 +186,7 @@ func (e *Editor) OnDelete() {
 		e.treeSitterHighlighter.RemoveLineEdit(code, e.Row, e.Col)
 		e.treeSitterHighlighter.ColorizeRange(code, e.Row, e.Col, e.Row,  len(e.Content[e.Row]))
 		e.Colors = e.treeSitterHighlighter.Colors
-
+		e.OnCursorChanged()
 		//e.UpdateColorsAtLine(e.Row)
 	}
 
@@ -205,6 +211,7 @@ func (e *Editor) OnTab() {
 		e.InsertCharacter(e.Row, e.Col, ch)
 		e.UpdateColorsAtLine(e.Row)
 		e.Col++
+		e.OnCursorChanged()
 	} else  {
 		var ops = EditOperation{}
 		e.Selection.Ssx = 0
@@ -237,6 +244,7 @@ func (e *Editor) OnBackTab() {
 			e.DeleteCharacter(e.Row,0)
 			e.Colors[e.Row] = Remove(e.Colors[e.Row], 0)
 			e.Col--
+			e.UpdateColorsAtLine(e.Row)
 		}
 	} else {
 		e.Selection.Ssx = 0
@@ -246,6 +254,7 @@ func (e *Editor) OnBackTab() {
 				e.DeleteCharacter(e.Row,0)
 				e.Colors[e.Row] = Remove(e.Colors[e.Row], 0)
 				e.Col = len(e.Content[e.Row])
+				e.UpdateColorsAtLine(e.Row)
 			}
 		}
 	}
@@ -265,6 +274,7 @@ func (e *Editor) AddChar(ch rune) {
 	e.Col++
 
 	e.MaybeAddPair(ch)
+	e.OnCursorChanged()
 
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
 
@@ -286,7 +296,6 @@ func (e *Editor) InsertCharacter(line, pos int, ch rune) {
 	//e.treeSitterHighlighter.ColorizeRange(code, line, line, line, pos)
 	e.treeSitterHighlighter.ColorizeRange(code, line, 0, line, len(e.Content[line]))
 	e.Colors = e.treeSitterHighlighter.Colors
-
 }
 
 func (e *Editor) InsertString(line, pos int, linestring string) {
@@ -632,7 +641,7 @@ func (e *Editor) OnCursorBackUndo() {
 	e.Y = lastCursor.Y
 	e.X = lastCursor.X
 	e.Focus()
-
+	e.OnCursorChanged()
 	e.CursorHistory = append(e.CursorHistory, lastCursor)
 }
 func (e *Editor) OnCursorBack() {
@@ -653,7 +662,7 @@ func (e *Editor) OnCursorBack() {
 	e.Y = lastCursor.Y
 	e.X = lastCursor.X
 	e.Focus()
-
+	e.OnCursorChanged()
 }
 
 func (e *Editor) OnUndo() {
@@ -691,6 +700,7 @@ func (e *Editor) OnUndo() {
 		} else if o.Action == MoveCursor {
 			e.Row = o.Line; e.Col = o.Column
 		}
+		e.OnCursorChanged()
 	}
 
 	e.Redo = append(e.Redo, lastOperation)

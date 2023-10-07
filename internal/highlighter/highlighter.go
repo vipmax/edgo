@@ -35,6 +35,7 @@ var theme = EdgoDark
 //var theme = styles.Get("xcode-dark")
 
 var SelectionColor = 246 // gray
+var HighlightColor = 238 // gray
 var OverlayColor = -1    // transparent
 var AccentColor = 303    // pink
 var AccentColor2 = 30    // aqua

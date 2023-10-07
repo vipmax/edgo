@@ -117,6 +117,8 @@ type Editor struct {
 	Test       Test
 
 	TreePath *Path
+
+	HighlightElements map[int][]NodeRange
 }
 
 func (e *Editor) Start() {
@@ -340,6 +342,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 		if modifiers & ModCtrl != 0 { e.OnDefinition() }
 		return
 	}
+	prevRow := e.Row
 
 	if e.Selection.IsSelected && buttons & Button1 == 1 {
 		e.Update = true
@@ -377,12 +380,13 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 
 	if buttons & Button1 == 1 {
 		e.Update = true
+
 		e.Row = my + e.Y
 		if e.Row > len(e.Content)-1 { e.Row = len(e.Content) - 1 } // fit cursor to e.Content
 
 		xPosition := e.FindCursorXPosition(mx)
 
-		if e.Col == xPosition && len(e.Selection.GetSelectedLines(e.Content)) == 0 {
+		if prevRow == e.Row && e.Col == xPosition && len(e.Selection.GetSelectedLines(e.Content)) == 0 {
 			// double click
 			lastChar := len(e.Content[e.Row]) == e.Col
 			if lastChar {
@@ -397,7 +401,9 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 			e.Col = nxw
 			return
 		}
+
 		e.Col = xPosition
+		e.OnCursorChanged()
 		e.CursorHistory = append(e.CursorHistory,
 			CursorMove{e.AbsoluteFilePath, e.Row, e.Col, e.Y, e.X},
 		)
@@ -556,7 +562,7 @@ func (e *Editor) OpenFile(fname string) error {
 	e.treeSitterHighlighter.SetTheme(e.Config.Theme)
 	e.treeSitterHighlighter.SetLang(e.Lang)
 	e.Colors = e.treeSitterHighlighter.Colorize(code)
-
+	clear(e.HighlightElements)
 
 	//cwd, _ := os.Getwd()
 	//relativePath, _ := filepath.Rel(cwd, e.AbsoluteFilePath)
@@ -690,6 +696,22 @@ func (e *Editor) DrawEverything() {
 			} else {
 				e.Screen.SetContent(col + e.LINES_WIDTH+ tabsOffset + e.FilesPanelWidth, row , ch, nil, style)
 			}
+		}
+
+		if helements, found := e.HighlightElements[ry]; found {
+			for _, helement := range helements {
+				tabs := CountTabsTo(e.Content[helement.Ssy], helement.Ssx)
+				tabcorrection := tabs * (e.langTabWidth - 1)
+				skip := false
+				for i := helement.Ssx; !skip && i < helement.Sex; i++ {
+					x := i + e.LINES_WIDTH + e.FilesPanelWidth + tabcorrection
+					mainc, _, stylec, _ := e.Screen.GetContent(x, row)
+					if e.Selection.IsUnderSelection(i, ry) { skip = true } else {
+						e.Screen.SetContent(x, row , mainc, nil, stylec.Background(Color(HighlightColor)))
+					}
+				}
+			}
+
 		}
 	}
 
@@ -1103,6 +1125,8 @@ func (e *Editor) DrawErrors(atx int, width int, aty int, height int, options []s
 }
 
 func (e *Editor) OnSearch() {
+	clear(e.HighlightElements)
+
 	e.IsContentSearch = true
 
 	var end = false
@@ -1267,6 +1291,8 @@ func (e *Editor) CleanContentSearch() {
 }
 
 func (e *Editor) OnGlobalSearch() bool {
+	clear(e.HighlightElements)
+
 	dir, _ := os.Getwd()
 
 	start := time.Now()
@@ -1337,6 +1363,7 @@ func (e *Editor) OnGlobalSearch() bool {
 					end = true
 					if e.treeSitterHighlighter.GetLangStr() != initialLang  {
 						e.treeSitterHighlighter.SetLang(initialLang)
+						e.UpdateColors()
 					}
 
 					return true
@@ -2120,5 +2147,41 @@ func (e *Editor) NewFileOrDir() {
 	for col := 0; col <= len(pref) + len(inputName); col++ { // clean
 		e.Screen.SetContent(col, e.ROWS-1, ' ', nil, StyleDefault)
 	}
+}
+
+func (e *Editor) OnCursorChanged() {
+	clear(e.HighlightElements)
+
+	start := time.Now()
+	nodename, noderange := e.treeSitterHighlighter.GetNodeAt(e.Row, e.Col, e.Row, e.Col)
+
+
+	if strings.Contains(nodename, "identifier") {
+		//if len(e.Content) >= noderange.Ssy { return }
+		runes := e.Content[noderange.Ssy][noderange.Ssx:noderange.Sex]
+		content := string(runes)
+
+
+		searchResults := Search(e.Content, content)
+		e.HighlightElements = make(map[int][]NodeRange)
+
+		for _, searchResult := range searchResults {
+			searchnodename, searchnoderange := e.treeSitterHighlighter.GetNodeAt(
+				searchResult.Line, searchResult.Position, searchResult.Line, searchResult.Position + len(content))
+			if nodename == searchnodename {
+				if len(content) != searchnoderange.Sex - searchnoderange.Ssx { continue }
+				e.HighlightElements[searchResult.Line] = append(e.HighlightElements[searchResult.Line], searchnoderange)
+			}
+		}
+
+		//Log.Info(nodename,
+		//	fmt.Sprintf("%d %d %d %d %s elapsed %s", noderange.Ssx,
+		//		noderange.Ssy, noderange.Sex, noderange.Sey, content, elapsed))
+	}
+
+	elapsed := time.Since(start).String()
+	Log.Info(nodename,
+		fmt.Sprintf("%d %d %d %d elapsed %s", noderange.Ssx,
+			noderange.Ssy, noderange.Sex, noderange.Sey, elapsed))
 }
 

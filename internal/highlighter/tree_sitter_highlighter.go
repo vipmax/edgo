@@ -2,8 +2,8 @@ package highlighter
 
 import (
 	"context"
-	. "edgo/internal/logger"
 	. "edgo/internal/langs"
+	. "edgo/internal/logger"
 	"fmt"
 	"github.com/gdamore/tcell"
 	sitter "github.com/smacker/go-tree-sitter"
@@ -507,4 +507,19 @@ func (h *TreeSitterHighlighter) GetNodePathAt(StartPointRow int, StartPointColum
 	}
 
 	return path
+}
+
+func (h *TreeSitterHighlighter) GetNodeAt(StartPointRow int, StartPointColumn int,
+	EndPointRow int, EndPointColumn int) (string, NodeRange) {
+	rootNode := h.tree.RootNode()
+	node := rootNode.NamedDescendantForPointRange(
+		sitter.Point{Row: uint32(StartPointRow), Column: uint32(StartPointColumn)},
+		sitter.Point{Row: uint32(EndPointRow), Column: uint32(EndPointColumn)},
+	)
+
+	return node.Type(), NodeRange{int(node.StartPoint().Row),
+		int(node.StartPoint().Column),
+		int(node.EndPoint().Row),
+		int(node.EndPoint().Column),
+	}
 }
