@@ -37,16 +37,21 @@ func NewProcess(command string, args ...string) *Process {
 }
 
 func (p *Process) Start() {
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+	// if process is too fast, reading std out/err goroutines
+	// won't have time to start, and output will be missed/empty
+
 	go func() {
 		stdout, _ := p.Cmd.StdoutPipe()
 		scanner := bufio.NewScanner(stdout)
-
+		wg.Done()
 		for scanner.Scan() {
 			line := stripansi.Strip(scanner.Text())
 			p.appendLine(line)
 			// it is not good idea to send updates here,
 			// if process output is too fast, it will be too many updates
-			// channels is too slow for this
+			// channels are too slow for this
 			// p.Updates <- struct{}{}
 		}
 		// this goroutine will be finished after process exit
@@ -55,6 +60,7 @@ func (p *Process) Start() {
 	go func() {
 		stderr, _ := p.Cmd.StderrPipe()
 		scanner := bufio.NewScanner(stderr)
+		wg.Done()
 		for scanner.Scan() {
 			line := stripansi.Strip(scanner.Text())
 			p.appendLine(line)
@@ -64,11 +70,11 @@ func (p *Process) Start() {
 
 	go func() {
 		// if process output is too fast - it will be hard to read
-		// The idea is to check output changes every 10ms
+		// The idea is to check output changes every 30ms
 		// Write update message only if changes found
 		lastMessagesLen := 0
 
-		for !p.Stopped {
+		for !p.IsStopped() {
 			p.muLines.Lock()
 			currentLen := len(p.Lines)
 			if currentLen != lastMessagesLen {
@@ -78,8 +84,10 @@ func (p *Process) Start() {
 			p.muLines.Unlock()
 			<-time.After(time.Millisecond * 30)
 		}
+		// this goroutine will be finished after process exit
 	}()
 
+	wg.Wait()
 	go p.runCmd()
 }
 

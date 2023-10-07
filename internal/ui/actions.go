@@ -108,7 +108,6 @@ func (e *Editor) OnEnter() {
 	e.treeSitterHighlighter.EnterEdit(contentToString, e.Row, max(e.Col,0))
 	e.treeSitterHighlighter.Colors[e.Row] = e.treeSitterHighlighter.Colors[e.Row][:e.Col]
 
-	//e.UpdateColorsAtLine(e.Row)
 	e.Row++
 	e.Col = 0
 
@@ -135,8 +134,6 @@ func (e *Editor) OnEnter() {
 	}
 
 	if e.IsColorize && e.Lang != "" {
-		//e.UpdateColorsAtLine(e.Row)
-
 		e.treeSitterHighlighter.ColorizeRange(code,  e.Row-1, len(e.Content[e.Row-1]), e.Row, len(newline))
 		e.Colors = e.treeSitterHighlighter.Colors
 	}

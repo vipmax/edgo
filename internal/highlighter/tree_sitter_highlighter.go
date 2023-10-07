@@ -2,8 +2,8 @@ package highlighter
 
 import (
 	"context"
-	. "edgo/internal/langs"
 	. "edgo/internal/logger"
+	. "edgo/internal/langs"
 	"fmt"
 	"github.com/gdamore/tcell"
 	sitter "github.com/smacker/go-tree-sitter"
@@ -31,7 +31,7 @@ type TreeSitterHighlighter struct {
 	parser    *sitter.Parser
 	tree      *sitter.Tree
 	Colors    [][]int
-	lines 	  []string
+	lines 	[]string
 	lang      string
 	language  *sitter.Language
 	query     *sitter.Query
@@ -170,9 +170,14 @@ func GetSitterLang(lang string) *sitter.Language {
 }
 
 func (h *TreeSitterHighlighter) SetLang(lang string) {
+	if h.lang == lang { return }
 	h.lang = lang
 	h.language = GetSitterLang(lang)
 	h.parser.SetLanguage(h.language)
+
+	queryLang := MatchQueryLang(h.lang)
+	q, _ := sitter.NewQuery([]byte(queryLang), h.language)
+	h.query = q
 }
 
 
@@ -203,15 +208,7 @@ func (h *TreeSitterHighlighter) Colorize(newCode string) [][]int {
 		h.Colors[i] = ints
 	}
 
-	// Execute the query to highlight keywords
-	if h.query == nil {
-		// create query only once
-		startquery := time.Now()
-		queryLang := MatchQueryLang(h.lang)
-		q, _ := sitter.NewQuery([]byte(queryLang), h.language)
-		h.query = q
-		Log.Info("tree-sitter NewQuery, elapsed: " + time.Since(startquery).String())
-	}
+
 
 	h.ColorizeRange(newCode,
 		int(h.tree.RootNode().StartPoint().Row), int(h.tree.RootNode().StartPoint().Column),
@@ -451,6 +448,9 @@ func (h *TreeSitterHighlighter) GetTree() *sitter.Tree {
 }
 func (h *TreeSitterHighlighter) GetLang() *sitter.Language {
 	return h.language
+}
+func (h *TreeSitterHighlighter) GetLangStr() string {
+	return h.lang
 }
 
 

@@ -1282,6 +1282,8 @@ func (e *Editor) OnGlobalSearch() bool {
 	// loop until escape or enter pressed
 	cwd, _ := os.Getwd()
 
+	initialLang := e.treeSitterHighlighter.GetLangStr()
+
 	for !end {
 		var resultsCount = 0
 		for _, searchResult := range searchResults { resultsCount += len(searchResult.Results) }
@@ -1333,6 +1335,10 @@ func (e *Editor) OnGlobalSearch() bool {
 					e.Screen.Clear()
 					selectionEnd = true
 					end = true
+					if e.treeSitterHighlighter.GetLangStr() != initialLang  {
+						e.treeSitterHighlighter.SetLang(initialLang)
+					}
+
 					return true
 				}
 
@@ -1361,6 +1367,10 @@ func (e *Editor) OnGlobalSearch() bool {
 				}
 			}
 		}
+	}
+
+	if e.treeSitterHighlighter.GetLangStr() != initialLang  {
+		e.treeSitterHighlighter.SetLang(initialLang)
 	}
 
 	return false
@@ -1396,7 +1406,8 @@ func (e *Editor) DrawCodePreview(atx int, aty int, height int, options []string,
 		rowsToShow := e.ROWS - height
 		previewContent := e.ReadContent(file, searchResult.Line-rowsToShow/2, searchResult.Line+rowsToShow/2)
 		text := ConvertContentToString(previewContent)
-		//previewContentColors := HighlighterGlobal.Colorize(text, file)
+		lang := DetectLang(file)
+		if e.treeSitterHighlighter.GetLangStr() != lang  { e.treeSitterHighlighter.SetLang(lang) }
 		previewContentColors := e.treeSitterHighlighter.Colorize(text)
 
 		// clear
@@ -1405,7 +1416,6 @@ func (e *Editor) DrawCodePreview(atx int, aty int, height int, options []string,
 				e.Screen.SetContent(i, j, ' ', nil, StyleDefault)
 			}
 		}
-		//e.Screen.Show()
 
 		linenumber := searchResult.Line - rowsToShow/2
 		if linenumber < 0 { linenumber = 0 }
