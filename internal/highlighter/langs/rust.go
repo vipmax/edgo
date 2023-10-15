@@ -1,4 +1,4 @@
-package rust
+package langs
 
 type Rust struct {
 

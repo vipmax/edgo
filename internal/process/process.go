@@ -21,6 +21,7 @@ type Process struct {
 	muLines   sync.Mutex         // Mutex to protect access to Lines
 	muStopped sync.Mutex         // Mutex to protect access to Stopped
 	Updates   chan struct{}      // channel to notify about new lines
+	UpdateInterval int           // time interval to fire updates
 }
 
 
@@ -33,6 +34,7 @@ func NewProcess(command string, args ...string) *Process {
 		Lines:   []string{},
 		Updates: make(chan struct{}),
 		cancelF: stop,
+		UpdateInterval: 30,
 	}
 }
 
@@ -82,7 +84,7 @@ func (p *Process) Start() {
 				lastMessagesLen = currentLen
 			}
 			p.muLines.Unlock()
-			<-time.After(time.Millisecond * 30)
+			<-time.After(time.Millisecond * time.Duration(p.UpdateInterval))
 		}
 		// this goroutine will be finished after process exit
 	}()

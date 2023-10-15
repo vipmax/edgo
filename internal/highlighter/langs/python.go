@@ -1,4 +1,4 @@
-package python
+package langs
 
 
 type Python struct {

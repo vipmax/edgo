@@ -1,19 +1,5 @@
 package langs
 
-import (
-	. "edgo/internal/langs/bash"
-	. "edgo/internal/langs/c"
-	. "edgo/internal/langs/cpp"
-	. "edgo/internal/langs/golang"
-	. "edgo/internal/langs/html"
-	. "edgo/internal/langs/javascript"
-	. "edgo/internal/langs/python"
-	. "edgo/internal/langs/rust"
-	. "edgo/internal/langs/java"
-	. "edgo/internal/langs/typescript"
-	. "edgo/internal/langs/yaml"
-)
-
 type Language interface {
 	Query() string
 }

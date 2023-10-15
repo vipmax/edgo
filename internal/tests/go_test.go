@@ -44,7 +44,7 @@ func Test2(t *testing.T) {
 	codeBytes := []byte(code)
 
 	test := GoTest{}
-	query := test.Query()
+	query := test.TestQuery()
 
 	language := golang.GetLanguage()
 	q, _ := NewQuery([]byte(query), language)

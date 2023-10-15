@@ -1,4 +1,4 @@
-package yaml
+package langs
 
 type Yaml struct {
 

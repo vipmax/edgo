@@ -1,4 +1,4 @@
-package cpp
+package langs
 
 type Cpp struct {
 

@@ -20,7 +20,7 @@ func (e *Editor) FindTests() {
 
 		e.Test = GetTestByLang(e.Lang, e.AbsoluteFilePath)
 		if e.Test == nil { return }
-		queryStr := e.Test.Query()
+		queryStr := e.Test.TestQuery()
 		q, _ := sitter.NewQuery([]byte(queryStr), e.treeSitterHighlighter.GetLang())
 		e.TestFinder.TestQuery = q
 	}

@@ -46,7 +46,7 @@ class TestYo:
 	codeBytes := []byte(code)
 
 	pythonTest := PythonTest{}
-	query := pythonTest.Query()
+	query := pythonTest.TestQuery()
 
 	language := python.GetLanguage()
 	q, _ := NewQuery([]byte(query), language)

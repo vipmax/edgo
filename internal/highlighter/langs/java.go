@@ -1,4 +1,4 @@
-package java
+package langs
 
 type Java struct {
 

@@ -2,7 +2,7 @@ package highlighter
 
 import (
 	"context"
-	. "edgo/internal/langs"
+	. "edgo/internal/highlighter/langs"
 	. "edgo/internal/logger"
 	"fmt"
 	"github.com/gdamore/tcell"
@@ -208,8 +208,6 @@ func (h *TreeSitterHighlighter) Colorize(newCode string) [][]int {
 		h.Colors[i] = ints
 	}
 
-
-
 	h.ColorizeRange(newCode,
 		int(h.tree.RootNode().StartPoint().Row), int(h.tree.RootNode().StartPoint().Column),
 		int(h.tree.RootNode().EndPoint().Row), int(h.tree.RootNode().EndPoint().Column),
@@ -346,7 +344,6 @@ func (h *TreeSitterHighlighter) colorizeNode(node *sitter.Node, nodeContent []by
 		runeLen := utf8.RuneLen(char)
 		jj += runeLen
 		column += 1
-
 	}
 
 	for _, character := range s {
@@ -427,6 +424,7 @@ func (h *TreeSitterHighlighter) colorizeWithQuery(node *sitter.Node, code []byte
 	for {
 		m, ok := qc.NextMatch()
 		if !ok { break }
+		m = qc.FilterPredicates(m, code)
 		for _, c := range m.Captures {
 			name := h.query.CaptureNameForId(c.Index)
 			nodename := strings.Split(name, ".")[0]

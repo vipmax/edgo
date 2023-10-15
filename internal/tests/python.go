@@ -10,7 +10,7 @@ type PythonTest struct {
 
 }
 
-func (this *PythonTest) Query() string {
+func (this *PythonTest) TestQuery() string {
 	return`
         (
           (class_definition

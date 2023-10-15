@@ -92,15 +92,19 @@ type Editor struct {
 	ProcessPanelHeight    int
 	ProcessPanelWidth     int
 	ProcessContent        [][]rune
-	ProcessPanelScroll    int
-	ProcessPanelHScroll   int
-	IsProcessPanelMoving  bool
-	IsProcessPanelFocused bool
-	Process               *Process
-	ProcessPanelSpacing   int
-	ProcessPanelCursorX   int
-	ProcessPanelCursorY   int
-	ProcessPanelSelection Selection
+	ProcessPanelScroll            int
+	ProcessPanelHScroll           int
+	IsProcessPanelMoving          bool
+	IsProcessPanelFocused         bool
+	Process                       *Process
+	ProcessPanelSpacing           int
+	ProcessPanelCursorX           int
+	ProcessPanelCursorY           int
+	ProcessPanelSelection         Selection
+	IsProcessPanelSearch          bool
+	ProcessPanelSearchPattern     []rune // pattern for search in a buffer
+	ProcessPanelSearchResults     []SearchResult
+	ProcessPanelSearchResultIndex int
 
 	lsp2lang map[string]*LspClient
 
@@ -423,7 +427,7 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 }
 
 func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
-	if key == KeyCtrlF { e.OnSearch() }
+	if key == KeyCtrlF && !e.IsProcessPanelFocused { e.OnSearch() }
 
 	if e.Filename == "" && key != KeyCtrlQ { return }
 
@@ -748,6 +752,14 @@ func (e *Editor) DrawEverything() {
 	}
 }
 
+func (e *Editor) CleanProcessPanel() {
+	for j := e.ROWS; j < e.TERMINAL_HEIGHT; j++ {
+		for i := 0; i < e.COLUMNS; i++ {
+			e.Screen.SetContent(i, j, ' ',nil, StyleDefault)
+		}
+	}
+}
+
 func (e *Editor) DrawProcessPanel() {
 	if e.langConf.Cmd != "" && (e.Process == nil || e.Process != nil && e.Process.IsStopped()) {
 		e.Screen.SetContent(e.COLUMNS-2, 0, '▶', nil, StyleDefault.Foreground(Color(HighlighterGlobal.GetRunButtonStyle())))
@@ -980,6 +992,9 @@ func (e *Editor) InitLsp(lang string) {
 }
 
 func (e *Editor) OnErrors() {
+	e.Screen.HideCursor()
+	defer e.Screen.ShowCursor(e.Col, e.Row)
+
 	if e.Lang == "" { return }
 	lsp := e.lsp2lang[e.Lang]
 	if !lsp.IsReady { return }
@@ -997,8 +1012,8 @@ func (e *Editor) OnErrors() {
 	for !end {
 
 		var options = []string{}
-		for _, diagnistic := range maybeDiagnostics.Diagnostics {
-			text := fmt.Sprintf("[%d:%d] %s ",
+		for i, diagnistic := range maybeDiagnostics.Diagnostics {
+			text := fmt.Sprintf("%d/%d [%d:%d] %s ", i + 1, len(maybeDiagnostics.Diagnostics),
 				int(diagnistic.Range.Start.Line) + 1, int(diagnistic.Range.Start.Character + 1),
 				diagnistic.Message,
 			)
@@ -1007,7 +1022,7 @@ func (e *Editor) OnErrors() {
 
 
 		width := Max(50, MaxString(options))                   // width depends on max option len or 30 at min
-		height := MinMany(10, len(options) + 1)                // depends on min option len or 5 at min or how many rows to the end of e.Screen
+		height := MinMany(10, len(options))                // depends on min option len or 5 at min or how many rows to the end of e.Screen
 		atx := 0 + e.LINES_WIDTH + e.FilesPanelWidth; aty := 0 // Define the window  position and dimensions
 		style := StyleDefault.Foreground(ColorWhite)
 
@@ -1116,9 +1131,10 @@ func (e *Editor) DrawErrors(atx int, width int, aty int, height int, options []s
 		}
 	}
 
-	for col := 0; col < width; col++ { // Fill empty Line below
-		e.Screen.SetContent(col+atx, height+aty+shifty-1, ' ', nil,
-			StyleDefault.Background(Color(OverlayColor)))
+	for col := 0; col < e.COLUMNS; col++ { // Fill empty Line below
+		e.Screen.SetContent(col+atx, height+aty+shifty,
+			//' ', nil, StyleDefault.Background(Color(OverlayColor)))
+			'─', nil, SeparatorStyle)
 	}
 
 	return shifty
@@ -1895,12 +1911,17 @@ func (e *Editor) OnProcessRun(newRun bool) {
 }
 
 func (e *Editor) OnProcessKeyHandle(key Key, keyrune rune) {
+	if key == KeyCtrlF {
+		e.OnProcessSearch()
+	}
+
 	if key == KeyUp {
 		e.ProcessPanelCursorY--
 		if e.ProcessPanelCursorY < 0 { e.ProcessPanelCursorY = 0 }
 		if e.ProcessPanelCursorX > len(e.ProcessContent[e.ProcessPanelCursorY]) {
 			e.ProcessPanelCursorX = len(e.ProcessContent[e.ProcessPanelCursorY])
 		}
+		e.FocusProcessPanel()
 	}
 	if key == KeyDown  {
 		e.ProcessPanelCursorY++
@@ -1908,6 +1929,7 @@ func (e *Editor) OnProcessKeyHandle(key Key, keyrune rune) {
 		if e.ProcessPanelCursorX > len(e.ProcessContent[e.ProcessPanelCursorY]) {
 			e.ProcessPanelCursorX = len(e.ProcessContent[e.ProcessPanelCursorY])
 		}
+		e.FocusProcessPanel()
 	}
 	if key == KeyRight  {
 		e.ProcessPanelCursorX++
@@ -2152,6 +2174,8 @@ func (e *Editor) NewFileOrDir() {
 func (e *Editor) OnCursorChanged() {
 	clear(e.HighlightElements)
 
+	if e.Selection.IsSelectionNonEmpty() { return }
+
 	start := time.Now()
 	nodename, noderange := e.treeSitterHighlighter.GetNodeAt(e.Row, e.Col, e.Row, e.Col)
 
@@ -2183,5 +2207,126 @@ func (e *Editor) OnCursorChanged() {
 	Log.Info(nodename,
 		fmt.Sprintf("%d %d %d %d elapsed %s", noderange.Ssx,
 			noderange.Ssy, noderange.Sex, noderange.Sey, elapsed))
+}
+
+func (e *Editor) OnProcessSearch() {
+	var end = false
+	if e.ProcessPanelSearchPattern == nil { e.ProcessPanelSearchPattern = []rune{} }
+
+	var patternx = len(e.ProcessPanelSearchPattern)
+	var isChanged = true
+
+	// loop until escape or enter pressed
+	for !end {
+
+		e.DrawProcessPanelSearch(e.ProcessPanelSearchPattern, patternx)
+		e.Screen.Show()
+
+		if isChanged && len(e.ProcessPanelSearchPattern) > 0 && len(e.ProcessPanelSearchResults) > 0 {
+
+			var sy, sx = -1, -1
+			result := e.ProcessPanelSearchResults[e.ProcessPanelSearchResultIndex]
+			sy = result.Line; sx = result.Position
+
+			if sx != -1 && sy != -1 {
+				e.ProcessPanelCursorY = sy; e.ProcessPanelCursorX = sx;
+				e.ProcessPanelSelection.Ssx = sx;
+				e.ProcessPanelSelection.Ssy = sy;
+				e.ProcessPanelSelection.Sex = sx + len(e.ProcessPanelSearchPattern);
+				e.ProcessPanelSelection.Sey = sy;
+				e.ProcessPanelSelection.IsSelected = true
+				e.CleanProcessPanel()
+				e.FocusProcessPanel()
+				e.DrawProcessPanel()
+				e.DrawProcessPanelSearch(e.ProcessPanelSearchPattern, patternx)
+				e.Screen.Show()
+			} else {
+				e.ProcessPanelSelection.CleanSelection()
+				e.CleanProcessPanel()
+				e.DrawProcessPanel()
+				e.DrawProcessPanelSearch(e.ProcessPanelSearchPattern, patternx)
+				e.Screen.Show()
+			}
+			isChanged = false
+		}
+
+		switch ev := e.Screen.PollEvent().(type) { // poll and handle event
+		case *EventResize:
+			e.COLUMNS, e.ROWS = e.Screen.Size()
+
+		case *EventKey:
+			isChanged = false
+			key := ev.Key()
+
+			if key == KeyCtrlQ { e.Screen.Fini(); os.Exit(1) }
+
+			if key == KeyRune {
+				e.ProcessPanelSearchPattern = InsertTo(e.ProcessPanelSearchPattern, patternx, ev.Rune())
+				patternx++
+				isChanged = true
+				e.ProcessPanelSearchResults = Search(e.ProcessContent, string(e.ProcessPanelSearchPattern))
+				e.ProcessPanelSearchResultIndex = len(e.ProcessPanelSearchResults)-1
+			}
+			if key == KeyBackspace2 && patternx > 0 && len(e.ProcessPanelSearchPattern) > 0 {
+				patternx--
+				e.ProcessPanelSearchPattern = Remove(e.ProcessPanelSearchPattern, patternx)
+				isChanged = true
+				e.ProcessPanelSearchResults = Search(e.ProcessContent, string(e.ProcessPanelSearchPattern))
+				e.ProcessPanelSearchResultIndex = len(e.ProcessPanelSearchResults)-1
+			}
+			if key == KeyLeft && patternx > 0 { patternx-- }
+			if key == KeyRight && patternx < len(e.ProcessPanelSearchPattern) { patternx++ }
+			if key == KeyDown {
+				e.ProcessPanelSearchResultIndex++
+				if e.ProcessPanelSearchResultIndex >= len(e.ProcessPanelSearchResults) { e.ProcessPanelSearchResultIndex = 0 }
+				isChanged = true
+			}
+			if key == KeyUp {
+				e.ProcessPanelSearchResultIndex--
+				if e.ProcessPanelSearchResultIndex < 0 { e.ProcessPanelSearchResultIndex = len(e.ProcessPanelSearchResults) - 1}
+				isChanged = true
+			}
+			if key == KeyCtrlX {
+				e.ProcessPanelSearchPattern = []rune{}
+				patternx = 0
+			}
+
+			if key == KeyESC || key == KeyCtrlF || key == KeyEnter {
+				end = true
+			}
+		}
+	}
+
+	e.IsProcessPanelSearch = false
+}
+
+func (e *Editor) DrawProcessPanelSearch(pattern []rune, patternx int) {
+
+	var prefix = []rune("  search: ")
+
+	for i := 0; i < len(prefix); i++ {
+		e.Screen.SetContent(i, e.TERMINAL_HEIGHT-1, prefix[i], nil, StyleDefault)
+	}
+
+	e.Screen.SetContent(len(prefix), e.TERMINAL_HEIGHT-1, ' ', nil, StyleDefault)
+
+	for i := 0; i < len(pattern); i++ {
+		e.Screen.SetContent(len(prefix) + i, e.TERMINAL_HEIGHT-1, pattern[i], nil, StyleDefault)
+	}
+
+	e.Screen.ShowCursor(len(prefix) + patternx, e.TERMINAL_HEIGHT-1)
+
+	for i := len(prefix) + len(pattern); i < e.COLUMNS; i++ {
+		e.Screen.SetContent(i, e.TERMINAL_HEIGHT-1, ' ', nil, StyleDefault)
+	}
+
+	if len(e.ProcessPanelSearchResults) > 0 {
+		status := fmt.Sprintf("  %d/%d", e.ProcessPanelSearchResultIndex+1, len(e.ProcessPanelSearchResults))
+
+		for i := 0; i < len(status); i++ {
+			e.Screen.SetContent(len(prefix) + len(pattern) + i , e.TERMINAL_HEIGHT-1,
+				rune(status[i]), nil, StyleDefault)
+		}
+	}
 }
 

@@ -6,7 +6,7 @@ import (
 )
 
 type Test interface {
-	Query() string
+	TestQuery() string
 	Find(tfinder *TestFinder, root *Node, filename string, code []byte) map[int]TestData
 	Run(test TestData) []string
 }

@@ -9,7 +9,7 @@ type JavascriptTest struct {
 
 }
 
-func (this *JavascriptTest) Query() string {
+func (this *JavascriptTest) TestQuery() string {
 	return`
 		(expression_statement
 		(call_expression

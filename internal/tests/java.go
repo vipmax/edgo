@@ -10,9 +10,9 @@ type JavaTest struct {
 
 }
 
-func (this *JavaTest) Query() string {
+func (this *JavaTest) TestQuery() string {
 	return`
-        ( method_declaration
+        (method_declaration
 		  (modifiers 
 			(marker_annotation
 				name: (identifier) @string))

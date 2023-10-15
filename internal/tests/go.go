@@ -11,7 +11,7 @@ type GoTest struct {
 
 }
 
-func (this *GoTest) Query() string {
+func (this *GoTest) TestQuery() string {
 	return`
          (
           function_declaration name: (identifier) @test-name

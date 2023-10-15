@@ -59,7 +59,7 @@ describe("math tests", () => {
 	codeBytes := []byte(code)
 
 	test := JavascriptTest{}
-	query := test.Query()
+	query := test.TestQuery()
 
 	language := javascript.GetLanguage()
 	q, _ := NewQuery([]byte(query), language)

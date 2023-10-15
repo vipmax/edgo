@@ -13,13 +13,13 @@ import (
 )
 
 type FileInfo struct {
-	Name      string
-	FullName  string
-	OpenCount int
-	IsDir     bool
-	IsDirOpen bool
-	Childs    []FileInfo
-	Level     int
+	Name      string    `json:"label"`
+	FullName  string    `json:"id"`
+	OpenCount int       `json:"-"`
+	IsDir     bool      `json:"isDir"`
+	IsDirOpen bool      `json:"-"`
+	Childs    []FileInfo `json:"nodes,omitempty"`
+	Level     int       `json:"-"`
 }
 
 

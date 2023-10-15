@@ -45,7 +45,7 @@ class MyFirstJUnitJupiterTests {
 	codeBytes := []byte(code)
 
 	test := JavaTest{}
-	query := test.Query()
+	query := test.TestQuery()
 
 	language := java.GetLanguage()
 	q, _ := NewQuery([]byte(query), language)

@@ -1,4 +1,4 @@
-package golang
+package langs
 
 type Go struct {
 

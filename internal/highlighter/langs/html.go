@@ -1,4 +1,4 @@
-package html
+package langs
 
 type Html struct {
 
