@@ -16,9 +16,9 @@ import (
 )
 
 type LspClient struct {
-	Lang   string
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
+	Lang  string
+	Cmd   *exec.Cmd
+	stdin io.WriteCloser
 	stdout io.ReadCloser
 	stop   context.CancelFunc
 	//reader    *textproto.Reader
@@ -49,22 +49,22 @@ func (l *LspClient) Start(cmd string, args ...string) bool {
 	if err != nil { Log.Info("lsp not found ", cmd); return false }
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Kill)
-	l.cmd = exec.CommandContext(ctx, cmd, args...)
+	l.Cmd = exec.CommandContext(ctx, cmd, args...)
 	l.stop = stop
 
-	stdin, err := l.cmd.StdinPipe()
+	stdin, err := l.Cmd.StdinPipe()
 	if err != nil { Log.Info(err.Error()); return false }
 	l.stdin = stdin
 
-	stdout, err := l.cmd.StdoutPipe()
+	stdout, err := l.Cmd.StdoutPipe()
 	if err != nil { Log.Info(err.Error()); return false }
 	l.stdout = stdout
 
 	errorsChannel := make(chan error)
 
-	// starting lsp cmd async
+	// starting lsp Cmd async
 	go func() {
-		startError := l.cmd.Run()
+		startError := l.Cmd.Run()
 		if startError != nil { errorsChannel <- startError }
 		close(errorsChannel)
 	}()
@@ -96,7 +96,7 @@ func (l *LspClient) Start(cmd string, args ...string) bool {
 	l.signatureHelpMessages = make(chan string)
 	l.hoverMessages = make(chan string)
 	l.otherMessages = make(chan string)
-	l.DiagnosticsChannel = make(chan string)
+	l.DiagnosticsChannel = make(chan string, 10)
 	l.file2diagnostic = make(map[string]DiagnosticParams)
 	l.IsReady = true
 
@@ -143,7 +143,7 @@ func (this *LspClient) receive() string {
 	var line string
 	var err error
 
-	for {
+	for !this.isStopped {
 
 		if messageSize != 0 && responseMustBeNext {
 			buf := make([]byte, messageSize)
@@ -190,11 +190,12 @@ func (this *LspClient) receive() string {
 			continue
 		}
 	}
+	return ""
 }
 
 
 func (l *LspClient) receiveLoop() {
-	for {
+	for !l.isStopped {
 		message := l.receive()
 		Log.Info("<-", message)
 
@@ -304,6 +305,21 @@ func (this *LspClient) DidOpen(file string, text string) {
 	}
 
 	this.send(didOpenRequest)
+}
+
+func (this *LspClient) DidClose(file string) {
+	request := DidOpenRequest{
+		JSONRPC: "2.0",  Method:  "textDocument/didClose",
+		Params: DidOpenParams{
+			TextDocument: TextDocument{
+				LanguageID: this.Lang,
+				URI:        "file://" + file,
+				Version:    1,
+			},
+		},
+	}
+
+	this.send(request)
 }
 
 

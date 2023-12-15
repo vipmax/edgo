@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/acarl005/stripansi"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/acarl005/stripansi"
 )
 
 type Process struct {
@@ -22,6 +24,7 @@ type Process struct {
 	muStopped sync.Mutex         // Mutex to protect access to Stopped
 	Updates   chan struct{}      // channel to notify about new lines
 	UpdateInterval int           // time interval to fire updates
+	Stdin     chan string        // channel to send input to stdin
 }
 
 
@@ -35,6 +38,7 @@ func NewProcess(command string, args ...string) *Process {
 		Updates: make(chan struct{}),
 		cancelF: stop,
 		UpdateInterval: 30,
+		Stdin:   make(chan string),
 	}
 }
 
@@ -108,9 +112,7 @@ func (p *Process) IsStopped() bool {
 func (p *Process) GetExitCode() int {
 	p.muStopped.Lock()
 	defer p.muStopped.Unlock()
-	if p.Cmd.ProcessState == nil {
-		return -1
-	}
+	if p.Cmd.ProcessState == nil { return -1 }
 	return p.Cmd.ProcessState.ExitCode()
 }
 
@@ -157,4 +159,39 @@ func (p *Process) Stop() {
 	p.muStopped.Lock()
 	p.Stopped = true
 	p.muStopped.Unlock()
+}
+
+func (p *Process) GetPid() int {
+	p.muStopped.Lock()
+	defer p.muStopped.Unlock()
+	if p.Cmd.Process != nil { return p.Cmd.Process.Pid }
+	return -1
+}
+
+func (p *Process) WriteStdin(input string) {
+	if p.IsStopped() {
+		panic("Process is already stopped. Cannot write to stdin.")
+		return
+	}
+
+	//p.muLines.Lock()
+	//defer p.muLines.Unlock()
+
+	//if p.Cmd.Stdin == nil {
+	//	fmt.Println("Process stdin is not available.")
+	//	return
+	//}
+
+	stdin, err := p.Cmd.StdinPipe()
+
+	_, err = io.WriteString(stdin, input + "\n")
+	if err != nil {
+		fmt.Println("Error writing to process stdin:", err)
+	}
+	stdin.Close()
+
+	//_, err = stdin.Write([]byte(input + "\n"))
+	//if err != nil {
+	//	fmt.Println("Error writing to process stdin:", err)
+	//}
 }

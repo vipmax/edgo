@@ -19,17 +19,17 @@ func TestLspClientStart(t *testing.T) {
 		return
 	}
 
-	if lsp.cmd == nil {
-		t.Errorf("Error, cmd is nil")
+	if lsp.Cmd == nil {
+		t.Errorf("Error, Cmd is nil")
 		return
 	}
 
-	pid := lsp.cmd.Process.Pid
+	pid := lsp.Cmd.Process.Pid
 	fmt.Println("lsp pid is", pid)
 
 	process, err := os.FindProcess(pid)
 	if err != nil {
-		t.Errorf("Error finding cmd with id %d: %s\n", process.Pid, err)
+		t.Errorf("Error finding Cmd with id %d: %s\n", process.Pid, err)
 		return
 	}
 
@@ -43,7 +43,7 @@ func TestLspClientStop(t *testing.T) {
 	lsp := LspClient{Lang: "go"}
 	lsp.Start("gopls")
 
-	pid := lsp.cmd.Process.Pid
+	pid := lsp.Cmd.Process.Pid
 	fmt.Println("lsp pid is", pid)
 
 	//time.Sleep(10*time.Second)
@@ -59,7 +59,7 @@ func TestLspClientInitialize(t *testing.T) {
 	lsp := LspClient{Lang: "go"}
 	lsp.Start("gopls")
 
-	pid := lsp.cmd.Process.Pid
+	pid := lsp.Cmd.Process.Pid
 	fmt.Println("lsp pid is", pid)
 
 	currentDir, _ := os.Getwd()
@@ -80,7 +80,7 @@ func TestLspClientHover(t *testing.T) {
 	currentDir, _ := os.Getwd()
 	lsp.Init(currentDir)
 
-	file := path.Join(currentDir, "lsp_client_test.go")
+	file := path.Join(currentDir, "internal","lsp", "lsp_client_test.go")
 	text, _ := os.ReadFile(file)
 	lsp.DidOpen(file, string(text))
 
@@ -182,7 +182,7 @@ func TestLspClientReferences(t *testing.T) {
 	s := string(text)
 	lsp.DidOpen(currentDir, s)
 
-	response, err := lsp.References(file, 174-1, 2)
+	response, err := lsp.References(file, 175-1, 2)
 
 	fmt.Println(response, err)
 	// todo fix, something wrong with base dir

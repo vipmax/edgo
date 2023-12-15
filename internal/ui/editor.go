@@ -133,7 +133,6 @@ func (e *Editor) Start() {
 	cwd, _ := os.Getwd()
 	e.Cwd = cwd
 
-
 	// reading file from cmd args
 	if len(os.Args) == 1 {
 		// if no args, open current dir
@@ -144,9 +143,9 @@ func (e *Editor) Start() {
 		e.InputFile = e.Filename
 
 		info, err := os.Stat(e.InputFile)
-		if err != nil { log.Fatal(err) }
+		//if err != nil { log.Fatal(err); return }
 
-		if info.IsDir() {
+		if info != nil && info.IsDir() {
 			// if arg is dir, go to dir and open
 			err = os.Chdir(e.InputFile)
 			if err != nil { log.Fatal(err) }

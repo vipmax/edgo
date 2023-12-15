@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/creack/pty"
 	"github.com/stretchr/testify/assert"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -179,4 +181,129 @@ func TestProcessStop(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	assert.Equal(t, cmd.IsStopped(), true)
+}
+
+func TestWriteStdin(t *testing.T) {
+	cmd := NewProcess("cat")
+	assert.NotNil(t, cmd)
+
+	cmd.Start() // Start the process
+
+	time.Sleep(10 * time.Millisecond) // Allow some time for the process to start
+
+
+	input := "Hello, stdin!"
+	go cmd.WriteStdin(input)
+
+	for range cmd.Updates { } // wait for no updates anymore
+
+	lines := cmd.GetLines(0)
+	fmt.Println(lines)
+
+	expectedOutput := "Hello, stdin!"
+	if len(lines) == 0 || lines[0] != expectedOutput {
+		t.Errorf("Expected process to receive input '%s', but got %v", expectedOutput, lines)
+	}
+}
+
+
+func TestWriteStdinBash(t *testing.T) {
+	cmd := NewProcess("bash")
+	assert.NotNil(t, cmd)
+
+	cmd.Start() // Start the process
+
+	time.Sleep(10 * time.Millisecond) // Allow some time for the process to start
+
+
+	input := "ls"
+	cmd.WriteStdin(input)
+
+	for range cmd.Updates { } // wait for no updates anymore
+
+	cmd.WriteStdin(input)
+
+	lines := cmd.GetLines(0)
+	fmt.Println(lines)
+
+
+}
+
+func TestPty(t *testing.T) {
+	c := exec.Command("cat")
+	f, err := pty.Start(c)
+	if err != nil {
+		panic(err)
+	}
+
+	go func() {
+		f.Write([]byte("foo\n"))
+		f.Write([]byte("bar\n"))
+		f.Write([]byte("baz\n"))
+		//f.Write([]byte{4}) // EOT
+	}()
+
+	io.Copy(os.Stdout, f)
+}
+
+func TestPtycmdStop(t *testing.T) {
+	shell := os.Getenv("SHELL")
+	//shell := "bash"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2 * time.Second)
+	c := exec.CommandContext(ctx, shell, "-il")
+
+	//c := exec.Command(shell)
+	f, err := pty.Start(c)
+
+	if err != nil { t.Fatal(err) }
+
+	go func() {
+		err := c.Wait()
+		if err != nil { t.Fatal(err) }
+		fmt.Println("wait done ")
+	}()
+
+
+	go func() {
+		fmt.Println("pwd")
+		f.Write([]byte("pwd\n"))
+		time.Sleep(1000 * time.Millisecond)
+
+		fmt.Println("ll")
+		f.Write([]byte("ll\n"))
+		time.Sleep(1000 * time.Millisecond)
+
+		//f.Write([]byte{4}) // EOT
+	}()
+
+
+	go io.Copy(os.Stdout, f)
+	// Create a reader to manually read from the pty
+	//reader := bufio.NewReader(f)
+
+	// Read and process the output line by line
+	//for {
+	//	line, err := reader.ReadString('\n')
+	//	if err != nil {
+	//		if err == io.EOF { break }
+	//		t.Fatal(err)
+	//	}
+	//
+	//	line = strings.ReplaceAll(line,"\r\n","")
+	//	line = stripansi.Strip(line)
+	//	fmt.Println(line)
+	//}
+
+	//f.WriteString("exit\r\n")
+	time.Sleep(10000 * time.Millisecond)
+	cancel()
+	//c.Cancel()
+	//c.Process.Kill()
+	//c.Process.Release()
+
+	err = f.Close()
+	if err != nil { t.Fatal(err) }
+
+	fmt.Println("done")
 }
