@@ -16,7 +16,9 @@ Yet another console text editor, but with lsp support
 - `Option + /` - comment line
 - `Control + o` - cursor back
 - `Control + ]` - cursor forward
-- `Control + j` - cursor to the end 
+- `Control + j` - cursor to the top 
+- `Control + k` - cursor to the bottom 
+- `Control + l + line number` - cursor to the line 
 
 
 - `Shift + arrow` - select text

@@ -60,6 +60,21 @@ func (e *Editor) OnRight() {
 	clear(e.HighlightElements)
 }
 
+func (e *Editor) GoTop() {
+	e.Row = 0; e.Col = 0; e.X = 0; e.Y = 0;
+}
+
+func (e *Editor) GoBottom() {
+	if len(e.Content) == 0 {
+		return
+	} else {
+		e.Row = len(e.Content)-1; e.Col = 0;
+		e.X = 0;
+		if e.Row > e.TERMINAL_HEIGHT { e.FocusCenter()}
+		e.OnDown()
+	}
+}
+
 func (e *Editor) OnScrollUp() {
 	if len(e.Content) == 0 { return }
 	if e.Y == 0 { return }
@@ -692,6 +707,7 @@ func (e *Editor) OnUndo() {
 	lastOperation := e.Undo[len(e.Undo)-1]
 	e.Undo = e.Undo[:len(e.Undo)-1]
 	e.Focus()
+
 	for i := len(lastOperation) - 1; i >= 0; i-- {
 		o := lastOperation[i]
 

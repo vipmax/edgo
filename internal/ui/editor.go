@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -456,7 +457,9 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 	if key == KeyCtrlX { e.Cut(true) }
 	if key == KeyCtrlD { e.Duplicate() }
 	if key == KeyCtrlB { e.Breakpoint() }
-	if key == KeyCtrlJ { e.Row = len(e.Content)-1; e.Col = 0; e.FocusCenter()}
+	if key == KeyCtrlK { e.GoBottom(); return }
+	if key == KeyCtrlJ { e.GoTop(); return }
+	if key == KeyCtrlL { e.GoToLine(); return }
 
 	if modifiers & ModShift != 0 && (
 		key == KeyRight ||
@@ -464,15 +467,13 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 			key == KeyUp ||
 			key == KeyDown) {
 
-		if e.Selection.Ssx < 0 { e.Selection.Ssx, e.Selection.Ssy = e.Col, e.Row
-		}
+		if e.Selection.Ssx < 0 { e.Selection.Ssx, e.Selection.Ssy = e.Col, e.Row }
 		if key == KeyRight { e.OnRight() }
 		if key == KeyLeft { e.OnLeft() }
 		if key == KeyUp { e.OnUp() }
 		if key == KeyDown { e.OnDown() }
 		if e.Selection.Ssx >= 0 {
-			e.Selection.Sex, e.Selection.Sey = e.Col, e.Row
-			e.Selection.IsSelected = true
+			e.Selection.Sex, e.Selection.Sey = e.Col, e.Row; e.Selection.IsSelected = true
 		}
 		return
 	}
@@ -926,7 +927,8 @@ func (e *Editor) DrawLineNumber(brw int, row int) {
 }
 
 func (e *Editor) DrawStatus(text string) {
-	var style = StyleDefault
+	//var style = StyleDefault
+	var style = StyleDefault.Foreground(ColorDimGray)
 	e.DrawText(e.ROWS-1, e.COLUMNS - len(text), text, style)
 }
 
@@ -1615,9 +1617,8 @@ func (e *Editor) OnFilesTree(forceOpen bool) {
 		case *EventKey:
 			key := ev.Key()
 
-			if key == KeyCtrlN {
-				e.NewFileOrDir()
-			}
+			if key == KeyCtrlQ { e.Screen.Fini(); os.Exit(1) }
+			if key == KeyCtrlN { e.NewFileOrDir() }
 			if key == KeyCtrlF { e.IsFilesSearch = !e.IsFilesSearch }
 			if key == KeyEscape && !e.IsFilesSearch { end = true; e.FilesPanelWidth =  0 }
 			if key == KeyEscape && e.IsFilesSearch { end = true; e.IsFilesSearch = false; e.CleanFilesSearch();e.Screen.Show() }
@@ -2329,3 +2330,40 @@ func (e *Editor) DrawProcessPanelSearch(pattern []rune, patternx int) {
 	}
 }
 
+func (e *Editor) GoToLine() {
+	var input = []rune{}
+	var patternx = 0
+
+	var end = false
+	for !end {
+
+		switch ev := e.Screen.PollEvent().(type) { // poll and handle event
+
+		case *EventKey:
+			key := ev.Key()
+
+			if key == KeyRune {
+				input = InsertTo(input, patternx, ev.Rune())
+				patternx++
+			}
+			if key == KeyBackspace2 && patternx > 0 && len(input) > 0 {
+				patternx--
+				input = Remove(input, patternx)
+			}
+			if key == KeyESC  || key == KeyCtrlL { return }
+			if key == KeyEnter {
+				end = true
+			}
+		}
+	}
+
+	result, err := strconv.Atoi(string(input))
+	if err != nil { return }
+
+	e.Row = result - 1
+	e.Col = 0
+
+	if e.Row < 0 { e.Row = 0 } // fit to content
+	if e.Row >= len(e.Content) { e.Row = len(e.Content) - 1 } // fit to content
+	e.Focus()
+}
