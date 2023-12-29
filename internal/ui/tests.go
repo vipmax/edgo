@@ -37,7 +37,7 @@ func (e *Editor) RunTest(test TestData) {
 
 	args := e.Test.Run(test)
 
-	if e.Lang == "" || e.langConf.Cmd == "" { return }
+	//if e.Lang == "" || e.langConf.Cmd == "" { return }
 
 	if e.ProcessPanelHeight == 0 {
 		e.ProcessPanelHeight = 10

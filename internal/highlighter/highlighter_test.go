@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/alecthomas/chroma"
 	"github.com/alecthomas/chroma/styles"
+	"github.com/go-enry/go-enry/v2"
+	"os"
 	"testing"
 	"time"
 )
@@ -62,3 +64,53 @@ func TestGetColor(t *testing.T) {
 	//fmt.Println(col)
 }
 
+func TestLangDetect(t *testing.T) {
+	file := "highlighter_test.go"
+	lang := DetectLang(file)
+	fmt.Println(lang)
+}
+
+func TestLangDetect2(t *testing.T) {
+	file := "highlighter_test.go"
+	lang, safe := enry.GetLanguageByExtension(file)
+	fmt.Println(lang, safe)
+}
+
+func BenchmarkLangDetect(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		file := "highlighter_test.go"
+		DetectLang(file)
+		//fmt.Println(lang)
+	}
+	// BenchmarkLangDetect-8   	     417	   2869136 ns/op
+}
+
+func BenchmarkLangDetect2(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		file := "highlighter_test.go"
+		enry.GetLanguageByExtension(file)
+	}
+	// BenchmarkLangDetect2-8   	27731184	        42.21 ns/op
+}
+
+func BenchmarkLangDetect3(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		filename := "highlighter_test.go"
+		content, _ := os.ReadFile(filename)
+		enry.GetLanguage(filename, content)
+	}
+	// BenchmarkLangDetect3-8   	   55464	     21176 ns/op
+}
+
+
+func BenchmarkLangDetectReal(b *testing.B) {
+	filename := "highlighter_test.go"
+	for i := 0; i < b.N; i++ {
+		language, _ := enry.GetLanguageByExtension(filename)
+		if language == "" { language, _ = enry.GetLanguageByFilename(filename) }
+
+		info, _ := enry.GetLanguageInfo(language)
+		Use(info)
+	}
+	// BenchmarkLangDetectReal-8   	11881623	       100.2 ns/op
+}

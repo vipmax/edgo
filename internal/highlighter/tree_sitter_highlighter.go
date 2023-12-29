@@ -10,6 +10,7 @@ import (
 	"github.com/smacker/go-tree-sitter/bash"
 	"github.com/smacker/go-tree-sitter/c"
 	"github.com/smacker/go-tree-sitter/cpp"
+	"github.com/smacker/go-tree-sitter/css"
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/html"
 	"github.com/smacker/go-tree-sitter/java"
@@ -28,14 +29,16 @@ import (
 )
 
 type TreeSitterHighlighter struct {
-	parser    *sitter.Parser
-	tree      *sitter.Tree
-	Colors    [][]int
-	lines 	[]string
-	lang      string
-	language  *sitter.Language
-	query     *sitter.Query
-	colorsMap map[string]string
+	parser         *sitter.Parser
+	tree           *sitter.Tree
+	Colors         [][]int
+	lines          []string
+	lang           string
+	language       *sitter.Language
+	query          *sitter.Query
+	colorsMap      map[string]string
+	themePath      string
+	injectionLangs map[string]*TreeSitterHighlighter
 }
 
 func NewTreeSitter() *TreeSitterHighlighter {
@@ -130,6 +133,7 @@ func (h *TreeSitterHighlighter) SetTheme(themePath string) {
 		yamlFile = []byte(defaultColors)
 	}
 
+	h.themePath = themePath
 
 	err = Unmarshal(yamlFile, &h.colorsMap)
 	if err != nil {
@@ -159,6 +163,7 @@ func GetSitterLang(lang string) *sitter.Language {
 	case "go": return golang.GetLanguage()
 	case "python": return python.GetLanguage()
 	case "html": return html.GetLanguage()
+	case "css": return css.GetLanguage()
 	case "yaml": return yaml.GetLanguage()
 	case "rust": return rust.GetLanguage()
 	case "bash": return bash.GetLanguage()
@@ -407,6 +412,9 @@ func (h *TreeSitterHighlighter) ColorizeRange(newcode string,
 		s := time.Now()
 		h.colorizeChildNodes(node, code)
 		Log.Info("tree-sitter colorizeChildNodes, elapsed: " + time.Since(s).String())
+	} else if nodename == "raw_text" && len(h.injectionLangs) > 0 {
+		parent := node.Parent()
+		h.colorizeWithQuery(parent, code)
 	}
 
 	// highlight with query
@@ -427,14 +435,45 @@ func (h *TreeSitterHighlighter) colorizeWithQuery(node *sitter.Node, code []byte
 		m = qc.FilterPredicates(m, code)
 		for _, c := range m.Captures {
 			name := h.query.CaptureNameForId(c.Index)
-			nodename := strings.Split(name, ".")[0]
+			split := strings.Split(name, ".")
+			nodename := split[0]
 			color := h.matchExpression(nodename, name)
+			//content := code[c.Node.StartByte():c.Node.EndByte()]
+			//tn := treeNode(c.Node, string(content)); Use(tn)
 
-			//tn := treeNode(c.Node, content); Use(tn)
 			if color > 0 {
 				content := code[c.Node.StartByte():c.Node.EndByte()]
 				h.colorizeNode(c.Node, content, color)
 			}
+
+			if nodename == "injection" {
+				injLang := split[len(split)-1]
+
+				if h.injectionLangs == nil { h.injectionLangs = make(map[string]*TreeSitterHighlighter) }
+				injectionHighlighter, injLangFound := h.injectionLangs[injLang]
+				if !injLangFound {
+					injectionHighlighter = NewTreeSitter()
+					injectionHighlighter.SetLang(injLang)
+					injectionHighlighter.SetTheme(h.themePath)
+					h.injectionLangs[injLang] = injectionHighlighter
+				}
+				content := code[c.Node.StartByte():c.Node.EndByte()]
+				colors := injectionHighlighter.Colorize(string(content))
+				Use(colors)
+
+				offset := int(c.Node.StartPoint().Row)
+				offsetCol := int(c.Node.StartPoint().Column)
+
+				for i, cs := range colors {
+					for j, colorr := range cs {
+						h.Colors[offset + i][j + offsetCol] = colorr
+					}
+					offsetCol = 0
+				}
+				continue
+			}
+
+
 		}
 	}
 

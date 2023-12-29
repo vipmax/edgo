@@ -3,11 +3,11 @@ package highlighter
 import (
 	. "edgo/internal/logger"
 	. "edgo/internal/themes"
-
 	"github.com/alecthomas/chroma"
 	"github.com/alecthomas/chroma/lexers"
 	"github.com/alecthomas/chroma/styles"
 	"github.com/gdamore/tcell"
+	"github.com/go-enry/go-enry/v2"
 	"strings"
 )
 
@@ -48,18 +48,32 @@ func ResetSelectionColor() {
 	SeparatorStyle = tcell.StyleDefault.Foreground(tcell.ColorDimGray)
 }
 
-func DetectLang(filename string) string {
-	lexer := lexers.Match(filename)
-	if lexer == nil {
-		return ""
-	}
-	config := lexer.Config()
-	if config == nil {
-		return ""
-	}
-	return strings.ToLower(config.Name)
-}
+//func DetectLang(filename string) string {
+//	lexer := lexers.Match(filename)
+//	if lexer == nil { return "" }
+//	config := lexer.Config()
+//	if config == nil { return "" }
+//	return strings.ToLower(config.Name)
+//}
 
+func DetectLang(filename string) string {
+	language, _ := enry.GetLanguageByExtension(filename)
+	language = strings.ToLower(language)
+
+	if language == "" { return "text" }
+	if language == "ecmarkup" { return "html" }
+	if language == "miniyaml" { return "yaml" }
+	if language == "vue" { return "html" }
+
+	return language
+
+	//info, _ := enry.GetLanguageInfo(language)
+	//
+	//codeMirrorMode := info.AceMode
+	//if codeMirrorMode == "" { return "text" }
+	//
+	//return strings.ToLower(codeMirrorMode)
+}
 
 func (h *Highlighter) SetTheme(name string) {
 	theme = styles.Get(name)

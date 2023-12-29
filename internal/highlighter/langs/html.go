@@ -6,6 +6,8 @@ type Html struct {
 
 func (this *Html) Query() string {
 	return `
+
+(doctype) @tag
 (tag_name) @tag
 (erroneous_end_tag_name) @error
 (comment) @comment
@@ -15,6 +17,16 @@ func (this *Html) Query() string {
 
 (attribute
   (quoted_attribute_value) @string)
-(text) @text @spell
+
+(text) @string
+
+
+((script_element
+  (raw_text) @injection.content.javascript)
+ (#set! injection.language "javascript"))
+
+((style_element
+  (raw_text) @injection.content.css)
+ (#set! injection.language "css"))
 `
 }

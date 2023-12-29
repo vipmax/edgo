@@ -21,6 +21,7 @@ import (
 	"github.com/rjeczalik/notify"
 	"log"
 	"os"
+	"os/user"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -524,6 +525,11 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 }
 
 func (e *Editor) OpenFile(fname string) error {
+	if strings.HasPrefix(fname, "~/") {
+		currentUser, _ := user.Current()
+		homeDir := currentUser.HomeDir
+		fname = filepath.Join(homeDir, fname[2:])
+	}
 
 	absoluteDir, err := filepath.Abs(path.Dir(fname))
 	if err != nil { return err }
@@ -533,7 +539,7 @@ func (e *Editor) OpenFile(fname string) error {
 
 	Log.Info("open", e.AbsoluteFilePath)
 
-	newLang := DetectLang(e.Filename)
+	newLang := DetectLang(e.AbsoluteFilePath)
 	Log.Info("new lang is", newLang)
 
 	if newLang != "" && newLang != e.Lang {
@@ -781,7 +787,7 @@ func (e *Editor) DrawProcessPanel() {
 		e.Screen.SetContent(e.COLUMNS-4, e.ROWS, '■',nil, StyleDefault.Foreground(Color(AccentColor)))
 	}
 	e.Screen.SetContent(e.COLUMNS-3, e.ROWS, ' ',nil, StyleDefault)
-	e.Screen.SetContent(e.COLUMNS-2, e.ROWS, '⏼',nil, StyleDefault)
+	e.Screen.SetContent(e.COLUMNS-2, e.ROWS, 'x',nil, StyleDefault)
 
 	screenCols, screenRows := e.Screen.Size()
 

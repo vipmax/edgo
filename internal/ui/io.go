@@ -22,10 +22,9 @@ func (e *Editor) ReadFile(fileToRead string) string {
 		go func() { // sync?? no need yet
 			code = e.BuildContent(fileToRead, 1000000)
 			code, _ = GetFirstLines(code, 20000)
-			e.Colors = HighlighterGlobal.Colorize(code, e.Filename);
-			e.DrawEverything();
+			e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
+			e.DrawEverything()
 			e.Screen.Show()
-
 		}()
 
 	} else {

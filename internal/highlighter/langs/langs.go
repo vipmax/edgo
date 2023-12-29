@@ -14,6 +14,7 @@ var languages = map[string]Language{
 	"c++":        &Cpp{},
 	"cpp":        &Cpp{},
 	"html":       &Html{},
+	"css":        &Css{},
 	"yaml":       &Yaml{},
 	"java":       &Java{},
 	"bash":       &Bash{},

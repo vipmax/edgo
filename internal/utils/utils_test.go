@@ -28,7 +28,7 @@ func TestDetectPythonLang(t *testing.T) {
 	}
 }
 
-//
+
 //func TestNoSelection(t *testing.T) {
 //	var Content = [][]rune{
 //		[]rune("Hello, world!"),
@@ -42,7 +42,7 @@ func TestDetectPythonLang(t *testing.T) {
 //		t.Errorf("GetSelectionString() = %v, want %v", got, want)
 //	}
 //}
-//
+
 //func TestSingleCharacterSelection(t *testing.T) {
 //	var Content = [][]rune{
 //		[]rune("Hello, world!"),

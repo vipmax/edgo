@@ -24,7 +24,8 @@ type Config struct {
 var DefaultConfig = Config { Langs:
 	map[string]Lang{
 		"go":         { Lsp: "gopls", TabWidth: 4, Cmd: "go", CmdArgs: "run" },
-		"python":     { Lsp: "pylsp", Comment: "#", TabWidth: 4, Cmd: "python3" },
+		//"python":     { Lsp: "pylsp", Comment: "#", TabWidth: 4, Cmd: "python3" },
+		"python":     { Lsp: "pyright-langserver --stdio", Comment: "#", TabWidth: 4, Cmd: "python3" },
 		"typescript": { Lsp: "typescript-language-server --stdio", Cmd: "tsx" },
 		"javascript": { Lsp: "typescript-language-server --stdio", Cmd: "tsx" },
 		"html":       { Lsp: "vscode-html-language-server --stdio" },
@@ -42,6 +43,7 @@ var DefaultConfig = Config { Langs:
 		"ocaml":      { Lsp: "ocamllsp", },
 		"nim":        { Lsp: "nimlangserver", },
 		"bash":       { Lsp: "bash-language-server start", Cmd: "bash", Comment: "#", TabWidth: 2 },
+		"shell":       { Lsp: "bash-language-server start", Cmd: "bash", Comment: "#", TabWidth: 2 },
 	},
 }
 
