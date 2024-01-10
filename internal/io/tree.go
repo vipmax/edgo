@@ -48,7 +48,7 @@ func ReadDirTree(dirPath string, filter string, isOpen bool, level int) (FileInf
 	for _, file := range files {
 		childPath := filepath.Join(dirPath, file.Name())
 
-		if file.IsDir() && ! IsIgnored(file.Name(), IgnoreDirs) {
+		if file.IsDir() && !IsIgnored(file.Name(), IgnoreDirs) {
 			childInfo, err2 := ReadDirTree(childPath, filter, isOpen, level + 1)
 			if err2 != nil {
 				Log.Info("Failed to process directory:", err2.Error())

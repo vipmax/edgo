@@ -343,6 +343,12 @@ func (e *Editor) HandleMouse(mx int, my int, buttons ButtonMask, modifiers ModMa
 		if e.Row > len(e.Content)-1 { e.Row = len(e.Content) - 1 } // fit cursor to e.Content
 
 		e.Col = e.FindCursorXPosition(mx)
+
+		if len(e.Selection.GetSelectedLines(e.Content)) > 0 { // if text selected
+			e.Selection.Sey = e.Row
+			e.Selection.Sex = e.Col
+			return
+		}
 		if modifiers & ModAlt != 0 { e.OnReferences() }
 		if modifiers & ModCtrl != 0 { e.OnDefinition() }
 		return

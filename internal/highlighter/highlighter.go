@@ -64,6 +64,7 @@ func DetectLang(filename string) string {
 	if language == "ecmarkup" { return "html" }
 	if language == "miniyaml" { return "yaml" }
 	if language == "vue" { return "html" }
+	if language == "gcc machine description" { return "text" }
 
 	return language
 

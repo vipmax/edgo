@@ -15,8 +15,15 @@ font:
     family: JetBrainsMono Nerd Font
     style: Bold
 
+cursor:
+  style: Beam # Block, Underline
+
 key_bindings:
   - { key: Right,    mods: Alt,     chars: "\ef" }
   - { key: Left,     mods: Alt,     chars: "\eb" }
   - { key: Right,    mods: Shift,   chars: "\x1b[1;2C" }
   - { key: Left,     mods: Shift,   chars: "\x1b[1;2D" }
+
+colors:
+  primary:
+    background: '#2c2c2c'

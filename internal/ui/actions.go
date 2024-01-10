@@ -601,6 +601,10 @@ func (e *Editor) Cut(isCopySelected bool) {
 			e.Row = len(e.Content) - 1
 			if e.Col >= len(e.Content[e.Row]) { e.Col = len(e.Content[e.Row]) - 1 }
 		}
+
+		if e.Row < 0 { e.Row = 0 }
+		if e.Col < 0 { e.Col = 0 }
+
 		e.Selection.CleanSelection()
 		e.Update = true
 		e.IsContentChanged = true

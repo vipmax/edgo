@@ -137,7 +137,7 @@ func SearchOnDir(dir string, pattern string) ([]FileSearchResult, int) {
 
 
 var IgnoreDirs = []string{
-	".git", ".idea", "node_modules", "dist", "target", "__pycache__", "build",
+	".git", ".idea", "node_modules", "dist", "target", "__pycache__", ".pytest_cache", "build",
 	".DS_Store", ".venv", "venv",
 }
 
