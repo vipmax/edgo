@@ -18,7 +18,7 @@ func TestReadConfig(t *testing.T) {
 
 	golang, ok := conf.Langs["go"]
 
-	if ! ok {
+	if !ok {
 		t.Errorf("Go lang go not found")
 	}
 

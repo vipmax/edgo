@@ -19,6 +19,7 @@ Yet another console text editor, but with lsp support
 - `Control + j` - cursor to the top 
 - `Control + k` - cursor to the bottom 
 - `Control + l + line number` - cursor to the line 
+- `Control + y` - lines count report 
 
 
 - `Shift + arrow` - select text

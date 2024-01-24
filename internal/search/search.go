@@ -2,11 +2,13 @@ package search
 
 import (
 	"bufio"
+	"edgo/internal/highlighter"
 	. "edgo/internal/logger"
 	"edgo/internal/utils"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +89,25 @@ func SearchOnFile(filename string, pattern string) ([]SearchResult, int) {
 	}
 
 	return results, lineindex
+}
+
+func LineCountOnFile(filename string) (int,int) {
+	file, err := os.Open(filename)
+	if err != nil { return 0,0 }
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	var lines = 0
+	var emptylines = 0
+	empty := ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == empty { emptylines += 1}
+		lines++
+	}
+
+	return lines, emptylines
 }
 
 type FileSearchResult struct {
@@ -213,4 +234,102 @@ func SearchOnDirParallel(dir string, pattern string) ([]FileSearchResult, int, i
 	}
 
 	return results, filesProcessedCount, totalRowsProcessed
+}
+
+
+type LinesCountResult struct {
+	File       string
+	Count      int
+	EmptyCount int
+}
+
+func LineCountOnDirParallel(dir string) ([]LinesCountResult, int, int) {
+	var files []string
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil { return err }
+		if info.IsDir() && utils.IsIgnored(info.Name(), IgnoreDirs) { return filepath.SkipDir }
+
+		if !info.IsDir() && !utils.IsMatchExt(info.Name(), IgnoreExts) {
+			files = append(files, path)
+		}
+		return nil
+	})
+
+	if err != nil { return []LinesCountResult{}, 0, 0 }
+
+	var wg sync.WaitGroup
+	resultCh := make(chan LinesCountResult, len(files))
+	rowsProcessedCh := make(chan int, len(files))
+	sem := make(chan struct{}, runtime.NumCPU())
+
+	for _, file := range files {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(file string) {
+			defer wg.Done()
+			lines, emptylines := LineCountOnFile(file)
+			resultCh <- LinesCountResult{file, lines, emptylines}
+			rowsProcessedCh <- lines
+			<-sem
+		}(file)
+	}
+
+	// Start a go routine to close the resultCh after all other go routines are done
+	go func() {
+		wg.Wait()
+		close(resultCh)
+		close(rowsProcessedCh)
+	}()
+
+	results := []LinesCountResult{}
+	filesProcessedCount := 0
+	for result := range resultCh {
+		filesProcessedCount++
+		if result.Count > 0 {
+			results = append(results, result)
+		}
+	}
+
+	totalRowsProcessed := 0
+	for rows := range rowsProcessedCh {
+		totalRowsProcessed += rows
+	}
+
+	return results, filesProcessedCount, totalRowsProcessed
+}
+
+type LangLinesCountResult struct {
+	Lang            string
+	FilesCount      int
+	LinesCount      int
+	EmptyLinesCount int
+}
+
+func LangCount(files []LinesCountResult) []LangLinesCountResult {
+	linesCountResults := make(map[string]int)
+	emptyLinesCountResults := make(map[string]int)
+	FilesCountResults := make(map[string]int)
+
+	for _, lcResult := range files {
+		lang := highlighter.DetectLang(lcResult.File)
+		linesCountResults[lang] = linesCountResults[lang] + lcResult.Count
+		emptyLinesCountResults[lang] = emptyLinesCountResults[lang] + lcResult.EmptyCount
+		FilesCountResults[lang] = FilesCountResults[lang] + 1
+	}
+
+	var langLinesCountResults []LangLinesCountResult
+
+	for lang, v := range linesCountResults {
+		langLinesCountResults = append(langLinesCountResults,
+			LangLinesCountResult{lang, FilesCountResults[lang], v, emptyLinesCountResults[lang]},
+		)
+	}
+
+	sort.Slice(langLinesCountResults, func(i, j int) bool {
+		return langLinesCountResults[i].LinesCount > langLinesCountResults[j].LinesCount
+	})
+
+
+	return langLinesCountResults
 }

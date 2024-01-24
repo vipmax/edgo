@@ -130,17 +130,20 @@ func (p *Process) runCmd() {
 		p.Cmd.Path, strings.Join(p.Cmd.Args[1:], " "),
 	))
 	p.Updates <- struct{}{}
+	start := time.Now()
 
 	err := p.Cmd.Run() // its blocks until process exiting
 	if err != nil {
 		p.appendLine( "Error: " + err.Error())
 	}
 
+	elapsed := time.Since(start)
+
 	if p.Cmd.ProcessState != nil {
 		p.appendLine("")
 		p.appendLine(fmt.Sprintf(
-			"Process %d finished with exit code %d",
-			p.Cmd.ProcessState.Pid(), p.Cmd.ProcessState.ExitCode(),
+			"Process %d finished with exit code %d, elapsed %s",
+			p.Cmd.ProcessState.Pid(), p.Cmd.ProcessState.ExitCode(), elapsed.String(),
 		))
 	}
 

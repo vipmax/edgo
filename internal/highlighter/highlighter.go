@@ -65,6 +65,8 @@ func DetectLang(filename string) string {
 	if language == "miniyaml" { return "yaml" }
 	if language == "vue" { return "html" }
 	if language == "gcc machine description" { return "text" }
+	if language == "adblock filter list" { return "text" }
+	if language == "ampl" { return "text" }
 
 	return language
 

@@ -120,3 +120,39 @@ func TestSearchOnDirParallel2(t *testing.T) {
 		fmt.Println(searchResult)
 	}
 }
+
+
+func TestLineCount(t *testing.T) {
+	start := time.Now()
+	lc, emptylc := LineCountOnFile("search_test.go")
+	elapsed := time.Since(start)
+
+	fmt.Println("SearchOnFile done, elapsed", elapsed.String())
+	fmt.Println("Found", lc, "lines")
+	fmt.Println("Found empty", emptylc, "lines")
+}
+
+
+func TestLineCountOnDirParallel(t *testing.T) {
+	fmt.Println("cpu", runtime.NumCPU())
+
+	start := time.Now()
+	path := "/Users/max/apps/go/edgo"
+	results, totalFilesProcessed, totalRowsProcessed := LineCountOnDirParallel(path)
+	elapsed := time.Since(start)
+
+	fmt.Println("total files processed", totalFilesProcessed)
+	fmt.Println("total rows processed", totalRowsProcessed)
+
+	fmt.Println("done, elapsed", elapsed.String())
+	//fmt.Println("Found", len(results), "results")
+	//
+	//for _, result := range results {
+	//	fmt.Println(result)
+	//}
+
+	langCount := LangCount(results)
+	for _, result := range langCount {
+		fmt.Println(result.FilesCount, result.Lang, result.LinesCount)
+	}
+}
