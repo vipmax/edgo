@@ -3,6 +3,9 @@ Yet another console text editor, but with lsp support
 ![editor](assets/screen0.png)
 ![editor](assets/screen1.png)
 
+### Demo
+https://github.com/vipmax/edgo/wiki/Features
+
 ### Key bindings and features:
 - `Control + q` - quit
 - `Control + d` - duplicate line
