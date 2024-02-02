@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 func Max(x, y int) int {
@@ -164,6 +165,44 @@ func ConvertContentToString(content [][]rune) string {
 		if i != len(content)-1 { result.WriteByte('\n') }
 	}
 	return result.String()
+}
+func RunesToBytes(content [][]rune) []byte {
+	var result []byte
+
+	for _, row := range content {
+		for _, r := range row {
+			encodedRune := make([]byte, utf8.RuneLen(r))
+			utf8.EncodeRune(encodedRune, r)
+			result = append(result, encodedRune...)
+		}
+	}
+
+	return result
+}
+
+func BytesUntilRow(content [][]rune, targetRow int) int {
+	var totalBytes int
+
+	for row := 0; row != targetRow && row < len(content); row++ {
+		for _, r := range content[row] {
+			//encodedRune := make([]byte, )
+			//utf8.EncodeRune(encodedRune, r)
+			totalBytes += utf8.RuneLen(r)
+		}
+		totalBytes += 1
+	}
+
+	return totalBytes
+}
+
+func CountNewlines(data []byte) int {
+	newlineCount := 0
+	for _, b := range data {
+		if b == '\n' {
+			newlineCount++
+		}
+	}
+	return newlineCount
 }
 
 func CountTabs(str []rune, stopIndex int) int {

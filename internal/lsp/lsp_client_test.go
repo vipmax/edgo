@@ -82,7 +82,8 @@ func TestLspClientHover(t *testing.T) {
 
 	file := path.Join(currentDir, "internal","lsp", "lsp_client_test.go")
 	text, _ := os.ReadFile(file)
-	lsp.DidOpen(file, string(text))
+	stringtext := string(text)
+	lsp.DidOpen(file, &stringtext)
 
 	response, err := lsp.Hover(file, 75-1, 7)
 
@@ -107,7 +108,8 @@ func TestLspClientCompletion(t *testing.T) {
 
 	file := path.Join(currentDir, "lsp_client_test.go")
 	text, _ := os.ReadFile(file)
-	lsp.DidOpen(file, string(text))
+	stringtext := string(text)
+	lsp.DidOpen(file, &stringtext)
 
 	response, err := lsp.Completion(file, 100-1, 8)
 
@@ -131,7 +133,8 @@ func TestLspClientDefinition(t *testing.T) {
 
 	file := path.Join(currentDir, "lsp_client_test.go")
 	text, _ := os.ReadFile(file)
-	lsp.DidOpen(file, string(text))
+	stringtext := string(text)
+	lsp.DidOpen(file, &stringtext)
 
 	response, err := lsp.Definition(file, 124-1, 8)
 
@@ -155,7 +158,8 @@ func TestLspClientSignatureHelp(t *testing.T) {
 
 	file := path.Join(currentDir, "lsp_client_test.go")
 	text, _ := os.ReadFile(file)
-	lsp.DidOpen(file, string(text))
+	stringtext := string(text)
+	lsp.DidOpen(file, &stringtext)
 
 	response, err := lsp.SignatureHelp(file, 156-1, 21)
 
@@ -179,8 +183,8 @@ func TestLspClientReferences(t *testing.T) {
 
 	file := path.Join(currentDir, "internal","lsp", "lsp_client_test.go")
 	text, _ := os.ReadFile(file)
-	s := string(text)
-	lsp.DidOpen(currentDir, s)
+	stringtext := string(text)
+	lsp.DidOpen(file, &stringtext)
 
 	response, err := lsp.References(file, 175-1, 2)
 

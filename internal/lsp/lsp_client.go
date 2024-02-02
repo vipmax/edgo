@@ -288,16 +288,13 @@ func (l *LspClient) Init(dir string) {
 	l.IsReady = true
 }
 
-func (this *LspClient) DidOpen(file string, text string) {
-	filecontent, err := os.ReadFile(file)
-	if err != nil { Log.Error(err.Error()); return }
-
+func (this *LspClient) DidOpen(file string, text *string) {
 	didOpenRequest := DidOpenRequest{
 		JSONRPC: "2.0",  Method:  "textDocument/didOpen",
 		Params: DidOpenParams{
 			TextDocument: TextDocument{
 				LanguageID: this.Lang,
-				Text:       string(filecontent),
+				Text:       *text,
 				URI:        "file://" + file,
 				Version:    1,
 			},

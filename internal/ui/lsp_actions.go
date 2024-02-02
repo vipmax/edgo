@@ -348,7 +348,7 @@ func (e *Editor) OnCompletion() {
 				if key == KeyBackspace || key == KeyBackspace2 {
 					e.OnDelete(); e.Screen.Clear(); e.DrawEverything(); selectionEnd = true
 				}
-				if key == KeyEnter {
+				if key == KeyEnter || ev.Rune() == '\t' {
 					selectionEnd = true; completionEnd = true
 					e.completionApply(completion, selected)
 					e.Screen.Show()
@@ -459,7 +459,7 @@ func (e *Editor) completionApply(completion CompletionResponse, selected int) {
 
 	// add newText
 	for _, char := range newText { e.InsertCharacter(e.Row, e.Col, char); e.Col++ }
-	e.UpdateColorsAtLine(e.Row)
+	e.UpdateColors()
 
 	e.Update = true
 	e.IsContentChanged = true
@@ -557,7 +557,7 @@ func (e *Editor) applyRename(renameResponse RenameResponse) {
 				wholeNewLine := append(before, newTextAndAfter...)
 				e.Content[line] = wholeNewLine
 
-				e.UpdateColorsAtLine(line)
+				e.UpdateColors()
 			}
 
 			e.WriteFile()

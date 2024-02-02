@@ -113,7 +113,6 @@ func (e *Editor) FocusCenter() {
 }
 
 func (e *Editor) FocusProcessPanel() {
-
 	e.Screen.Show()
 	if e.ProcessPanelCursorY > e.ProcessPanelScroll + e.ROWS {
 		e.ProcessPanelScroll = e.ProcessPanelCursorY + e.ROWS
@@ -130,11 +129,9 @@ func (e *Editor) FocusProcessPanel() {
 	if e.ProcessPanelCursorY - e.ProcessPanelScroll > centerRow {
 		e.ProcessPanelScroll += e.ProcessPanelCursorY - e.ProcessPanelScroll - centerRow
 	}
-
 }
 
 func (e *Editor) OnEnter() {
-
 	var ops = EditOperation{{Enter, '\n', e.Row, e.Col}}
 	tabs := CountTabs(e.Content[e.Row], e.Col)
 	spaces := CountSpaces(e.Content[e.Row], e.Col)
@@ -142,10 +139,6 @@ func (e *Editor) OnEnter() {
 	after := e.Content[e.Row][e.Col:]
 	before := e.Content[e.Row][:e.Col]
 	e.Content[e.Row] = before
-
-	contentToString := ConvertContentToString(e.Content)
-	e.treeSitterHighlighter.EnterEdit(contentToString, e.Row, max(e.Col,0))
-	e.treeSitterHighlighter.Colors[e.Row] = e.treeSitterHighlighter.Colors[e.Row][:e.Col]
 
 	e.Row++
 	e.Col = 0
@@ -164,18 +157,8 @@ func (e *Editor) OnEnter() {
 	newline := append(begining, after...)
 	e.Content = InsertTo(e.Content, e.Row, newline)
 
-	e.treeSitterHighlighter.Colors = InsertTo(e.treeSitterHighlighter.Colors, e.Row, make([]int, len(newline)))
-
-	code := ConvertContentToString(e.Content)
-
-	if countToInsert > 0 {
-		e.treeSitterHighlighter.AddMultipleCharEdit(code, e.Row, 0, e.Row, countToInsert)
-	}
-
-	if e.IsColorize && e.Lang != "" {
-		e.treeSitterHighlighter.ColorizeRange(code,  e.Row-1, len(e.Content[e.Row-1]), e.Row, len(newline))
-		e.Colors = e.treeSitterHighlighter.Colors
-	}
+	contentToString := ConvertContentToString(e.Content)
+	e.treeSitterHighlighter.AddCharEdit(&contentToString, e.Row, max(e.Col,0), '\n')
 
 	e.Undo = append(e.Undo, ops)
 	e.Focus(); if e.Row- e.Y == e.ROWS { e.OnScrollDown() }
@@ -199,35 +182,19 @@ func (e *Editor) OnDelete() {
 		e.Col--
 		e.DeleteCharacter(e.Row, e.Col)
 		e.OnCursorChanged()
-		//e.UpdateColorsAtLine(e.Row)
 	} else if e.Row > 0 { // delete line
 		e.Undo = append(e.Undo, EditOperation{{DeleteLine, ' ', e.Row -1, len(e.Content[e.Row-1])}})
 		left := e.Content[e.Row][e.Col:]
-		leftColors := e.Colors[e.Row][e.Col:]
 		e.Content = Remove(e.Content, e.Row)
-		if e.IsColorize && e.Lang != "" {
-			if e.Row < len(e.Colors) {
-				e.treeSitterHighlighter.Colors = Remove(e.treeSitterHighlighter.Colors, e.Row)
-			}
-			//e.UpdateColorsAtLine(e.Row)
-		}
 
 		e.Row--
 		e.Col = len(e.Content[e.Row])
 		e.Content[e.Row] = append(e.Content[e.Row], left...)
-		e.treeSitterHighlighter.Colors[e.Row] = append(e.treeSitterHighlighter.Colors[e.Row], leftColors...)
-
 
 		code := ConvertContentToString(e.Content)
-		e.treeSitterHighlighter.RemoveLineEdit(code, e.Row, e.Col)
-		e.treeSitterHighlighter.ColorizeRange(code, e.Row, e.Col, e.Row,  len(e.Content[e.Row]))
-		e.Colors = e.treeSitterHighlighter.Colors
+		e.treeSitterHighlighter.RemoveCharEdit(&code, e.Row, e.Col, '\n')
 		e.OnCursorChanged()
-		//e.UpdateColorsAtLine(e.Row)
 	}
-
-	//code := ConvertContentToString(e.Content)
-	//e.Colors = e.treeSitterHighlighter.Colorize(code)
 
 	e.Focus()
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
@@ -245,7 +212,6 @@ func (e *Editor) OnTab() {
 	if len(selectedLines) == 0 {
 		ch := '\t'
 		e.InsertCharacter(e.Row, e.Col, ch)
-		e.UpdateColorsAtLine(e.Row)
 		e.Col++
 		e.OnCursorChanged()
 	} else  {
@@ -254,12 +220,12 @@ func (e *Editor) OnTab() {
 		for _, linenumber := range selectedLines {
 			e.Row = linenumber
 			e.Content[e.Row] = InsertTo(e.Content[e.Row], 0, '\t')
-			e.UpdateColorsAtLine(e.Row)
 			ops = append(ops, Operation{Insert, '\t', e.Row, 0})
 			e.Col = len(e.Content[e.Row])
 		}
 		e.Selection.Sex = e.Col
 		e.Undo = append(e.Undo, ops)
+		e.UpdateColors()
 	}
 
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
@@ -278,9 +244,7 @@ func (e *Editor) OnBackTab() {
 	if len(selectedLines) == 0 {
 		if e.Content[e.Row][0] == '\t'  {
 			e.DeleteCharacter(e.Row,0)
-			e.Colors[e.Row] = Remove(e.Colors[e.Row], 0)
 			e.Col--
-			e.UpdateColorsAtLine(e.Row)
 		}
 	} else {
 		e.Selection.Ssx = 0
@@ -288,12 +252,12 @@ func (e *Editor) OnBackTab() {
 			e.Row = linenumber
 			if len(e.Content[e.Row]) > 0 && e.Content[e.Row][0] == '\t'  {
 				e.DeleteCharacter(e.Row,0)
-				e.Colors[e.Row] = Remove(e.Colors[e.Row], 0)
 				e.Col = len(e.Content[e.Row])
-				e.UpdateColorsAtLine(e.Row)
 			}
 		}
+		e.UpdateColors()
 	}
+
 
 	if len(e.Redo) > 0 { e.Redo = []EditOperation{} }
 	e.Update = true
@@ -318,20 +282,15 @@ func (e *Editor) AddChar(ch rune) {
 	e.IsContentChanged = true
 	e.FindTests()
 	if len(e.Content) <= 10000 { go e.WriteFile() }
-	//e.UpdateColorsAtLine(e.Row)
 }
 
 func (e *Editor) InsertCharacter(line, pos int, ch rune) {
 	e.Content[line] = InsertTo(e.Content[line], pos, ch)
-	e.treeSitterHighlighter.Colors[line] = InsertTo(e.treeSitterHighlighter.Colors[line], pos, -1)
 	//if lsp.isReady { go lsp.didChange(AbsoluteFilePath, Line, pos, Line, pos, string(ch)) }
 	e.Undo = append(e.Undo, EditOperation{{Insert, ch, e.Row, e.Col}})
 
 	code := ConvertContentToString(e.Content)
-	e.treeSitterHighlighter.AddCharEdit(code, line, pos)
-	//e.treeSitterHighlighter.ColorizeRange(code, line, line, line, pos)
-	e.treeSitterHighlighter.ColorizeRange(code, line, 0, line, len(e.Content[line]))
-	e.Colors = e.treeSitterHighlighter.Colors
+	e.treeSitterHighlighter.AddCharEdit(&code, line, pos, ch)
 }
 
 func (e *Editor) InsertString(line, pos int, linestring string) {
@@ -384,19 +343,16 @@ func (e *Editor) InsertLines(line, pos int, lines []string) {
 }
 
 func (e *Editor) DeleteCharacter(line, pos int) {
+	ch := e.Content[line][pos]
 	e.Undo = append(e.Undo, EditOperation{
-		{MoveCursor, e.Content[line][pos], line, pos+1},
-		{Delete, e.Content[line][pos], line, pos},
+		{MoveCursor, ch, line, pos+1},
+		{Delete, ch, line, pos},
 	})
+
 	e.Content[line] = Remove(e.Content[line], pos)
-	e.treeSitterHighlighter.Colors[line] = Remove(e.treeSitterHighlighter.Colors[line], pos)
 
 	code := ConvertContentToString(e.Content)
-	e.treeSitterHighlighter.RemoveCharEdit(code, line, pos)
-	//e.treeSitterHighlighter.ColorizeRange(code, line, pos, line, pos)
-	e.treeSitterHighlighter.ColorizeRange(code, line, 0, line, len(e.Content[line]))
-
-	e.Colors = e.treeSitterHighlighter.Colors
+	e.treeSitterHighlighter.RemoveCharEdit(&code, line, pos, ch)
 }
 
 func (e *Editor) OnSwapLinesUp() {
@@ -407,7 +363,6 @@ func (e *Editor) OnSwapLinesUp() {
 	ops = append(ops, Operation{MoveCursor, ' ', e.Row, e.Col})
 
 	line1 := e.Content[e.Row]; line2 := e.Content[e.Row-1]
-	line1c := e.Colors[e.Row]; line2c := e.Colors[e.Row-1]
 
 	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], e.Row, i}) }
 	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], e.Row -1, i}) }
@@ -415,9 +370,9 @@ func (e *Editor) OnSwapLinesUp() {
 	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, e.Row, i}) }
 
 	e.Content[e.Row] = line2; e.Content[e.Row-1] = line1 // swap
-	e.Colors[e.Row] = line2c; e.Colors[e.Row-1] = line1c // swap e.Colors
 	e.Row--
 
+	e.UpdateColors()
 	e.Undo = append(e.Undo, ops)
 	e.Selection.CleanSelection()
 	e.Update = true
@@ -435,7 +390,6 @@ func (e *Editor) OnSwapLinesDown() {
 	ops = append(ops, Operation{MoveCursor, ' ', e.Row, e.Col})
 
 	line1 := e.Content[e.Row]; line2 := e.Content[e.Row+1]
-	line1c := e.Colors[e.Row]; line2c := e.Colors[e.Row+1]
 
 	for i := len(line1)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line1[i], e.Row, i}) }
 	for i := len(line2)-1; i >= 0; i-- { ops = append(ops, Operation{Delete, line2[i], e.Row +1, i}) }
@@ -443,9 +397,9 @@ func (e *Editor) OnSwapLinesDown() {
 	for i, ch := range line2 { ops = append(ops, Operation{Insert, ch, e.Row, i}) }
 
 	e.Content[e.Row] = line2; e.Content[e.Row+1] = line1 // swap
-	e.Colors[e.Row] = line2c; e.Colors[e.Row+1] = line1c // swap
 	e.Row++
 
+	e.UpdateColors()
 	e.Undo = append(e.Undo, ops)
 	e.Selection.CleanSelection()
 	e.Update = true
@@ -493,7 +447,6 @@ func (e *Editor) OnSelectAll() {
 }
 
 func (e *Editor) OnPaste() {
-	// e.Focus()
 
 	if e.Selection.IsSelectionNonEmpty() {
 		e.Cut(false)
@@ -545,12 +498,9 @@ func (e *Editor) Cut(isCopySelected bool) {
 		}
 
 		e.Content = Remove(e.Content, e.Row)
-		//if e.IsColorize && e.Lang != "" {
-		//	if e.Row < len(e.Colors) { e.Colors = Remove(e.Colors, e.Row) }
-		//	e.UpdateColorsAtLine(e.Row)
-		//}
 		if e.Row > 0 { e.Row-- }
 
+		e.UpdateColors()
 		e.Update = true
 		e.IsContentChanged = true
 		if len(e.Content) <= 10000 { go e.WriteFile() }
@@ -576,11 +526,13 @@ func (e *Editor) Cut(isCopySelected bool) {
 
 			if len(e.Content[yd]) > 0 {
 				// Delete the character at index (x, j)
-				ops = append(ops, Operation{Delete, e.Content[yd][xd], yd, xd})
+				ch := e.Content[yd][xd]
+				ops = append(ops, Operation{Delete, ch, yd, xd})
 				e.Content[yd] = append(e.Content[yd][:xd], e.Content[yd][xd+1:]...)
-				//e.Colors[yd] = append(e.Colors[yd][:xd], e.Colors[yd][xd+1:]...)
-			}
 
+				code := ConvertContentToString(e.Content)
+				e.treeSitterHighlighter.RemoveCharEdit(&code, yd, xd, ch)
+			}
 
 			if len(e.Content[yd]) == 0 { // delete Line
 				if e.Row == 0 { ops = append(ops, Operation{DeleteLine, '\n', 0, 0}) } else {
@@ -588,13 +540,14 @@ func (e *Editor) Cut(isCopySelected bool) {
 				}
 
 				e.Content = append(e.Content[:yd], e.Content[yd+1:]...)
-				//e.Colors = append(e.Colors[:yd], e.Colors[yd+1:]...)
+
+				code := ConvertContentToString(e.Content)
+				e.treeSitterHighlighter.RemoveCharEdit(&code, e.Col, e.Row, '\n')
 			}
 		}
 
 		if len(e.Content) == 0 {
 			e.Content = make([][]rune, 1)
-			e.Colors = make([][]int, 1)
 		}
 
 		if e.Row >= len(e.Content)  {
@@ -634,10 +587,8 @@ func (e *Editor) Duplicate() {
 		}
 		e.Row++
 		e.Content = InsertTo(e.Content, e.Row, duplicatedSlice)
-		if e.IsColorize && e.Lang != "" {
-			e.Colors = InsertTo(e.Colors, e.Row, []int{})
-			e.UpdateColorsAtLine(e.Row)
-		}
+
+		e.UpdateColors()
 		e.Undo = append(e.Undo, ops)
 		e.Update = true
 		e.IsContentChanged = true
@@ -659,6 +610,7 @@ func (e *Editor) Duplicate() {
 		if len(lines) > 1 { // multiple Line
 			e.InsertLines(e.Row, e.Col, lines)
 		}
+		e.UpdateColors()
 		e.Selection.CleanSelection()
 		e.UpdateNeeded()
 	}
@@ -744,6 +696,7 @@ func (e *Editor) OnUndo() {
 		e.OnCursorChanged()
 	}
 
+	e.UpdateColors()
 	e.Redo = append(e.Redo, lastOperation)
 	e.UpdateNeeded()
 }
@@ -781,6 +734,7 @@ func (e *Editor) OnRedo() {
 		}
 	}
 
+	e.UpdateColors()
 	e.Undo = append(e.Undo, lastRedoOperation)
 	e.UpdateNeeded()
 }
@@ -791,26 +745,19 @@ func (e *Editor) OnCommentLine() {
 
 	for i, ch := range e.Content[e.Row] {
 		if len(e.Content[e.Row]) == 0 { break }
+
 		if len(e.langConf.Comment) == 1 && ch == rune(e.langConf.Comment[0]) {
 			// found 1 char comment, uncomment
 			e.Col = i
 			e.Undo = append(e.Undo, EditOperation{
-				{MoveCursor, e.Content[e.Row][i], e.Row, i+1},
-				{Delete, e.Content[e.Row][i], e.Row, i},
+				{MoveCursor, ch, e.Row, i+1},
+				{Delete, ch, e.Row, i},
 			})
 			e.Content[e.Row] = Remove(e.Content[e.Row], i)
 
-			e.treeSitterHighlighter.Colors[e.Row] = Remove(e.treeSitterHighlighter.Colors[e.Row], i)
-			for index := range e.treeSitterHighlighter.Colors[e.Row] { // reset colors on line to default
-				e.treeSitterHighlighter.Colors[e.Row][index] = -1
-			}
-
 			code := ConvertContentToString(e.Content)
-			e.treeSitterHighlighter.RemoveCharEdit(code, e.Row, i)
-			e.treeSitterHighlighter.ColorizeRange(code, e.Row, 0, e.Row, len(e.Content[e.Row]))
-			e.Colors = e.treeSitterHighlighter.Colors
+			e.treeSitterHighlighter.RemoveCharEdit(&code, e.Row, i, ch)
 
-			//e.UpdateColorsAtLine(e.Row)
 			found = true
 			break
 		}
@@ -818,28 +765,18 @@ func (e *Editor) OnCommentLine() {
 			// found 2 char comment, uncomment
 			e.Col = i
 			e.Undo = append(e.Undo, EditOperation{
-				{MoveCursor, e.Content[e.Row][i], e.Row, i+1},
-				{Delete, e.Content[e.Row][i], e.Row, i},
+				{MoveCursor, ch, e.Row, i+1},
+				{Delete, ch, e.Row, i},
 				{MoveCursor, e.Content[e.Row][i+1], e.Row, i+1},
-				{Delete, e.Content[e.Row][i], e.Row, i},
+				{Delete, ch, e.Row, i},
 			})
 			e.Content[e.Row] = Remove(e.Content[e.Row], i)
 			e.Content[e.Row] = Remove(e.Content[e.Row], i)
 
-			e.treeSitterHighlighter.Colors[e.Row] = Remove(e.treeSitterHighlighter.Colors[e.Row], i)
-			e.treeSitterHighlighter.Colors[e.Row] = Remove(e.treeSitterHighlighter.Colors[e.Row], i)
-
-			for index := range e.treeSitterHighlighter.Colors[e.Row] { // reset colors on line to default
-				e.treeSitterHighlighter.Colors[e.Row][index] = -1
-			}
-
 			code := ConvertContentToString(e.Content)
-			e.treeSitterHighlighter.RemoveCharEdit(code, e.Row, i)
-			e.treeSitterHighlighter.RemoveCharEdit(code, e.Row, i)
-			e.treeSitterHighlighter.ColorizeRange(code, e.Row, 0, e.Row, len(e.Content[e.Row]))
-			e.Colors = e.treeSitterHighlighter.Colors
+			e.treeSitterHighlighter.RemoveCharEdit(&code, e.Row, i, ch)
+			e.treeSitterHighlighter.RemoveCharEdit(&code, e.Row, i, ch)
 
-			//e.UpdateColorsAtLine(e.Row)
 			found = true
 			break
 		}
@@ -864,18 +801,10 @@ func (e *Editor) OnCommentLine() {
 	ops := EditOperation{}
 	for _, ch := range e.langConf.Comment {
 		e.Content[e.Row] = InsertTo(e.Content[e.Row], from, ch)
-		e.treeSitterHighlighter.Colors[e.Row] = InsertTo(e.treeSitterHighlighter.Colors[e.Row], from, -1)
 		code := ConvertContentToString(e.Content)
-		e.treeSitterHighlighter.AddCharEdit(code, e.Row, from)
-		e.treeSitterHighlighter.ColorizeRange(code, e.Row, from, e.Row, from)
-		e.Colors = e.treeSitterHighlighter.Colors
+		e.treeSitterHighlighter.AddCharEdit(&code, e.Row, from, ch)
 		ops = append(ops, Operation{Insert, ch, e.Row, from})
 	}
-
-	code := ConvertContentToString(e.Content)
-	e.treeSitterHighlighter.ColorizeRange(code, e.Row, 0, e.Row, len(e.Content[e.Row]))
-	e.Colors = e.treeSitterHighlighter.Colors
-	//e.UpdateColorsAtLine(e.Row)
 
 	e.Undo = append(e.Undo, ops)
 	if e.Col < 0 { e.Col = 0 }
@@ -918,11 +847,7 @@ func (e *Editor) HandleSmartMoveDown() {
 		e.Col++
 	}
 
-	if e.IsColorize && e.Lang != "" {
-		e.Colors = InsertTo(e.Colors, e.Row, []int{})
-		e.UpdateColorsAtLine(e.Row)
-	}
-
+	e.UpdateColors()
 	e.Focus(); e.OnScrollDown()
 	e.Undo = append(e.Undo, ops)
 	e.Update = true
@@ -950,11 +875,7 @@ func (e *Editor) HandleSmartMoveUp() {
 		e.Col++
 	}
 
-	if e.IsColorize && e.Lang != "" {
-		e.Colors = InsertTo(e.Colors, e.Row, []int{})
-		e.UpdateColorsAtLine(e.Row)
-	}
-
+	e.UpdateColors()
 	e.Undo = append(e.Undo, ops)
 	e.Update = true
 	e.IsContentChanged = true

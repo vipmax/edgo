@@ -2,7 +2,6 @@ package ui
 
 import (
 	"bufio"
-	. "edgo/internal/highlighter"
 	. "edgo/internal/utils"
 	"fmt"
 	"os"
@@ -22,7 +21,6 @@ func (e *Editor) ReadFile(fileToRead string) string {
 		go func() { // sync?? no need yet
 			code = e.BuildContent(fileToRead, 1000000)
 			code, _ = GetFirstLines(code, 20000)
-			e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
 			e.DrawEverything()
 			e.Screen.Show()
 		}()
@@ -34,7 +32,7 @@ func (e *Editor) ReadFile(fileToRead string) string {
 }
 
 func (e *Editor) WriteFile() {
-	//to much cpu usage for big files
+	//too much cpu usage for big files
 	//added, removed := Diff(e.LastCommitFileContent, ConvertContentToString(e.Content))
 	//e.Added = added
 	//e.Removed = removed
@@ -68,7 +66,8 @@ func (e *Editor) WriteFile() {
 	if e.Lang != "" {
 		lsp := e.lsp2lang[e.Lang]
 		if lsp.IsReady {
-			go lsp.DidOpen(e.AbsoluteFilePath, e.Lang) // todo remove it in future
+			code := ConvertContentToString(e.Content)
+			go lsp.DidOpen(e.AbsoluteFilePath, &code) // todo remove it in future
 			//go lsp.didChange(AbsoluteFilePath)
 			//go lsp.didSave(AbsoluteFilePath)
 		}
@@ -92,7 +91,6 @@ func (e *Editor) BuildContent(filename string, limit int) string {
 	scanner := bufio.NewScanner(file)
 
 	e.Content = make([][]rune, 0)
-	e.Colors = make([][]int, 0)
 
 	for scanner.Scan() {
 		var line = scanner.Text()
@@ -105,7 +103,6 @@ func (e *Editor) BuildContent(filename string, limit int) string {
 	// if no e.Content, consider it like one Line for next editing
 	if e.Content == nil || len(e.Content) == 0 {
 		e.Content = make([][]rune, 1)
-		e.Colors = make([][]int, 1)
 	}
 
 	return ConvertContentToString(e.Content)

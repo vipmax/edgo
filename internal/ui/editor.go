@@ -1,5 +1,4 @@
 package ui
-// 
 
 import (
 	. "edgo/internal/config"
@@ -26,7 +25,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 
@@ -44,7 +45,6 @@ type Editor struct {
 	X   int // col offset for scrolling
 
 	Content [][]rune // text characters
-	Colors  [][]int  // text characters colors
 
 	Screen Screen // Screen for drawing
 
@@ -125,6 +125,8 @@ type Editor struct {
 	TreePath *Path
 
 	HighlightElements map[int][]NodeRange
+
+	drawingWg sync.WaitGroup
 }
 
 func (e *Editor) Start() {
@@ -445,10 +447,17 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 		return
 	}
 
-	if ev.Rune() == '/' && modifiers&ModAlt != 0 || int(ev.Rune()) == '÷' {
-		// '÷' on Mac is option + '/'
+	intrune := int(ev.Rune())
+	if ev.Rune() == '/' && modifiers&ModAlt != 0 || intrune == '÷' {
+		// '÷' is option + '/' on Mac
 		e.OnCommentLine(); return
 	}
+	if intrune == '¨' {
+		// '¨' is option + u on Mac
+		e.OnRedo()
+		return
+	}
+
 	if key == KeyUp && modifiers == 3 { e.OnSwapLinesUp(); return } // control + shift + up
 	if key == KeyDown && modifiers == 3 { e.OnSwapLinesDown(); return } // control + shift + down
 	if key == KeyBacktab { e.OnBackTab(); return }
@@ -524,10 +533,8 @@ func (e *Editor) HandleKeyboard(key Key, ev *EventKey, modifiers ModMask) {
 	if key == KeyF22 { e.OnProcessRun(true) }
 	if key == KeyF23 { e.OnDebug() }
 	if key == KeyCtrlU { e.OnUndo() }
-	//if key == KeyCtrlR { e.OnRedo() } // todo: fix it
 	if key == KeyCtrlO { e.OnCursorBack() }
 	if key == KeyCtrlRightSq { e.OnCursorBackUndo() }
-
 	if key == KeyCtrlSpace { e.OnCompletion() }
 
 }
@@ -579,7 +586,8 @@ func (e *Editor) OpenFile(fname string) error {
 	e.treeSitterHighlighter = NewTreeSitter()
 	e.treeSitterHighlighter.SetTheme(e.Config.Theme)
 	e.treeSitterHighlighter.SetLang(e.Lang)
-	e.Colors = e.treeSitterHighlighter.Colorize(code)
+	e.treeSitterHighlighter.Parse(&code)
+	//e.Colors = e.treeSitterHighlighter.Colorize(code)
 	clear(e.HighlightElements)
 
 	//cwd, _ := os.Getwd()
@@ -652,13 +660,16 @@ func (e *Editor) Init() {
 
 
 func (e *Editor) DrawEverything() {
+	e.drawingWg.Wait()
+	e.drawingWg.Add(1) // drawing only from 1 goroutine
+	defer e.drawingWg.Done()
+
 	e.Screen.Clear()
 
+	// clean files panel and draw separator
 	if e.FilesPanelWidth != 0 {
-		// clean  files panel and draw separator
-		//_, screenRows := e.Screen.Size()
 		for row := 0; row < e.ROWS; row++ {
-			for col := 0; col < e.FilesPanelWidth; col++ { // clean
+			for col := 0; col < e.FilesPanelWidth; col++ {
 				e.Screen.SetContent(col, row, ' ', nil, StyleDefault)
 			}
 			e.Screen.SetContent(e.FilesPanelWidth-2, row, '▕', nil, DimmedStyle)
@@ -669,10 +680,7 @@ func (e *Editor) DrawEverything() {
 		e.DrawTree(e.Tree, 0, &fileindex, &aty)
 	}
 
-	if len(e.Content) == 0 {
-		e.DrawLogo()
-		return
-	}
+	if len(e.Content) == 0 { e.DrawLogo(); return }
 
 	countTabsTo := CountTabsTo(e.Content[e.Row], e.Col)
 	tabcor := countTabsTo *(e.langTabWidth - 1)
@@ -682,42 +690,71 @@ func (e *Editor) DrawEverything() {
 		e.X = e.Col - e.COLUMNS + 1 + e.LINES_WIDTH + e.FilesPanelWidth + tabcor
 	}
 
-	// draw Line number and chars according to scrolling offsets
+	/*
+		1. Getting bytes ranges and colors from tree-sitter only for visible text
+		2. iterating over characters and increment bytesCounter
+		3. find range that matches bytesCounter
+		4. draw each cell (row,col, char, color)
+	*/
+
+	code := ConvertContentToString(e.Content)
+	coloredByteRanges := e.treeSitterHighlighter.ColorRanges(e.Y, e.Y+e.TERMINAL_HEIGHT, []byte(code))
+
+	bytesCounter := 0
+
+	if e.Y > 0 { //  if scrolling needs to recalculate bytesCounter offset
+		newlineCount := 0
+		for _, c := range code {
+			bytesCounter += utf8.RuneLen(c)
+			if c == '\n' { newlineCount++ }
+			if newlineCount == e.Y { break }
+		}
+	}
+
 	for row := 0; row < e.ROWS; row++ {
 		ry := row + e.Y // index to get right row in characters buffer by scrolling offset Y
 		if row >= len(e.Content) || ry >= len(e.Content) { break }
 		e.DrawLineNumber(ry, row)
 
-		if _, found := e.Tests[ry]; found {
-			e.DrawTest(ry, row)
-		}
+		if _, found := e.Tests[ry]; found { e.DrawTest(ry, row) }
 
 		tabsOffset := 0
+
 		for col := 0; col <= e.COLUMNS; col++ {
 			cx := col + e.X // index to get right column in characters buffer by scrolling offset x
+
 			if cx < 0 { break }
 			if cx >= len(e.Content[ry]) { break }
 			ch := e.Content[ry][cx]
-			style := e.GetStyle(ry, cx)
-			if ch == '\t' && e.X == 0  {
-				//draw big cursor with next symbol color
-				if ry == e.Row && cx == e.Col {
-					var color = Color(AccentColor)
-					if cx+1 < len(e.Colors[ry]) { color = Color(e.Colors[ry][cx+1]) }
-					if color == -1 { color = Color(AccentColor)}
-					style = StyleDefault.Background(color)
+			chstr := string(ch); Use(chstr)
+			style := StyleDefault
+
+			for _, i := range coloredByteRanges {
+				if i.StartByte <= bytesCounter && bytesCounter < i.EndByte {
+					style = StyleDefault.Foreground(Color(i.Color))
+					break
 				}
+			}
+
+			if e.Selection.IsUnderSelection(cx, ry) { style = style.Background(Color(SelectionColor)) }
+			if e.DebugInfo.stopline == ry { style = style.Background(Color(SelectionColor)) }
+
+			if ch == '\t' && e.X == 0  { // draw big cursor for tab
+				if ry == e.Row && cx == e.Col { style = StyleDefault.Background(Color(AccentColor)) }
 				for i := 0; i < e.langTabWidth; i++ {
-					e.Screen.SetContent(col + e.LINES_WIDTH + tabsOffset + e.FilesPanelWidth, row, ' ', nil, style)
+					x := col + e.LINES_WIDTH + tabsOffset + e.FilesPanelWidth
+					e.Screen.SetContent(x, row, ' ', nil, style)
 					if i != e.langTabWidth-1 { tabsOffset++ }
 				}
 			} else {
-				e.Screen.SetContent(col + e.LINES_WIDTH+ tabsOffset + e.FilesPanelWidth, row , ch, nil, style)
+				x := col + e.LINES_WIDTH + tabsOffset + e.FilesPanelWidth
+				e.Screen.SetContent(x, row , ch, nil, style)
 			}
+			bytesCounter += utf8.RuneLen(ch)
 		}
 
-		if helements, found := e.HighlightElements[ry]; found {
-			for _, helement := range helements {
+		if hightlightElements, found := e.HighlightElements[ry]; found {
+			for _, helement := range hightlightElements {
 				tabs := CountTabsTo(e.Content[helement.Ssy], helement.Ssx)
 				tabcorrection := tabs * (e.langTabWidth - 1)
 				skip := false
@@ -729,12 +766,12 @@ func (e *Editor) DrawEverything() {
 					}
 				}
 			}
-
 		}
+
+		bytesCounter += 1 // for '/n'
 	}
 
 	e.DrawDiagnostic()
-	//e.drawTabs()
 
 	var changes = ""; if e.IsContentChanged { changes = "*" }
 	status := fmt.Sprintf(" %s %d %d %s%s ", e.Lang, e.Row+1, e.Col+1, e.Filename, changes)
@@ -745,7 +782,7 @@ func (e *Editor) DrawEverything() {
 		e.Screen.HideCursor()
 	} else  {
 		tabs := CountTabsTo(e.Content[e.Row], e.Col) * (e.langTabWidth - 1)
-		e.Screen.ShowCursor(e.Col - e.X + e.LINES_WIDTH+tabs + e.FilesPanelWidth, e.Row - e.Y) // show cursor
+		e.Screen.ShowCursor(e.Col - e.X + e.LINES_WIDTH + tabs + e.FilesPanelWidth, e.Row - e.Y) // show cursor
 		if e.X != 0 {
 			e.Screen.ShowCursor(e.Col - e.X + e.LINES_WIDTH + e.FilesPanelWidth, e.Row - e.Y) // show cursor
 		}
@@ -755,15 +792,9 @@ func (e *Editor) DrawEverything() {
 
 	e.DrawProcessPanel()
 
-	if e.IsContentSearch {
-		e.DrawSearch(e.SearchPattern, len(e.SearchPattern))
-	}
-	if e.IsFilesSearch && !e.Dap.IsStarted {
-		e.DrawTreeSearch(e.FilesSearchPattern, len(e.FilesSearchPattern))
-	}
-	if e.Dap.IsStarted {
-		e.DrawDebugPanel()
-	}
+	if e.IsContentSearch { e.DrawSearch(e.SearchPattern, len(e.SearchPattern)) }
+	if e.IsFilesSearch && !e.Dap.IsStarted { e.DrawTreeSearch(e.FilesSearchPattern, len(e.FilesSearchPattern)) }
+	if e.Dap.IsStarted { e.DrawDebugPanel() }
 }
 
 func (e *Editor) CleanProcessPanel() {
@@ -844,20 +875,7 @@ func (e *Editor) DrawProcessPanel() {
 }
 
 
-func (e *Editor) GetStyle(ry int, cx int) Style {
-	var style = StyleDefault
-	if !e.IsColorize { return style }
-	if ry >= len(e.Colors) || cx >= len(e.Colors[ry])  { return style }
-	color := e.Colors[ry][cx]
-	if color > 0 { style = StyleDefault.Foreground(Color(color)) }
-	if e.Selection.IsUnderSelection(cx, ry) {
-		style = style.Background(Color(SelectionColor))
-	}
-	if e.DebugInfo.stopline == ry {
-		style = style.Background(Color(SelectionColor))
-	}
-	return style
-}
+
 
 func (e *Editor) DrawDiagnostic() {
 	if e.Lang == "" { return }
@@ -986,7 +1004,8 @@ func (e *Editor) InitLsp(lang string) {
 	currentDir, _ := os.Getwd()
 
 	lsp.Init(currentDir)
-	lsp.DidOpen(e.AbsoluteFilePath, ConvertContentToString(e.Content))
+	code := ConvertContentToString(e.Content)
+	lsp.DidOpen(e.AbsoluteFilePath, &code)
 
 	//e.DrawEverything()
 	//
@@ -998,6 +1017,7 @@ func (e *Editor) InitLsp(lang string) {
 	//e.Screen.Show()
 
 	go func() {
+		// diagnostic updates
 		for range lsp.DiagnosticsChannel {
 			if e.IsOverlay { continue }
 			e.DrawEverything()
@@ -1463,10 +1483,8 @@ func (e *Editor) DrawCodePreview(atx int, aty int, height int, options []string,
 	if found {
 		rowsToShow := e.ROWS - height
 		previewContent := e.ReadContent(file, searchResult.Line-rowsToShow/2, searchResult.Line+rowsToShow/2)
-		text := ConvertContentToString(previewContent)
 		lang := DetectLang(file)
 		if e.treeSitterHighlighter.GetLangStr() != lang  { e.treeSitterHighlighter.SetLang(lang) }
-		previewContentColors := e.treeSitterHighlighter.Colorize(text)
 
 		// clear
 		for j := height + 1; j < e.ROWS; j++ {
@@ -1492,10 +1510,6 @@ func (e *Editor) DrawCodePreview(atx int, aty int, height int, options []string,
 			for col := 0; col < len(previewContent[row]); col++ {
 
 				chstyle := StyleDefault
-				if row < len(previewContentColors) && col < len(previewContentColors[row]) {
-					color := previewContentColors[row][col]
-					if color > 0 { chstyle = StyleDefault.Foreground(Color(color)) }
-				}
 
 				//if linenumber == searchResult.Line-1 &&  // color match
 				//	col >= searchResult.Position && col < searchResult.Position + len(searchPattern) {
@@ -1795,53 +1809,9 @@ func (e *Editor) OverlayFalse() {
 }
 
 func (e *Editor) UpdateColors() {
-	if !e.IsColorize { return }
-	if e.Lang == "" { return }
-	//if len(e.Content) >= 10000 {
-	//	line := string(e.Content[e.Row])
-	//	linecolors := HighlighterGlobal.Colorize(line, e.Filename)
-	//	e.Colors[e.Row] = linecolors[0]
-	//} else {
-	//	code := ConvertContentToString(e.Content)
-	//	e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
-	//}
-
-	start := time.Now()
 	code := ConvertContentToString(e.Content)
-	e.Colors = e.treeSitterHighlighter.Colorize(code)
-	Log.Info("tree-sitter re colorized, elapsed: " + time.Since(start).String())
+	e.treeSitterHighlighter.ReParse(&code) //  todo:: optimize
 }
-
-func (e *Editor) UpdateColorsFull() {
-	if !e.IsColorize { return }
-	if e.Lang == "" { return }
-
-	//code := ConvertContentToString(e.Content)
-	//e.Colors = HighlighterGlobal.Colorize(code, e.Filename)
-
-	start := time.Now()
-	code := ConvertContentToString(e.Content)
-	e.Colors = e.treeSitterHighlighter.Colorize(code)
-	Log.Info("tree-sitter re colorized, elapsed: " + time.Since(start).String())
-}
-
-func (e *Editor) UpdateColorsAtLine(at int) {
-	if !e.IsColorize { return }
-	if e.Lang == "" { return }
-	if at >= len(e.Colors) { return }
-
-	line := string(e.Content[at])
-	if line == "" { e.Colors[at] = []int{}; return }
-	//linecolors := HighlighterGlobal.Colorize(line, e.Filename)
-	//e.Colors[at] = linecolors[0]
-
-	start := time.Now()
-	code := ConvertContentToString(e.Content)
-	e.Colors = e.treeSitterHighlighter.Colorize(code)
-	Log.Info("tree-sitter re colorized, elapsed: " + time.Since(start).String())
-
-}
-
 
 // todo, get rid of this function, cause UpdateColors is slow for big files
 func (e *Editor) UpdateNeeded() {

@@ -67,6 +67,7 @@ func DetectLang(filename string) string {
 	if language == "gcc machine description" { return "text" }
 	if language == "adblock filter list" { return "text" }
 	if language == "ampl" { return "text" }
+	if language == "renderscript" { return "rust" }
 
 	return language
 
