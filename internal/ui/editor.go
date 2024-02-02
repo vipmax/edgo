@@ -720,13 +720,16 @@ func (e *Editor) DrawEverything() {
 
 		tabsOffset := 0
 
-		for col := 0; col <= e.COLUMNS; col++ {
+		for col := 0; true; col++ {
 			cx := col + e.X // index to get right column in characters buffer by scrolling offset x
 
 			if cx < 0 { break }
 			if cx >= len(e.Content[ry]) { break }
 			ch := e.Content[ry][cx]
-			chstr := string(ch); Use(chstr)
+
+			isOutside := col+e.LINES_WIDTH+tabsOffset+e.FilesPanelWidth > e.COLUMNS
+			if isOutside { bytesCounter += utf8.RuneLen(ch); continue }
+
 			style := StyleDefault
 
 			for _, i := range coloredByteRanges {
