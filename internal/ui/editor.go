@@ -724,11 +724,11 @@ func (e *Editor) DrawEverything() {
 			cx := col + e.X // index to get right column in characters buffer by scrolling offset x
 
 			if cx < 0 { break }
-			if cx >= len(e.Content[ry]) { break }
-			ch := e.Content[ry][cx]
+			if col >= len(e.Content[ry]) { break }
+			ch := e.Content[ry][col]
 
-			isOutside := col+e.LINES_WIDTH+tabsOffset+e.FilesPanelWidth > e.COLUMNS
-			if isOutside { bytesCounter += utf8.RuneLen(ch); continue }
+			isOutside := col - e.X +e.LINES_WIDTH+tabsOffset+e.FilesPanelWidth > e.COLUMNS
+			if isOutside || e.X > col { bytesCounter += utf8.RuneLen(ch); continue }
 
 			style := StyleDefault
 
@@ -739,24 +739,25 @@ func (e *Editor) DrawEverything() {
 				}
 			}
 
-			if e.Selection.IsUnderSelection(cx, ry) { style = style.Background(Color(SelectionColor)) }
+			if e.Selection.IsUnderSelection(col, ry) { style = style.Background(Color(SelectionColor)) }
 			if e.DebugInfo.stopline == ry { style = style.Background(Color(SelectionColor)) }
 
 			if ch == '\t' && e.X == 0  { // draw big cursor for tab
 				if ry == e.Row && cx == e.Col { style = StyleDefault.Background(Color(AccentColor)) }
 				for i := 0; i < e.langTabWidth; i++ {
-					x := col + e.LINES_WIDTH + tabsOffset + e.FilesPanelWidth
+					x := col - e.X + e.LINES_WIDTH + tabsOffset + e.FilesPanelWidth
 					e.Screen.SetContent(x, row, ' ', nil, style)
 					if i != e.langTabWidth-1 { tabsOffset++ }
 				}
 			} else {
-				x := col + e.LINES_WIDTH + tabsOffset + e.FilesPanelWidth
+				x := col - e.X + e.LINES_WIDTH + tabsOffset + e.FilesPanelWidth
 				e.Screen.SetContent(x, row , ch, nil, style)
 			}
+			//e.Screen.Show()
 			bytesCounter += utf8.RuneLen(ch)
 		}
 
-		if hightlightElements, found := e.HighlightElements[ry]; found {
+		if hightlightElements, found := e.HighlightElements[ry]; found && e.X == 0 {
 			for _, helement := range hightlightElements {
 				tabs := CountTabsTo(e.Content[helement.Ssy], helement.Ssx)
 				tabcorrection := tabs * (e.langTabWidth - 1)
