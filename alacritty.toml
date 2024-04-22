@@ -1,0 +1,19 @@
+[window]
+dimensions = { columns = 120, lines = 30 }
+padding = { x = 15, y = 9 }
+#opacity = 0.85
+#blur = true
+decorations = "buttonless"
+
+[font]
+size = 14
+
+[font.normal]
+family = "JetbrainsMono Nerd Font"
+style = "Bold"
+
+[cursor]
+style = "Beam"
+
+[colors.primary]
+background =  "#2c2c2c"

@@ -3,7 +3,6 @@ package highlighter
 import (
 	"context"
 	. "edgo/internal/highlighter/langs"
-	. "edgo/internal/utils"
 	"fmt"
 	"github.com/gdamore/tcell"
 	sitter "github.com/smacker/go-tree-sitter"
@@ -50,17 +49,18 @@ func NewTreeSitter() *TreeSitterHighlighter {
 
 var defaultColors =
 `
-identifier: "#a5fcd9"
-field_identifier: "#a5fcd9"
-property_identifier: "#a5fcd9"
-property: "#a5fcd9"
-string: "#a5fc94"
-keyword: "#ec6aad"
-constant: "#ec6aad"
-number: "#ec6aad"
-integer: "#ec6aad"
-float: "#ec6aad"
-variable.builtin: "#ec6aad"
+identifier: "#A5FCB6"
+field_identifier: "#A5FCB6"
+property_identifier: "#A5FCB6"
+property: "#A5FCB6"
+string: "#F9D992"
+keyword: "#f992e6"
+constant: "#f992e6"
+number: "#f992e6"
+integer: "#f992e6"
+float: "#f992e6"
+variable: "#A5FCB6"
+#variable.builtin: "#f992e6"
 function: "#afaff9"
 function.call: "#afaff9"
 method: "#afaff9"
@@ -68,6 +68,9 @@ comment: "#767676"
 namespace: "#c6a5fc"
 type: "#c6a5fc"
 tag.attribute: "#c6a5fc"
+tag: "#c6a5fc"
+error: "#A5FCB6"
+
 accent_color: "#ec6aad"
 accent_color2: "#a5fcd9"
 `
@@ -233,10 +236,13 @@ func (h *TreeSitterHighlighter) ColorRanges(from, to int, codeBytes []byte) []Co
 	for {
 		m, ok := queryCursor.NextMatch()
 		if !ok { break }
+		m = queryCursor.FilterPredicates(m, codeBytes)
 		for _, c := range m.Captures {
 			name := h.query.CaptureNameForId(c.Index)
 			split := strings.Split(name, ".")
 			color := h.matchExpression(split[0], name)
+
+			contentstr := string(codeBytes[c.Node.StartByte():c.Node.EndByte()]); Use(contentstr) // for debug
 
 			if !strings.Contains(name, "injection") {
 				colors = append(colors, ColoredByteRange{
@@ -255,11 +261,18 @@ func (h *TreeSitterHighlighter) ColorRanges(from, to int, codeBytes []byte) []Co
 					injectionHighlighter.SetTheme(h.themePath)
 					h.injectionLangs[injLang] = injectionHighlighter
 				}
-				contentInjection := codeBytes[c.Node.StartByte():c.Node.EndByte()]
 
+				contentInjection := codeBytes[c.Node.StartByte():c.Node.EndByte()]
 				injectionHighlighter.ReParseBytes(contentInjection)
-				countNewlines := CountNewlines(contentInjection)
-				colorsInjection := injectionHighlighter.ColorRanges(0, countNewlines, contentInjection)
+
+				injectionLength := int(c.Node.EndPoint().Row) - int(c.Node.StartPoint().Row)
+				Use(injectionLength)
+
+				fromInj := from - int(c.Node.StartPoint().Row)
+				if fromInj < 0 { fromInj = 0 }
+				toInj := to - int(c.Node.EndPoint().Row)
+				if toInj < to { toInj = to }
+				colorsInjection := injectionHighlighter.ColorRanges(fromInj, toInj, contentInjection)
 
 				startByte := int(c.Node.StartByte())
 				for _, colorsInj := range colorsInjection {

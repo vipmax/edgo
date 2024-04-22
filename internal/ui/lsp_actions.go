@@ -203,7 +203,7 @@ func (e *Editor) OnReferences() {
 			f := strings.Split(ref.URI, "file://")[1]
 			// make f relative
 			//ff, _ := filepath.Rel(e.Cwd, f); f = ff;
-
+			
 			text := fmt.Sprintf("%d/%d %s %d %d ", i+1, len(referencesResponse.Result),
 				f, ref.Range.Start.Line + 1, ref.Range.Start.Character + 1,
 			)

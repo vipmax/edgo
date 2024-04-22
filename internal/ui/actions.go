@@ -10,52 +10,62 @@ import (
 
 
 func (e *Editor) OnDown() {
+	e.Update = false
 	if len(e.Content) == 0 { return }
 	if e.Row+1 >= len(e.Content) {
 		e.Y = e.Row - e.ROWS + 1
-		if e.Y < 0 { e.Y = 0 }
+		if e.Y < 0 { e.Y = 0; }
 		return
 	}
 	e.Row++
 	if e.Col > len(e.Content[e.Row]) { e.Col = len(e.Content[e.Row]) } // fit to e.Content
 	if e.Row < e.Y { e.Y = e.Row }
 	if e.Row >= e.Y+ e.ROWS { e.Y = e.Row - e.ROWS + 1  }
+
+	e.Update = true
 	clear(e.HighlightElements)
 }
 
 func (e *Editor) OnUp() {
+	e.Update = false
 	if len(e.Content) == 0 { return }
 	if e.Row == 0 { e.Y = 0; return }
 	e.Row--
 	if e.Col > len(e.Content[e.Row]) { e.Col = len(e.Content[e.Row]) } // fit to e.Content
 	if e.Row < e.Y { e.Y = e.Row }
 	if e.Row > e.Y+ e.ROWS { e.Y = e.Row - e.ROWS + 1  }
+	e.Update = true
 	clear(e.HighlightElements)
 }
 
 func (e *Editor) OnLeft() {
+	e.Update = false
 	if len(e.Content) == 0 { return }
 
 	if e.Col > 0 {
 		e.Col--
-
+		e.Update = true
 	} else if e.Row > 0 {
 		e.Row--
 		e.Col = len(e.Content[e.Row]) // fit to e.Content
 		if e.Row < e.Y { e.Y = e.Row }
+		e.Update = true
 	}
 	clear(e.HighlightElements)
 }
 
 func (e *Editor) OnRight() {
+	e.Update = false
 	if len(e.Content) == 0 { return }
 
 	if e.Col < len(e.Content[e.Row]) {
 		e.Col++
+		e.Update = true
 	} else if e.Row < len(e.Content)-1 {
 		e.Row++
 		e.Col = 0
 		if e.Row > e.Y+ e.ROWS { e.Y++  }
+		e.Update = true
 	}
 	clear(e.HighlightElements)
 }
@@ -76,6 +86,7 @@ func (e *Editor) GoBottom() {
 }
 
 func (e *Editor) OnScrollUp() {
+	e.Update = false
 	if len(e.Content) == 0 { return }
 	if e.Y == 0 { return }
 	e.Y--
@@ -83,6 +94,7 @@ func (e *Editor) OnScrollUp() {
 }
 
 func (e *Editor) OnScrollDown() {
+	e.Update = false
 	if len(e.Content) == 0 { return }
 	if e.Y+ e.ROWS >= len(e.Content) { return }
 	e.Y++
@@ -822,6 +834,19 @@ func (e *Editor) HandleSmartMove(char rune) {
 		e.Col = Min(e.Col, len(e.Content[e.Row]))
 	}
 	if char == 'b' || char == 'B' {
+		nw := FindPrevWord(e.Content[e.Row], e.Col-1)
+		e.Col = nw
+	}
+}
+
+func (e *Editor) HandleSmartMoveAlac(char int) {
+	e.Focus()
+	if char == 259 {
+		nw := FindNextWord(e.Content[e.Row], e.Col+ 1)
+		e.Col = nw
+		e.Col = Min(e.Col, len(e.Content[e.Row]))
+	}
+	if char == 260 {
 		nw := FindPrevWord(e.Content[e.Row], e.Col-1)
 		e.Col = nw
 	}
