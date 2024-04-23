@@ -125,7 +125,8 @@ type Editor struct {
 
 	HighlightElements map[int][]NodeRange
 
-	drawingWg sync.WaitGroup
+	// drawingWg sync.WaitGroup
+	mu sync.Mutex
 }
 
 func (e *Editor) Start() {
@@ -689,10 +690,10 @@ func (e *Editor) Init() {
 }
 
 func (e *Editor) DrawEverything() {
-	e.drawingWg.Wait()
-	e.drawingWg.Add(1) // drawing only from 1 goroutine
-	defer e.drawingWg.Done()
-
+	 // Lock the mutex to ensure exclusive access to the method
+    e.mu.Lock()
+    defer e.mu.Unlock() // Ensure the mutex is unlocked when the method exits
+    
 	e.Screen.Clear()
 
 	// clean files panel and draw separator
