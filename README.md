@@ -1,5 +1,6 @@
 # edgo
 Yet another console text editor, but with lsp support
+!!! Check out my new code editor, red, at https://github.com/red-rs/red. It's like Edgo but rewritten in Rust!
 ![editor](assets/screen0.png)
 ![editor](assets/screen1.png)
 
